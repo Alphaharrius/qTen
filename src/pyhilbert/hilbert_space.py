@@ -913,6 +913,10 @@ def u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace:
     return hilbert((basis,))
 
 
+# Support conversion to HilbertSpace using `basis.convert(HilbertSpace)`.
+U1Basis.add_conversion(HilbertSpace)(u1basis_to_hilbertspace)
+
+
 @dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
 def same_span(a: HilbertSpace, b: HilbertSpace) -> bool:
     return set(m.unit() for m in a.structure.keys()) == set(
