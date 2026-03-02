@@ -38,13 +38,17 @@ _IrrepType = TypeVar("_IrrepType")
 
 
 @dataclass(frozen=True)  # eq=False, Skipping Operable.__eq__
-class Ket(Generic[_IrrepType], AbstractKet[int], Operable):
+class Ket(Generic[_IrrepType], AbstractKet[int], Operable, Convertible):
     """
     A single basis label in the Hilbert construction.
 
     A `Ket` wraps one irreducible-representation object (`irrep`). It does not
     store amplitudes; it is only the symbolic building block used to form larger
     tensor-product states with `@`.
+
+    Notes
+    -----
+    `Ket` can be converted to `U1Basis` via `ket.convert(U1Basis)`.
     """
 
     # TODO: In the future if we replace @dispatch operator_xxx with Opeator.register, check if this type defines __lt__ or __gt__
@@ -304,6 +308,12 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
             Tuple of concrete irrep types in deterministic type-name order.
         """
         return tuple(type(ket.irrep) for ket in self.kets)
+
+
+@Ket.add_conversion(U1Basis)
+def ket_to_u1basis(ket: Ket[_IrrepType]) -> U1Basis:
+    """Convert a `Ket` to a `U1Basis` with the ket as its only element."""
+    return U1Basis(irrep=sy.Integer(1), kets=(ket,))
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
