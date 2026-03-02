@@ -918,6 +918,23 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
 
     @override
     def gram(self, another: "HilbertSpace") -> Tensor:
+        """
+        Build the overlap (Gram) matrix between this basis and another basis.
+
+        Matrix entries are computed from concrete basis overlaps
+        `G_{ij} = <self_i | another_j>`, so any nontrivial U(1) irrep phase in
+        basis vectors is encoded in `data`.
+
+        Output dimension convention
+        ---------------------------
+        The returned tensor uses dims `(self, another.unit())`.
+        The target (column) dimension is intentionally unitized (phase removed)
+        so the codomain metadata is gauge-fixed, while phase information remains
+        in matrix elements.
+
+        This is equivalent to using a representative of the same ray space
+        (projective Hilbert space) for the target basis labels.
+        """
         span = U1Span(cast(Tuple[U1Basis, ...], self.elements()))
         new_span = U1Span(cast(Tuple[U1Basis, ...], another.elements()))
         irrep = span.gram(new_span)
@@ -925,7 +942,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         data = torch.from_numpy(
             np.asarray(irrep.tolist(), dtype=precision.np_complex)
         ).to(dtype=precision.torch_complex)
-        return Tensor(data=data, dims=(self, another))
+        return Tensor(data=data, dims=(self, another.unit()))
 
 
 def hilbert(itr: Iterable[U1Elements]) -> HilbertSpace:

@@ -135,9 +135,9 @@ def test_hilbert_space_group_with_kwargs_selector_and_mapping():
     grouped_space = mapping.dims[1]
     assert isinstance(grouped_space, HilbertSpace)
     grouped_keys = tuple(grouped_space.structure.keys())
-    assert grouped_keys[0] == d3
-    assert grouped_keys[1] == grouped.spans["s_band"]
-    assert grouped_keys[2] == grouped.spans["p_band"]
+    assert grouped_keys[0] == d3.unit()
+    assert grouped_keys[1] == grouped.spans["s_band"].unit()
+    assert grouped_keys[2] == grouped.spans["p_band"].unit()
 
 
 def test_hilbert_space_group_raises_on_overlap():
@@ -196,6 +196,22 @@ def test_hilbert_space_gram_diagonal_for_identical_basis():
     assert gram.data[0, 0] == 4
     assert gram.data[1, 1] == 9
     assert gram.data[0, 1] == 0
+
+
+def test_hilbert_space_gram_unitizes_target_dim():
+    basis = ImmutableDenseMatrix([[1]])
+    lat = Lattice(basis=basis, shape=(2,))
+    a = _state(
+        Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine), "s", sy.Integer(2)
+    )
+    b = _state(
+        Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine), "s", sy.Integer(3)
+    )
+    hs = hilbert([a, b])
+
+    gram = hs.gram(hs)
+    assert gram.dims[0] == hs
+    assert gram.dims[1] == hs.unit()
 
 
 def test_hilbert_space_lookup_exact_query_match():

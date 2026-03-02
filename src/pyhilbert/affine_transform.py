@@ -874,7 +874,7 @@ def bandtransform(
             raise ValueError(
                 f"Hilbert space {space} is not symmetric under the transform {t}!"
             )
-        left_fourier = fourier_transform(kspace, space, new_space)  # (K, B, B'=B)
+        left_fourier = fourier_transform(kspace, space, space)  # (K, B, B'=B)
         right_fourier = fourier_transform(kspace, space, space)  # (K, B, B)
         # (K, B, B'=B) @ (B'=B, B) @ (B, B)
         transform = (

@@ -566,7 +566,7 @@ def test_affine_transform_hilbert_c4_u1state_mapping():
 
     gh_expected = hilbert(cast(U1Basis, _transformed(t, m)) for m in h)
     assert gh == gh_expected
-    assert tmat.dims[1] == gh_expected
+    assert tmat.dims[1] == gh_expected.unit()
 
     # mapping_matrix(h, gh_expected, mode_mapping) is identity for this construction.
     expected = torch.eye(2, dtype=torch.complex128)
