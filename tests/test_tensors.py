@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from collections import OrderedDict
 from sympy import ImmutableDenseMatrix
 from pyhilbert import state_space
-from pyhilbert.tensors import Tensor, matmul, ones, zeros
+from pyhilbert.tensors import Tensor, matmul, one_hot, ones, zeros
 from pyhilbert.hilbert_space import HilbertSpace, Ket, U1Basis, hilbert
 from pyhilbert.state_space import (
     BroadcastSpace,
@@ -1536,3 +1536,38 @@ def test_tensor_argmin_raises_for_out_of_range_dim():
 
     with pytest.raises(IndexError, match="out of range"):
         _ = tensor.argmin(2)
+
+
+def test_one_hot_appends_class_dim():
+    sample_space = _simple_hilbert("sample", 4)
+    class_space = _simple_hilbert("class", 5)
+    data = torch.tensor([0, 2, 4, 1], dtype=torch.long)
+    tensor = Tensor(data=data, dims=(sample_space,))
+
+    out = one_hot(tensor, class_space)
+
+    assert out.dims == (sample_space, class_space)
+    expected = torch.nn.functional.one_hot(data, num_classes=class_space.dim)
+    assert torch.equal(out.data, expected)
+
+
+def test_one_hot_rejects_non_integer_input():
+    sample_space = _simple_hilbert("sample", 3)
+    class_space = _simple_hilbert("class", 4)
+    tensor = Tensor(
+        data=torch.tensor([0.0, 1.0, 2.0], dtype=torch.float64), dims=(sample_space,)
+    )
+
+    with pytest.raises(TypeError, match="integer-valued"):
+        _ = one_hot(tensor, class_space)
+
+
+def test_one_hot_rejects_out_of_range_indices():
+    sample_space = _simple_hilbert("sample", 3)
+    class_space = _simple_hilbert("class", 4)
+    tensor = Tensor(
+        data=torch.tensor([0, 1, 4], dtype=torch.long), dims=(sample_space,)
+    )
+
+    with pytest.raises(ValueError, match="out of range"):
+        _ = one_hot(tensor, class_space)

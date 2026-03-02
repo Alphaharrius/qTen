@@ -1220,6 +1220,44 @@ def argmin(tensor: Tensor, dim: int) -> Tensor:
     )
 
 
+def one_hot(
+    tensor: Tensor[torch.LongTensor], dim: StateSpace
+) -> Tensor[torch.LongTensor]:
+    """
+    One-hot encode an integer-valued tensor using a provided class StateSpace.
+
+    The output appends `dim` as the last axis, and uses `dim.dim` as
+    `num_classes`.
+
+    Parameters
+    ----------
+    tensor : `Tensor`
+        Input tensor containing class indices.
+    dim : `StateSpace`
+        Output class dimension. Class indices are assumed to be ordered as
+        `[0, 1, ..., dim.dim - 1]`.
+
+    Returns
+    -------
+    `Tensor`
+        A new tensor with one extra trailing dimension for class channels.
+    """
+    if tensor.data.is_floating_point() or tensor.data.is_complex():
+        raise TypeError("one_hot expects integer-valued tensor data")
+
+    indices = tensor.data.to(dtype=torch.long)
+    if indices.numel() > 0:
+        if torch.any(indices < 0) or torch.any(indices >= dim.dim):
+            raise ValueError(f"one_hot index out of range for num_classes={dim.dim}")
+
+    return Tensor(
+        data=cast(
+            torch.LongTensor, torch.nn.functional.one_hot(indices, num_classes=dim.dim)
+        ),
+        dims=tensor.dims + (dim,),
+    )
+
+
 def expand_to_union(tensor: Tensor, union_dims: list[StateSpace]) -> Tensor:
     """
     Expand BroadcastSpace dimensions in the tensor to match union_dims sizes.
