@@ -18,7 +18,7 @@ from typing import (
 
 import sympy as sy
 
-from .abstracts import AbstractKet, Functional, HasUnit, Operable, Span
+from .abstracts import AbstractKet, Convertible, Functional, HasUnit, Operable, Span
 from .spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .tensors import Tensor
@@ -28,7 +28,7 @@ _IrrepType = TypeVar("_IrrepType")
 _ObservableType = TypeVar("_ObservableType")
 _OperableType = TypeVar("_OperableType", bound=Operable)
 
-class Ket(Generic[_IrrepType], AbstractKet[int], Operable):
+class Ket(Generic[_IrrepType], AbstractKet[int], Operable, Convertible):
     irrep: _IrrepType
     def __init__(self, irrep: _IrrepType) -> None: ...
     def ket(self, another: Ket[_IrrepType]) -> int: ...
@@ -40,7 +40,7 @@ class Ket(Generic[_IrrepType], AbstractKet[int], Operable):
     def __matmul__(self, other: U1Basis) -> U1Basis: ...
     def __eq__(self, value: object) -> bool: ...
 
-class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit):
+class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     irrep: sy.Expr
     kets: Tuple[Ket[Any], ...]
     def __init__(self, irrep: sy.Expr, kets: Tuple[Ket[Any], ...]) -> None: ...
@@ -107,6 +107,8 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
     def gram(self, another: HilbertSpace) -> Tensor: ...
 
 def hilbert(itr: Iterable[U1Elements]) -> HilbertSpace: ...
+def ket_to_u1basis(ket: Ket[_IrrepType]) -> U1Basis: ...
+def u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace: ...
 @overload
 def same_span(a: HilbertSpace, b: HilbertSpace) -> bool: ...
 @overload
