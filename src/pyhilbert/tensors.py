@@ -149,6 +149,22 @@ class Tensor(Operable, Plottable):
         """
         return rank(self)
 
+    def mean(self, dim: int) -> "Tensor":
+        """
+        Compute the mean over a specified dimension.
+
+        Parameters
+        ----------
+        dim : `int`
+            The dimension to reduce.
+
+        Returns
+        -------
+        `Tensor`
+            A new tensor with the specified dimension reduced.
+        """
+        return mean(self, dim)
+
     def expand_to_union(self, union_dims: list[StateSpace]) -> "Tensor":
         """
         Expand the tensor to the union of the specified dimensions.
@@ -1048,6 +1064,33 @@ def rank(tensor: Tensor) -> int:
         The rank of the tensor.
     """
     return len(tensor.dims)
+
+
+def mean(tensor: Tensor, dim: int) -> Tensor:
+    """
+    Compute the mean over a specified dimension.
+
+    Parameters
+    ----------
+    tensor : `Tensor`
+        The tensor to reduce.
+    dim : `int`
+        The dimension to reduce.
+
+    Returns
+    -------
+    `Tensor`
+        A new tensor with the specified dimension reduced.
+    """
+    if dim < 0:
+        dim += tensor.rank()
+    if dim < 0 or dim >= tensor.rank():
+        raise IndexError(f"Dimension index {dim} out of range for rank {tensor.rank()}")
+
+    return Tensor(
+        data=tensor.data.mean(dim=dim),
+        dims=tensor.dims[:dim] + tensor.dims[dim + 1 :],
+    )
 
 
 def expand_to_union(tensor: Tensor, union_dims: list[StateSpace]) -> Tensor:

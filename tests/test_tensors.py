@@ -1355,3 +1355,40 @@ def test_product_dims_non_sequential_groups_hilbert():
 
     assert out.dims == expected_dims
     assert torch.equal(out.data, expected_data)
+
+
+def test_tensor_mean_reduces_selected_dim():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 3)
+    right = _simple_hilbert("right", 4)
+    data = torch.randn(left.dim, mid.dim, right.dim, dtype=torch.float64)
+    tensor = Tensor(data=data, dims=(left, mid, right))
+
+    out = tensor.mean(1)
+
+    assert out.dims == (left, right)
+    assert torch.allclose(out.data, data.mean(dim=1))
+
+
+def test_tensor_mean_supports_negative_dim():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 3)
+    right = _simple_hilbert("right", 4)
+    data = torch.randn(left.dim, mid.dim, right.dim, dtype=torch.float64)
+    tensor = Tensor(data=data, dims=(left, mid, right))
+
+    out = tensor.mean(-1)
+
+    assert out.dims == (left, mid)
+    assert torch.allclose(out.data, data.mean(dim=-1))
+
+
+def test_tensor_mean_raises_for_out_of_range_dim():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 4)
+    tensor = Tensor(
+        data=torch.randn(left.dim, right.dim, dtype=torch.float64), dims=(left, right)
+    )
+
+    with pytest.raises(IndexError, match="out of range"):
+        _ = tensor.mean(2)
