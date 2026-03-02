@@ -717,6 +717,36 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
                 return False
         return True
 
+    def canonical_basis_types(self) -> Tuple[Type[Any], ...]:
+        """
+        Return the canonical irrep-type order shared by this `HilbertSpace` basis.
+
+        A homogeneous Hilbert space has one consistent irrep-type layout across all
+        basis states (for example `(int, str)` for every element). This method
+        returns that layout in canonical order.
+
+        For an empty space, the result is the empty tuple `()`.
+
+        Returns
+        -------
+        `Tuple[Type[Any], ...]`
+            The canonical irrep-type sequence of the basis representation.
+
+        Raises
+        ------
+        `ValueError`
+            If this space is not homogeneous, i.e. basis states do not share the
+            same canonical irrep-type order.
+        """
+        if not self.is_homogeneous():
+            raise ValueError(
+                "Cannot get basis irrep types of a non-homogeneous HilbertSpace."
+            )
+        elements = self.elements()
+        if not elements:
+            return ()
+        return elements[0].canonical_repr_types()
+
     def factorize(self, *irrep_types: Tuple[Type, ...]) -> StateSpaceFactorization:
         """
         Factorize this homogeneous `HilbertSpace` into tensor factors grouped by irrep type.

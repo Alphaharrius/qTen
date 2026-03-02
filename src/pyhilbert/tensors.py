@@ -430,6 +430,17 @@ class Tensor(Operable, Plottable):
         """
         return product_dims(self, *indices_group)
 
+    def dim_types(self) -> Tuple[type, ...]:
+        """
+        Return a tuple of the types of the dimensions in the tensor.
+
+        Returns
+        -------
+        `Tuple[type, ...]`
+            A tuple containing the types of each dimension in the tensor.
+        """
+        return tuple(type(dim) for dim in self.dims)
+
     def __repr__(self) -> str:
         device_type = self.data.device.type
         device = "GPU" if device_type in {"cuda", "mps"} else "CPU"
