@@ -312,6 +312,28 @@ class Tensor(Operable, Plottable):
         return replace_dim(self, dim, new_dim)
 
     def __getitem__(self, key):
+        """
+        Index tensor data with either numeric slicing or StateSpace-aware slicing.
+
+        Supported conventions
+        ---------------------
+        - Normal indexing: when no `StateSpace`/`Convertible` indices are present,
+          this forwards directly to `self.data[key]` and returns a `torch.Tensor`.
+        - StateSpace indexing: when any `StateSpace`/`Convertible` index is present,
+          this returns a `Tensor` and applies StateSpace-aware selection rules.
+
+        Convertible indices
+        -------------------
+        Any index object implementing `Convertible` is accepted, as long as
+        `index.convert(StateSpace)` is defined and returns a `StateSpace`.
+        This allows domain-specific index types (for example, basis/momentum/band
+        objects) to be used directly in tensor indexing.
+
+        Notes
+        -----
+        - In StateSpace-aware mode, integer/range indices cannot be mixed in.
+        - Only full slices `:` are allowed alongside StateSpace-aware indices.
+        """
         if key is Ellipsis:
             key = (slice(None),) * len(self.dims)
         elif not isinstance(key, tuple):
