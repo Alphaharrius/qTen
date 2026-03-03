@@ -1799,3 +1799,178 @@ def test_all_over_tensor_equality_dim_and_keepdim():
     assert reduced_keepdim.dims[1] == right
     assert reduced_keepdim.data.shape == (1, right.dim)
     assert torch.equal(reduced_keepdim.data, torch.tensor([[True, False]]))
+
+
+def test_all_supports_tuple_dims_without_keepdim():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor([[True, True], [True, False], [True, True]]),
+        dims=(left, right),
+    )
+
+    out = tensor_all(tensor, dim=(0, 1))
+
+    assert out.dims == ()
+    assert out.data.shape == ()
+    assert out.data.item() is False
+
+
+def test_all_supports_tuple_dims_with_keepdim():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor([[True, True], [True, True], [True, True]]),
+        dims=(left, right),
+    )
+
+    out = tensor.all(dim=(0, 1), keepdim=True)
+
+    assert len(out.dims) == 2
+    assert isinstance(out.dims[0], BroadcastSpace)
+    assert isinstance(out.dims[1], BroadcastSpace)
+    assert out.data.shape == (1, 1)
+    assert out.data.item() is True
+
+
+def test_all_supports_negative_tuple_dims():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor(
+            [[[True, True], [True, True]], [[True, True], [True, False]]]
+        ),
+        dims=(left, mid, right),
+    )
+
+    out = tensor.all(dim=(-2, -1))
+
+    assert out.dims == (left,)
+    assert torch.equal(out.data, torch.tensor([True, False]))
+
+
+def test_all_raises_for_out_of_range_dim():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor([[True, True], [True, True]]),
+        dims=(left, right),
+    )
+
+    with pytest.raises(IndexError, match="out of range"):
+        _ = tensor.all(dim=2)
+
+
+def test_all_raises_for_out_of_range_dim_in_tuple():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor([[True, True], [True, True]]),
+        dims=(left, right),
+    )
+
+    with pytest.raises(IndexError, match="out of range"):
+        _ = tensor_all(tensor, dim=(0, 2))
+
+
+def test_all_matches_torch_behavior_dim_none():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(
+        data=torch.tensor([[True, True, True], [True, False, True]]),
+        dims=(left, right),
+    )
+
+    out = tensor_all(tensor)
+    expected = torch.all(tensor.data)
+
+    assert out.dims == ()
+    assert torch.equal(out.data, expected)
+
+
+def test_all_matches_torch_behavior_dim_int_keepdim_false():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(
+        data=torch.tensor([[True, True, True], [True, False, True]]),
+        dims=(left, right),
+    )
+
+    out = tensor_all(tensor, dim=1, keepdim=False)
+    expected = torch.all(tensor.data, dim=1, keepdim=False)
+
+    assert out.dims == (left,)
+    assert torch.equal(out.data, expected)
+
+
+def test_all_matches_torch_behavior_dim_int_keepdim_true():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(
+        data=torch.tensor([[True, True, True], [True, False, True]]),
+        dims=(left, right),
+    )
+
+    out = tensor.all(dim=1, keepdim=True)
+    expected = torch.all(tensor.data, dim=1, keepdim=True)
+
+    assert out.data.shape == expected.shape
+    assert isinstance(out.dims[1], BroadcastSpace)
+    assert torch.equal(out.data, expected)
+
+
+def test_all_matches_torch_behavior_dim_tuple_keepdim_false():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor(
+            [[[True, True], [True, True]], [[True, True], [True, False]]]
+        ),
+        dims=(left, mid, right),
+    )
+
+    out = tensor_all(tensor, dim=(1, 2), keepdim=False)
+    expected = torch.all(tensor.data, dim=(1, 2), keepdim=False)
+
+    assert out.dims == (left,)
+    assert torch.equal(out.data, expected)
+
+
+def test_all_matches_torch_behavior_dim_tuple_keepdim_true():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor(
+            [[[True, True], [True, True]], [[True, True], [True, False]]]
+        ),
+        dims=(left, mid, right),
+    )
+
+    out = tensor_all(tensor, dim=(0, 2), keepdim=True)
+    expected = torch.all(tensor.data, dim=(0, 2), keepdim=True)
+
+    assert out.data.shape == expected.shape
+    assert isinstance(out.dims[0], BroadcastSpace)
+    assert isinstance(out.dims[2], BroadcastSpace)
+    assert torch.equal(out.data, expected)
+
+
+def test_all_matches_torch_behavior_negative_tuple_dims():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 2)
+    right = _simple_hilbert("right", 2)
+    tensor = Tensor(
+        data=torch.tensor(
+            [[[True, True], [True, True]], [[True, True], [True, False]]]
+        ),
+        dims=(left, mid, right),
+    )
+
+    out = tensor.all(dim=(-2, -1), keepdim=False)
+    expected = torch.all(tensor.data, dim=(-2, -1), keepdim=False)
+
+    assert out.dims == (left,)
+    assert torch.equal(out.data, expected)

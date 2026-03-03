@@ -205,14 +205,16 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
         """
         return align_all(self, dims)
 
-    def all(self, dim: Optional[int] = None, keepdim: bool = False) -> "Tensor":
+    def all(
+        self, dim: Optional[Union[int, Tuple[int, ...]]] = None, keepdim: bool = False
+    ) -> "Tensor":
         """
         Return whether all elements evaluate to `True`.
 
         Parameters
         ----------
-        `dim` : `Optional[int]`, optional
-            Reduction axis. If `None`, reduce over all dimensions.
+        `dim` : `Optional[Union[int, Tuple[int, ...]]]`, optional
+            Reduction axis (or axes). If `None`, reduce over all dimensions.
         `keepdim` : `bool`, optional
             If `True`, retains the reduced axis as `BroadcastSpace`.
 
@@ -1276,7 +1278,11 @@ def align_all(tensor: Tensor, dims: Tuple[StateSpace, ...]) -> Tensor:
     return aligned
 
 
-def all(tensor: Tensor, dim: Optional[int] = None, keepdim: bool = False) -> Tensor:
+def all(
+    tensor: Tensor,
+    dim: Optional[Union[int, Tuple[int, ...]]] = None,
+    keepdim: bool = False,
+) -> Tensor:
     """
     Reduce a tensor with logical AND, matching `torch.all` semantics.
 
@@ -1284,8 +1290,8 @@ def all(tensor: Tensor, dim: Optional[int] = None, keepdim: bool = False) -> Ten
     ----------
     `tensor` : `Tensor`
         Input tensor.
-    `dim` : `Optional[int]`, optional
-        Reduction axis. If `None`, reduce over all dimensions.
+    `dim` : `Optional[Union[int, Tuple[int, ...]]]`, optional
+        Reduction axis (or axes). If `None`, reduce over all dimensions.
     `keepdim` : `bool`, optional
         If `True`, retains the reduced axis as `BroadcastSpace`.
 
@@ -1297,16 +1303,36 @@ def all(tensor: Tensor, dim: Optional[int] = None, keepdim: bool = False) -> Ten
     if dim is None:
         return Tensor(data=torch.all(tensor.data), dims=())
 
-    if dim < 0:
-        dim += tensor.rank()
-    if dim < 0 or dim >= tensor.rank():
-        raise IndexError(f"Dimension index {dim} out of range for rank {tensor.rank()}")
+    rank_ = tensor.rank()
+    if isinstance(dim, int):
+        dims_tuple: Tuple[int, ...] = (dim,)
+    else:
+        dims_tuple = dim
+
+    normalized_dims: list[int] = []
+    for d in dims_tuple:
+        nd = d
+        if nd < 0:
+            nd += rank_
+        if nd < 0 or nd >= rank_:
+            raise IndexError(f"Dimension index {d} out of range for rank {rank_}")
+        normalized_dims.append(nd)
+
+    reduced_dims = tuple(normalized_dims)
+    reduced_dims_set = set(reduced_dims)
 
     reduced = torch.all(tensor.data, dim=dim, keepdim=keepdim)
     if keepdim:
-        new_dims = tensor.dims[:dim] + (BroadcastSpace(),) + tensor.dims[dim + 1 :]
+        new_dims = tuple(
+            BroadcastSpace() if idx in reduced_dims_set else current_dim
+            for idx, current_dim in enumerate(tensor.dims)
+        )
     else:
-        new_dims = tensor.dims[:dim] + tensor.dims[dim + 1 :]
+        new_dims = tuple(
+            current_dim
+            for idx, current_dim in enumerate(tensor.dims)
+            if idx not in reduced_dims_set
+        )
     return Tensor(data=reduced, dims=new_dims)
 
 
