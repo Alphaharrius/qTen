@@ -650,7 +650,7 @@ def _tensor_getitem_hilbert(tensor: Tensor, key: Tuple[object, ...]) -> Tensor:
             raise IndexError("Too many indices for tensor")
         dim = tensor.dims[dim_pos]
         dim_pos += 1
-        if not isinstance(k, (StateSpace, slice)) and isinstance(k, Convertible):
+        if not isinstance(k, slice) and isinstance(k, Convertible):
             try:
                 converted = k.convert(StateSpace)
             except NotImplementedError as e:

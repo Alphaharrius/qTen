@@ -20,7 +20,7 @@ TSpatial = TypeVar("TSpatial", bound=Spatial)
 
 
 @dataclass(frozen=True)
-class StateSpace(Spatial, Generic[TSpatial]):
+class StateSpace(Spatial, Convertible, Generic[TSpatial]):
     """
     `StateSpace` is a collection of indices with additional information attached to the elements,
     for the case of TNS there are only two types of state spaces: `MomentumSpace` and `HilbertSpace`.
@@ -169,6 +169,12 @@ class StateSpace(Spatial, Generic[TSpatial]):
             A new state space representing the tensor product of the two.
         """
         raise NotImplementedError(f"Tensor product not implemented for {type(self)}!")
+
+
+@StateSpace.add_conversion(StateSpace)
+def state_space_to_state_space(s: StateSpace) -> StateSpace:
+    """Identity conversion to allow mapping between different StateSpace subclasses."""
+    return s
 
 
 @dispatch(StateSpace, StateSpace)

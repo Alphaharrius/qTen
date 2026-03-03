@@ -572,9 +572,10 @@ class Convertible(ABC):
 
     Notes
     -----
-    Lookup is exact on ``type(self)`` and the requested target type ``T``.
-    If no conversion function is registered for that pair, conversion fails
-    with ``NotImplementedError``.
+    Lookup first checks ``(type(self), T)`` exactly. If not found, it scans
+    source supertypes in MRO order from immediate parent to the most abstract
+    parent. If no conversion function is found, conversion fails with
+    ``NotImplementedError``.
     """
 
     @classmethod
@@ -615,11 +616,23 @@ class Convertible(ABC):
         ------
         `NotImplementedError`
             If no conversion function has been registered for
-            ``(type(self), T)`` via :meth:`add_conversion`.
+            ``(type(self), T)`` or any source supertype via
+            :meth:`add_conversion`.
         """
-        convertor = _type_conversion_table.get((type(self), T))
+        source_type = type(self)
+        table_get = _type_conversion_table.get
+
+        convertor = table_get((source_type, T))
+        if convertor is None:
+            for super_type in source_type.__mro__[1:]:
+                convertor = table_get((super_type, T))
+                if convertor is not None:
+                    # Cache resolved parent conversion under the concrete source type.
+                    _type_conversion_table[(source_type, T)] = convertor
+                    break
+
         if convertor is None:
             raise NotImplementedError(
-                f"No conversion from {type(self).__name__} to {T.__name__}!"
+                f"No conversion from {source_type.__name__} to {T.__name__}!"
             )
         return cast(Callable[["Convertible"], B], convertor)(self)
