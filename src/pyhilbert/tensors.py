@@ -31,6 +31,22 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
     data: T
     dims: Tuple[StateSpace, ...]
 
+    def astype(self, dtype: torch.dtype) -> "Tensor":
+        """
+        Return a new tensor with the same dims and converted data dtype.
+
+        Parameters
+        ----------
+        `dtype` : `torch.dtype`
+            Target data type.
+
+        Returns
+        -------
+        `Tensor`
+            A new tensor whose data has dtype `dtype`.
+        """
+        return astype(self, dtype)
+
     def equal(self, other: "Tensor") -> bool:
         """
         Compare this tensor to another tensor for exact equality.
@@ -1367,6 +1383,25 @@ def one_hot(
     )
 
 
+def astype(tensor: Tensor, dtype: torch.dtype) -> Tensor:
+    """
+    Return a new tensor with data converted to `dtype`.
+
+    Parameters
+    ----------
+    `tensor` : `Tensor`
+        Input tensor.
+    `dtype` : `torch.dtype`
+        Target data type.
+
+    Returns
+    -------
+    `Tensor`
+        A new tensor with converted data and unchanged dims.
+    """
+    return Tensor(data=tensor.data.to(dtype=dtype), dims=tensor.dims)
+
+
 def allclose(
     a: Tensor,
     b: Tensor,
@@ -1383,20 +1418,20 @@ def allclose(
     When alignment succeeds, the function compares data values using
     `torch.allclose`.
 
-    Before comparison, data is normalized to a common dtype using
-    `torch.promote_types`, and `b` is moved to `a`'s device if needed.
+    After alignment, comparison is delegated directly to `torch.allclose`,
+    preserving native PyTorch behavior for dtype/device handling.
 
     Parameters
     ----------
-    a : `Tensor`
+    `a` : `Tensor`
         Reference tensor defining the target dimension layout.
-    b : `Tensor`
+    `b` : `Tensor`
         Tensor that will be aligned to `a` before comparison.
-    rtol : `float`, optional
+    `rtol` : `float`, optional
         Relative tolerance used by `torch.allclose`.
-    atol : `float`, optional
+    `atol` : `float`, optional
         Absolute tolerance used by `torch.allclose`.
-    equal_nan : `bool`, optional
+    `equal_nan` : `bool`, optional
         Whether `NaN` values are considered equal.
 
     Returns
@@ -1410,15 +1445,9 @@ def allclose(
     except (IndexError, TypeError, ValueError, RuntimeError):
         return False
 
-    left = a.data
-    right = aligned_b.data
-    common_dtype = torch.promote_types(left.dtype, right.dtype)
-    if left.dtype != common_dtype:
-        left = left.to(dtype=common_dtype)
-    if right.dtype != common_dtype or right.device != left.device:
-        right = right.to(device=left.device, dtype=common_dtype)
-
-    return torch.allclose(left, right, rtol=rtol, atol=atol, equal_nan=equal_nan)
+    return torch.allclose(
+        a.data, aligned_b.data, rtol=rtol, atol=atol, equal_nan=equal_nan
+    )
 
 
 def equal(a: Tensor, b: Tensor) -> bool:

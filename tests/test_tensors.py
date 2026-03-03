@@ -9,6 +9,7 @@ from pyhilbert.tensors import (
     Tensor,
     align_all,
     allclose,
+    astype,
     equal,
     matmul,
     one_hot,
@@ -1623,6 +1624,19 @@ def test_allclose_returns_false_for_non_alignable_dims():
     assert not a.allclose(b)
 
 
+def test_allclose_matches_torch_behavior_for_dtype_mismatch():
+    left = _simple_hilbert("left", 3)
+    a = Tensor(data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32), dims=(left,))
+    b = Tensor(data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,))
+
+    with pytest.raises(RuntimeError, match="did not match"):
+        _ = torch.allclose(a.data, b.data)
+    with pytest.raises(RuntimeError, match="did not match"):
+        _ = allclose(a, b)
+    with pytest.raises(RuntimeError, match="did not match"):
+        _ = a.allclose(b)
+
+
 def test_align_all_aligns_dims():
     mode_a = MockMode(count=2, attr=FrozenDict({"name": "a"}))
     mode_b = MockMode(count=3, attr=FrozenDict({"name": "b"}))
@@ -1703,3 +1717,31 @@ def test_equal_matches_torch_behavior_for_dtype_mismatch():
     expected = torch.equal(a.data, b.data)
     assert equal(a, b) == expected
     assert a.equal(b) == expected
+
+
+def test_astype_module_returns_new_tensor_with_converted_dtype():
+    left = _simple_hilbert("left", 3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32), dims=(left,)
+    )
+
+    out = astype(tensor, torch.float64)
+
+    assert out is not tensor
+    assert out.dims == tensor.dims
+    assert out.data.dtype == torch.float64
+    assert torch.allclose(out.data, tensor.data.to(dtype=torch.float64))
+
+
+def test_tensor_astype_returns_new_tensor_with_converted_dtype():
+    left = _simple_hilbert("left", 3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    out = tensor.astype(torch.float32)
+
+    assert out is not tensor
+    assert out.dims == tensor.dims
+    assert out.data.dtype == torch.float32
+    assert torch.allclose(out.data, tensor.data.to(dtype=torch.float32))
