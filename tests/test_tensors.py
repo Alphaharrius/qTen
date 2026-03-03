@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from collections import OrderedDict
 from sympy import ImmutableDenseMatrix
 from pyhilbert import state_space
-from pyhilbert.tensors import Tensor, matmul, one_hot, ones, zeros
+from pyhilbert.tensors import Tensor, align_all, allclose, matmul, one_hot, ones, zeros
 from pyhilbert.hilbert_space import HilbertSpace, Ket, U1Basis, hilbert
 from pyhilbert.state_space import (
     BroadcastSpace,
@@ -1571,3 +1571,75 @@ def test_one_hot_rejects_out_of_range_indices():
 
     with pytest.raises(ValueError, match="out of range"):
         _ = one_hot(tensor, class_space)
+
+
+def test_allclose_aligns_right_dims():
+    mode_a = MockMode(count=2, attr=FrozenDict({"name": "a"}))
+    mode_b = MockMode(count=3, attr=FrozenDict({"name": "b"}))
+
+    structure_ab = OrderedDict(
+        [
+            (mode_a, slice(0, 2)),
+            (mode_b, slice(2, 5)),
+        ]
+    )
+    structure_ba = OrderedDict(
+        [
+            (mode_b, slice(0, 3)),
+            (mode_a, slice(3, 5)),
+        ]
+    )
+    space_ab = HilbertSpace(structure=structure_ab)
+    space_ba = HilbertSpace(structure=structure_ba)
+
+    a_data = torch.randn(space_ab.dim, dtype=torch.float64)
+    b_data = torch.empty_like(a_data)
+    perm = torch.tensor([3, 4, 0, 1, 2], dtype=torch.long)
+    b_data[perm] = a_data
+
+    a = Tensor(data=a_data, dims=(space_ab,))
+    b = Tensor(data=b_data, dims=(space_ba,))
+
+    assert allclose(a, b)
+    assert a.allclose(b)
+
+
+def test_allclose_returns_false_for_non_alignable_dims():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 3)
+    a = Tensor(data=torch.randn(left.dim), dims=(left,))
+    b = Tensor(data=torch.randn(right.dim), dims=(right,))
+
+    assert not allclose(a, b)
+    assert not a.allclose(b)
+
+
+def test_align_all_aligns_dims():
+    mode_a = MockMode(count=2, attr=FrozenDict({"name": "a"}))
+    mode_b = MockMode(count=3, attr=FrozenDict({"name": "b"}))
+    space_ab = HilbertSpace(
+        structure=OrderedDict([(mode_a, slice(0, 2)), (mode_b, slice(2, 5))])
+    )
+    space_ba = HilbertSpace(
+        structure=OrderedDict([(mode_b, slice(0, 3)), (mode_a, slice(3, 5))])
+    )
+
+    data = torch.arange(space_ab.dim, dtype=torch.float64)
+    # data in BA order: [b0,b1,b2,a0,a1]
+    data_ba = data[torch.tensor([2, 3, 4, 0, 1], dtype=torch.long)]
+    tensor_ba = Tensor(data=data_ba, dims=(space_ba,))
+
+    out = align_all(tensor_ba, (space_ab,))
+
+    assert out.dims == (space_ab,)
+    assert torch.equal(out.data, data)
+    assert torch.equal(tensor_ba.align_all((space_ab,)).data, data)
+
+
+def test_align_all_raises_when_not_alignable():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(data=torch.randn(right.dim), dims=(right,))
+
+    with pytest.raises(ValueError, match="cannot be aligned|Cannot align"):
+        _ = align_all(tensor, (left,))

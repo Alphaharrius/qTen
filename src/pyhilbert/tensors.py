@@ -31,6 +31,40 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
     data: T
     dims: Tuple[StateSpace, ...]
 
+    def allclose(
+        self,
+        other: "Tensor",
+        rtol: float = 1e-05,
+        atol: float = 1e-08,
+        equal_nan: bool = False,
+    ) -> bool:
+        """
+        Compare this tensor to another tensor for approximate equality.
+
+        Behavior
+        --------
+        - Attempts to align `other.dims` to `self.dims` using `align_all`.
+        - If dimension alignment is not possible, returns `False`.
+        - If alignment succeeds, compares aligned data via `torch.allclose`.
+
+        Parameters
+        ----------
+        `other` : `Tensor`
+            The tensor to compare against this tensor.
+        `rtol` : `float`, optional
+            Relative tolerance used by `torch.allclose`.
+        `atol` : `float`, optional
+            Absolute tolerance used by `torch.allclose`.
+        `equal_nan` : `bool`, optional
+            Whether `NaN` values are considered equal.
+
+        Returns
+        -------
+        `bool`
+            `True` if tensors are close after alignment; otherwise `False`.
+        """
+        return allclose(self, other, rtol=rtol, atol=atol, equal_nan=equal_nan)
+
     def conj(self) -> "Tensor":
         """
         Compute the complex conjugate of the given tensor.
@@ -111,6 +145,27 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
             The aligned tensor.
         """
         return align(self, dim, target_dim)
+
+    def align_all(self, dims: Tuple[StateSpace, ...]) -> "Tensor":
+        """
+        Align all tensor dimensions to `dims`.
+
+        Parameters
+        ----------
+        dims : `Tuple[StateSpace, ...]`
+            The target dimensions to align to.
+
+        Returns
+        -------
+        `Tensor`
+            The aligned tensor.
+
+        Raises
+        ------
+        `ValueError`
+            If the provided `dims` are not compatible with the tensor's current dimensions.
+        """
+        return align_all(self, dims)
 
     def unsqueeze(self, dim: int) -> "Tensor":
         """
@@ -1122,6 +1177,38 @@ def align(tensor: Tensor, dim: int, target_dim: StateSpace) -> Tensor:
     return aligned_tensor
 
 
+def align_all(tensor: Tensor, dims: Tuple[StateSpace, ...]) -> Tensor:
+    """
+    Align all dimensions of `tensor` to `dims`.
+
+    Parameters
+    ----------
+    tensor : `Tensor`
+        The tensor to align.
+    dims : `Tuple[StateSpace, ...]`
+        Target dimensions for each axis.
+
+    Returns
+    -------
+    `Tensor`
+        The aligned tensor.
+
+    Raises
+    ------
+    `ValueError`
+        If rank does not match or any dimension cannot be aligned.
+    """
+    if len(dims) != tensor.rank():
+        raise ValueError(
+            f"Cannot align rank-{tensor.rank()} tensor to rank-{len(dims)} dims"
+        )
+
+    aligned = tensor
+    for idx, target_dim in enumerate(dims):
+        aligned = aligned.align(idx, target_dim)
+    return aligned
+
+
 def rank(tensor: Tensor) -> int:
     """
     Get the rank (number of dimensions) of the tensor.
@@ -1256,6 +1343,60 @@ def one_hot(
         ),
         dims=tensor.dims + (dim,),
     )
+
+
+def allclose(
+    a: Tensor,
+    b: Tensor,
+    rtol: float = 1e-05,
+    atol: float = 1e-08,
+    equal_nan: bool = False,
+) -> bool:
+    """
+    Compare two tensors for approximate equality with dimension-aware alignment.
+
+    This function first aligns `b` to `a` by calling `b.align_all(a.dims)`.
+    If alignment fails (for example, mismatched rank or non-alignable
+    `StateSpace`s), this function returns `False` instead of raising.
+    When alignment succeeds, the function compares data values using
+    `torch.allclose`.
+
+    Before comparison, data is normalized to a common dtype using
+    `torch.promote_types`, and `b` is moved to `a`'s device if needed.
+
+    Parameters
+    ----------
+    a : `Tensor`
+        Reference tensor defining the target dimension layout.
+    b : `Tensor`
+        Tensor that will be aligned to `a` before comparison.
+    rtol : `float`, optional
+        Relative tolerance used by `torch.allclose`.
+    atol : `float`, optional
+        Absolute tolerance used by `torch.allclose`.
+    equal_nan : `bool`, optional
+        Whether `NaN` values are considered equal.
+
+    Returns
+    -------
+    `bool`
+        `True` if values are close after successful alignment; `False` if
+        alignment fails or values are not close.
+    """
+    try:
+        aligned_b = b.align_all(a.dims)
+    except (IndexError, TypeError, ValueError, RuntimeError):
+        return False
+
+    left = a.data
+    right = aligned_b.data
+    common_dtype = torch.promote_types(left.dtype, right.dtype)
+    if left.dtype != common_dtype:
+        left = left.to(dtype=common_dtype)
+    if right.dtype != common_dtype or right.device != left.device:
+        right = right.to(device=left.device, dtype=common_dtype)
+
+    return torch.allclose(left, right, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
 
 def expand_to_union(tensor: Tensor, union_dims: list[StateSpace]) -> Tensor:
