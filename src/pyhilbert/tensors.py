@@ -1,10 +1,22 @@
-from typing import Tuple, TypeVar, Generic, Union, Sequence, cast, Dict, Any, Optional
+from typing import (
+    Tuple,
+    TypeVar,
+    Generic,
+    Union,
+    Sequence,
+    cast,
+    Dict,
+    Any,
+    Optional,
+    Callable,
+)
 from numbers import Number
 from dataclasses import dataclass, replace
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 import torch
 from .precision import get_precision_config
 from functools import wraps, reduce
+from itertools import product
 
 from .abstracts import Convertible, Operable, Plottable
 from .state_space import (
@@ -1726,6 +1738,45 @@ def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
     """
     shape = tuple(dim.dim for dim in dims)
     return Tensor(data=torch.ones(shape), dims=dims)
+
+
+def kernel_tensor(
+    ker: Callable[..., Number], dims: Tuple[StateSpace, ...]
+) -> Tensor[torch.Tensor]:
+    """
+    Build a tensor by evaluating a scalar-valued kernel over StateSpace elements.
+
+    For each multi-index `(i0, i1, ..., iN)` this evaluates:
+    `ker(dims[0].elements()[i0], dims[1].elements()[i1], ..., dims[N].elements()[iN])`
+    and stores the result at that tensor position.
+
+    Parameters
+    ----------
+    `ker` : `Callable[..., Number]`
+        Scalar-valued callable that accepts one element from each state space in
+        `dims`.
+    `dims` : `Tuple[StateSpace, ...]`
+        Output tensor dimensions.
+
+    Returns
+    -------
+    `Tensor`
+        Tensor with `dims` and values produced by `ker`.
+    """
+    if not dims:
+        return Tensor(data=torch.as_tensor(ker()), dims=dims)
+
+    element_axes = tuple(dim.elements() for dim in dims)
+    for axis, dim in zip(element_axes, dims):
+        if len(axis) != dim.dim:
+            raise ValueError(
+                f"kernel_tensor expects one element per index for each StateSpace; "
+                f"got len(elements)={len(axis)} and dim={dim.dim} for {type(dim).__name__}"
+            )
+
+    values = [ker(*args) for args in product(*element_axes)]
+    data = torch.as_tensor(values).reshape(*(len(axis) for axis in element_axes))
+    return Tensor(data=data, dims=dims)
 
 
 def replace_dim(tensor: Tensor, dim: int, new_dim: StateSpace) -> Tensor:

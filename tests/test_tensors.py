@@ -12,6 +12,7 @@ from pyhilbert.tensors import (
     allclose,
     astype,
     equal,
+    kernel_tensor,
     matmul,
     one_hot,
     ones,
@@ -1582,6 +1583,55 @@ def test_one_hot_rejects_out_of_range_indices():
 
     with pytest.raises(ValueError, match="out of range"):
         _ = one_hot(tensor, class_space)
+
+
+def test_kernel_tensor_builds_rank2_tensor_from_kernel():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 2)
+
+    out = kernel_tensor(
+        lambda x, y: x.kets[0].irrep[1] - 10 * y.kets[0].irrep[1], (left, right)
+    )
+
+    expected = torch.tensor(
+        [[0, -10], [1, -9], [2, -8]],
+        dtype=out.data.dtype,
+    )
+    assert out.dims == (left, right)
+    assert out.data.shape == (left.dim, right.dim)
+    assert torch.equal(out.data, expected)
+
+
+def test_kernel_tensor_builds_rank3_tensor_from_kernel():
+    a = _simple_hilbert("a", 2)
+    b = _simple_hilbert("b", 3)
+    c = _simple_hilbert("c", 2)
+
+    out = kernel_tensor(
+        lambda x, y, z: x.kets[0].irrep[1]
+        + 2 * y.kets[0].irrep[1]
+        + 3 * z.kets[0].irrep[1],
+        (a, b, c),
+    )
+
+    expected = torch.empty((a.dim, b.dim, c.dim), dtype=out.data.dtype)
+    for i, x in enumerate(a.elements()):
+        for j, y in enumerate(b.elements()):
+            for k, z in enumerate(c.elements()):
+                expected[i, j, k] = (
+                    x.kets[0].irrep[1] + 2 * y.kets[0].irrep[1] + 3 * z.kets[0].irrep[1]
+                )
+
+    assert out.dims == (a, b, c)
+    assert torch.equal(out.data, expected)
+
+
+def test_kernel_tensor_supports_scalar_kernel():
+    out = kernel_tensor(lambda: 2 + 3j, ())
+
+    assert out.dims == ()
+    assert out.data.shape == torch.Size([])
+    assert out.item() == 2 + 3j
 
 
 def test_allclose_aligns_right_dims():
