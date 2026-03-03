@@ -1476,6 +1476,31 @@ def test_tensor_mean_raises_for_out_of_range_dim():
         _ = tensor.mean(2)
 
 
+def test_tensor_mean_supports_dim_none():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 4)
+    data = torch.randn(left.dim, right.dim, dtype=torch.float64)
+    tensor = Tensor(data=data, dims=(left, right))
+
+    out = tensor.mean()
+
+    assert out.dims == ()
+    assert torch.allclose(out.data, data.mean())
+
+
+def test_tensor_mean_supports_tuple_dims():
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 3)
+    right = _simple_hilbert("right", 4)
+    data = torch.randn(left.dim, mid.dim, right.dim, dtype=torch.float64)
+    tensor = Tensor(data=data, dims=(left, mid, right))
+
+    out = tensor.mean((0, 2))
+
+    assert out.dims == (mid,)
+    assert torch.allclose(out.data, data.mean(dim=(0, 2)))
+
+
 def test_tensor_argmax_reduces_selected_dim():
     left = _simple_hilbert("left", 2)
     mid = _simple_hilbert("mid", 3)

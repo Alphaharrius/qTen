@@ -280,19 +280,19 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
         """
         return rank(self)
 
-    def mean(self, dim: int) -> "Tensor":
+    def mean(self, dim: Optional[Union[int, Tuple[int, ...]]] = None) -> "Tensor":
         """
-        Compute the mean over a specified dimension.
+        Compute the mean over specified dimension(s).
 
         Parameters
         ----------
-        dim : `int`
-            The dimension to reduce.
+        dim : `Optional[Union[int, Tuple[int, ...]]]`, optional
+            Reduction axis (or axes). If `None`, reduce over all dimensions.
 
         Returns
         -------
         `Tensor`
-            A new tensor with the specified dimension reduced.
+            A new tensor with the specified dimensions reduced.
         """
         return mean(self, dim)
 
@@ -1365,31 +1365,48 @@ def rank(tensor: Tensor) -> int:
     return len(tensor.dims)
 
 
-def mean(tensor: Tensor, dim: int) -> Tensor:
+def mean(tensor: Tensor, dim: Optional[Union[int, Tuple[int, ...]]] = None) -> Tensor:
     """
-    Compute the mean over a specified dimension.
+    Compute the mean over specified dimension(s), matching `torch.mean` dim forms.
 
     Parameters
     ----------
     tensor : `Tensor`
         The tensor to reduce.
-    dim : `int`
-        The dimension to reduce.
+    dim : `Optional[Union[int, Tuple[int, ...]]]`, optional
+        Reduction axis (or axes). If `None`, reduce over all dimensions.
 
     Returns
     -------
     `Tensor`
-        A new tensor with the specified dimension reduced.
+        A new tensor with the specified dimensions reduced.
     """
-    if dim < 0:
-        dim += tensor.rank()
-    if dim < 0 or dim >= tensor.rank():
-        raise IndexError(f"Dimension index {dim} out of range for rank {tensor.rank()}")
+    if dim is None:
+        return Tensor(data=tensor.data.mean(), dims=())
 
-    return Tensor(
-        data=tensor.data.mean(dim=dim),
-        dims=tensor.dims[:dim] + tensor.dims[dim + 1 :],
+    rank_ = tensor.rank()
+    if isinstance(dim, int):
+        dims_tuple: Tuple[int, ...] = (dim,)
+    else:
+        dims_tuple = dim
+
+    normalized_dims: list[int] = []
+    for d in dims_tuple:
+        nd = d
+        if nd < 0:
+            nd += rank_
+        if nd < 0 or nd >= rank_:
+            raise IndexError(f"Dimension index {d} out of range for rank {rank_}")
+        normalized_dims.append(nd)
+
+    reduced_dims_set = set(normalized_dims)
+    reduced = tensor.data.mean(dim=dim)
+    new_dims = tuple(
+        current_dim
+        for idx, current_dim in enumerate(tensor.dims)
+        if idx not in reduced_dims_set
     )
+    return Tensor(data=reduced, dims=new_dims)
 
 
 def argmax(tensor: Tensor, dim: int) -> Tensor:
