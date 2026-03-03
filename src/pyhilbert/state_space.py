@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace, field
-from typing import Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self
+from typing import Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self, cast
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator
 from functools import lru_cache
@@ -375,6 +375,12 @@ def momentum_to_momentumspace(k: Momentum) -> StateSpace:
     """Convert a `Momentum` to a `MomentumSpace` containing only that momentum."""
     structure = OrderedDict({k: slice(0, 1)})
     return MomentumSpace(structure=structure)
+
+
+# Register the conversion from `Momentum` to `MomentumSpace`.
+Momentum.add_conversion(MomentumSpace)(
+    cast(Callable[[Momentum], MomentumSpace], momentum_to_momentumspace)
+)
 
 
 @lru_cache

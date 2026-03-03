@@ -351,7 +351,7 @@ def operator_gt(a: U1Basis, b: U1Basis) -> bool:
 
 
 @dataclass(frozen=True)
-class U1Span(Span[U1Basis, sy.ImmutableDenseMatrix], Spatial, HasUnit):
+class U1Span(Span[U1Basis, sy.ImmutableDenseMatrix], Spatial, HasUnit, Convertible):
     """
     Finite span of distinct single-particle basis states.
 
@@ -415,6 +415,12 @@ class U1Span(Span[U1Basis, sy.ImmutableDenseMatrix], Spatial, HasUnit):
             m, kpsi = tbl[unit]
             out[n, m] = psi.ket(kpsi)
         return sy.ImmutableDenseMatrix(out)
+
+
+@U1Basis.add_conversion(U1Span)
+def u1basis_to_u1span(basis: U1Basis) -> U1Span:
+    """Convert a `U1Basis` to a `U1Span` containing just that basis state."""
+    return U1Span((basis,))
 
 
 U1Elements = Union[U1Basis, U1Span]
@@ -962,6 +968,19 @@ def u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace:
 
 # Support conversion to HilbertSpace using `basis.convert(HilbertSpace)`.
 U1Basis.add_conversion(HilbertSpace)(u1basis_to_hilbertspace)
+
+
+@U1Span.add_conversion(StateSpace)
+def u1span_to_hilbertspace(span: U1Span) -> StateSpace:
+    """Convert a `U1Span` to a `HilbertSpace` containing the span's basis states."""
+    return hilbert(span.span)
+
+
+@U1Span.add_conversion(HilbertSpace)
+@HilbertSpace.add_conversion(HilbertSpace)
+def hilbertspace_to_hilbertspace(v: HilbertSpace) -> HilbertSpace:
+    """Identity conversion for `HilbertSpace`."""
+    return v
 
 
 @dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]

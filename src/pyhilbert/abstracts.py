@@ -544,6 +544,52 @@ class Span(ABC, Generic[_ElementType, _MappingType]):
         """
         pass
 
+    def contains(self, v) -> bool:
+        """
+        Check whether this span contains `v`.
+
+        Supported input
+        ---------------
+        - `Span`: compared directly via `v.elements()`.
+        - `Convertible`: converted to `type(self)` by
+          `v.convert(type(self))`, then compared via elements.
+
+        Unsupported input
+        -----------------
+        - Any non-`Span` object that is not `Convertible`.
+        - `Convertible` objects without a registered conversion to `type(self)`.
+
+        Parameters
+        ----------
+        `v` : `Any`
+            Membership query object.
+
+        Returns
+        -------
+        `bool`
+            `True` when all elements in the query span are contained in this span.
+
+        Raises
+        ------
+        `ValueError`
+            If `v` cannot be converted to `type(self)`.
+
+        Developer Note
+        --------------
+        To make a custom type supported by `contains`, implement `Convertible`
+        and register a conversion to the target span type:
+        `@YourType.add_conversion(TargetSpanType)`.
+        """
+        if not isinstance(v, Span):
+            if isinstance(v, Convertible):
+                v = cast(Convertible, v).convert(type(self))
+            else:
+                raise ValueError(
+                    f"Cannot convert {type(v).__name__} to {type(self).__name__}!"
+                )
+        base = set(self.elements())
+        return all(el in base for el in v.elements())
+
 
 class HasUnit(ABC):
     """
