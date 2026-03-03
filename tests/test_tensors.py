@@ -7,6 +7,7 @@ from sympy import ImmutableDenseMatrix
 from pyhilbert import state_space
 from pyhilbert.tensors import (
     Tensor,
+    all as tensor_all,
     align_all,
     allclose,
     astype,
@@ -1745,3 +1746,56 @@ def test_tensor_astype_returns_new_tensor_with_converted_dtype():
     assert out.dims == tensor.dims
     assert out.data.dtype == torch.float32
     assert torch.allclose(out.data, tensor.data.to(dtype=torch.float32))
+
+
+def test_all_over_tensor_equality_full_reduction():
+    mode_a = MockMode(count=2, attr=FrozenDict({"name": "a"}))
+    mode_b = MockMode(count=3, attr=FrozenDict({"name": "b"}))
+    right = _simple_hilbert("right", 2)
+    space_ab = HilbertSpace(
+        structure=OrderedDict([(mode_a, slice(0, 2)), (mode_b, slice(2, 5))])
+    )
+    space_ba = HilbertSpace(
+        structure=OrderedDict([(mode_b, slice(0, 3)), (mode_a, slice(3, 5))])
+    )
+
+    a_data = torch.randn(space_ab.dim, right.dim, dtype=torch.float64)
+    b_data = torch.empty_like(a_data)
+    perm = torch.tensor([3, 4, 0, 1, 2], dtype=torch.long)
+    b_data[perm, :] = a_data
+
+    a = Tensor(data=a_data, dims=(space_ab, right))
+    b = Tensor(data=b_data, dims=(space_ba, right))
+
+    compared = a == b
+    reduced = tensor_all(compared)
+
+    assert compared.dims == (space_ab, right)
+    assert compared.data.dtype == torch.bool
+    assert reduced.dims == ()
+    assert reduced.data.item() is True
+
+
+def test_all_over_tensor_equality_dim_and_keepdim():
+    left = _simple_hilbert("left", 3)
+    right = _simple_hilbert("right", 2)
+
+    a = Tensor(
+        data=torch.tensor([[1.0, 2.0], [3.0, 4.0], [9.0, 6.0]], dtype=torch.float64),
+        dims=(left, right),
+    )
+    b = Tensor(
+        data=torch.tensor([[1.0, 2.0], [3.0, 0.0], [9.0, 6.0]], dtype=torch.float64),
+        dims=(left, right),
+    )
+
+    compared = a == b
+    reduced = tensor_all(compared, dim=0)
+    reduced_keepdim = compared.all(dim=0, keepdim=True)
+
+    assert reduced.dims == (right,)
+    assert torch.equal(reduced.data, torch.tensor([True, False]))
+    assert isinstance(reduced_keepdim.dims[0], BroadcastSpace)
+    assert reduced_keepdim.dims[1] == right
+    assert reduced_keepdim.data.shape == (1, right.dim)
+    assert torch.equal(reduced_keepdim.data, torch.tensor([[True, False]]))

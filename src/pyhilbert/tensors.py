@@ -26,7 +26,7 @@ such as `torch.FloatTensor`, `torch.DoubleTensor`, etc.
 """
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Tensor(Generic[T], Operable, Plottable, Convertible):
     data: T
     dims: Tuple[StateSpace, ...]
@@ -204,6 +204,24 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
             If the provided `dims` are not compatible with the tensor's current dimensions.
         """
         return align_all(self, dims)
+
+    def all(self, dim: Optional[int] = None, keepdim: bool = False) -> "Tensor":
+        """
+        Return whether all elements evaluate to `True`.
+
+        Parameters
+        ----------
+        `dim` : `Optional[int]`, optional
+            Reduction axis. If `None`, reduce over all dimensions.
+        `keepdim` : `bool`, optional
+            If `True`, retains the reduced axis as `BroadcastSpace`.
+
+        Returns
+        -------
+        `Tensor`
+            Boolean tensor after reduction.
+        """
+        return all(self, dim=dim, keepdim=keepdim)
 
     def unsqueeze(self, dim: int) -> "Tensor":
         """
@@ -830,6 +848,17 @@ def operator_add(left: Tensor, right: Tensor) -> Tensor:
     return Tensor(data=new_data, dims=tuple(union_dims))
 
 
+@dispatch(Tensor, Tensor)
+def operator_eq(left: Tensor, right: Tensor) -> Tensor:
+    """
+    Perform element-wise equality comparison between two tensors.
+
+    The `right` tensor is aligned to `left.dims` before comparison.
+    """
+    aligned_right = right.align_all(left.dims)
+    return Tensor(data=left.data == aligned_right.data, dims=left.dims)
+
+
 @dispatch(Tensor)
 def operator_neg(tensor: Tensor) -> Tensor:
     """
@@ -1245,6 +1274,40 @@ def align_all(tensor: Tensor, dims: Tuple[StateSpace, ...]) -> Tensor:
     for idx, target_dim in enumerate(dims):
         aligned = aligned.align(idx, target_dim)
     return aligned
+
+
+def all(tensor: Tensor, dim: Optional[int] = None, keepdim: bool = False) -> Tensor:
+    """
+    Reduce a tensor with logical AND, matching `torch.all` semantics.
+
+    Parameters
+    ----------
+    `tensor` : `Tensor`
+        Input tensor.
+    `dim` : `Optional[int]`, optional
+        Reduction axis. If `None`, reduce over all dimensions.
+    `keepdim` : `bool`, optional
+        If `True`, retains the reduced axis as `BroadcastSpace`.
+
+    Returns
+    -------
+    `Tensor`
+        Boolean tensor with reduced dimensions.
+    """
+    if dim is None:
+        return Tensor(data=torch.all(tensor.data), dims=())
+
+    if dim < 0:
+        dim += tensor.rank()
+    if dim < 0 or dim >= tensor.rank():
+        raise IndexError(f"Dimension index {dim} out of range for rank {tensor.rank()}")
+
+    reduced = torch.all(tensor.data, dim=dim, keepdim=keepdim)
+    if keepdim:
+        new_dims = tensor.dims[:dim] + (BroadcastSpace(),) + tensor.dims[dim + 1 :]
+    else:
+        new_dims = tensor.dims[:dim] + tensor.dims[dim + 1 :]
+    return Tensor(data=reduced, dims=new_dims)
 
 
 def rank(tensor: Tensor) -> int:
