@@ -1827,6 +1827,14 @@ def test_tensor_where_method_rejects_single_argument():
         _ = condition.where(input=input_tensor)
 
 
+def test_tensor_item_raises_for_non_scalar():
+    left = _simple_hilbert("left", 2)
+    tensor = Tensor(data=torch.tensor([1.0, 2.0]), dims=(left,))
+
+    with pytest.raises(ValueError, match="rank-0"):
+        _ = tensor.item()
+
+
 def test_equal_matches_torch_behavior_for_dtype_mismatch():
     left = _simple_hilbert("left", 3)
     a = Tensor(data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32), dims=(left,))

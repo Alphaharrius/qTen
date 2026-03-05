@@ -435,6 +435,10 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
         ValueError
             If the tensor is not 0-dimensional.
         """
+        if self.rank() != 0:
+            raise ValueError(
+                f"Tensor.item() only works for rank-0 tensors, got rank {self.rank()}"
+            )
         return self.data.item()
 
     def cpu(self) -> "Tensor":
