@@ -419,7 +419,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis, Tensor]):
             return f"{self}: <empty>"
 
         body = "\n".join(
-            f"\t{n}: {idx}:{idx + 1} {str(el)}"
+            f"\t{n}: {idx} {str(el)}"
             for n, (el, idx) in enumerate(self.structure.items())
         )
         return f"{self}:\n{body}"
