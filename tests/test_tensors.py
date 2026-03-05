@@ -17,6 +17,7 @@ from pyhilbert.tensors import (
     matmul,
     one_hot,
     ones,
+    union_dims,
     where,
     zeros,
 )
@@ -808,6 +809,13 @@ class TestTensorErrorConditions:
         aligned = t1.align(-1, tensor_error_ctx.space_a)
         assert aligned.dims == t1.dims
         assert aligned.data.shape == t1.data.shape
+
+    def test_align_fast_path_returns_same_tensor_when_dim_matches(
+        self, tensor_error_ctx
+    ):
+        t1 = Tensor(torch.randn(2), dims=(tensor_error_ctx.space_a,))
+        aligned = t1.align(0, tensor_error_ctx.space_a)
+        assert aligned is t1
 
     def test_permute_invalid_length(self, tensor_error_ctx):
         t1 = Tensor(
@@ -1766,6 +1774,30 @@ def test_where_rejects_non_bool_condition():
         _ = where(condition)
 
 
+def test_where_uses_symmetric_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    condition = Tensor(
+        data=torch.tensor([[True], [False]], dtype=torch.bool),
+        dims=(a, BroadcastSpace()),
+    )
+    input_tensor = Tensor(
+        data=torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float64),
+        dims=(a, b),
+    )
+    other_tensor = Tensor(
+        data=torch.tensor([[10.0, 20.0, 30.0]], dtype=torch.float64),
+        dims=(BroadcastSpace(), b),
+    )
+
+    out = where(condition, input_tensor, other_tensor)
+
+    expected = torch.where(condition.data, input_tensor.data, other_tensor.data)
+    assert out.dims == (a, b)
+    assert torch.equal(out.data, expected)
+
+
 def test_tensor_where_method_supports_ternary_form():
     mode_a = make_mode("a", 2)
     mode_b = make_mode("b", 3)
@@ -1833,6 +1865,51 @@ def test_tensor_item_raises_for_non_scalar():
 
     with pytest.raises(ValueError, match="rank-0"):
         _ = tensor.item()
+
+
+def test_union_dims_prefers_concrete_over_broadcast():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    out = union_dims((BroadcastSpace(), b), (a, BroadcastSpace()))
+
+    assert out == (a, b)
+
+
+def test_union_dims_keeps_left_when_same_span():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    out = union_dims((space_ab,), (space_ba,))
+
+    assert out == (space_ab,)
+
+
+def test_union_dims_raises_for_incompatible_dims():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 2)
+
+    with pytest.raises(ValueError, match="incompatible"):
+        _ = union_dims((left,), (right,))
+
+
+def test_union_dims_raises_for_rank_mismatch():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    with pytest.raises(ValueError, match="same rank"):
+        _ = union_dims((a,), (a, b))
+
+
+def test_union_dims_non_strict_allows_disjoint_spaces():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 2)
+
+    out = union_dims((left,), (right,), allow_merge=True)
+
+    assert out == (left + right,)
 
 
 def test_equal_matches_torch_behavior_for_dtype_mismatch():
