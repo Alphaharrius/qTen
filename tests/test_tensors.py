@@ -1,5 +1,5 @@
 import pytest
-from typing import Dict, Tuple
+from typing import Tuple
 import torch
 import sympy as sy
 from dataclasses import dataclass
@@ -37,18 +37,14 @@ from pyhilbert.tensors import unsqueeze
 @dataclass(frozen=True)
 class MockMode:
     attr: FrozenDict
+    size: int
 
     def unit(self):
         return self
 
 
-_MOCK_MODE_SIZES: Dict[MockMode, int] = {}
-
-
 def make_mode(name: str, size: int) -> MockMode:
-    mode = MockMode(attr=FrozenDict({"name": name}))
-    _MOCK_MODE_SIZES[mode] = size
-    return mode
+    return MockMode(attr=FrozenDict({"name": name}), size=size)
 
 
 @dataclass(frozen=True)
@@ -65,8 +61,7 @@ class MockModeElement:
 
 
 def _mode_elements(mode: MockMode) -> Tuple[MockModeElement, ...]:
-    size = _MOCK_MODE_SIZES[mode]
-    return tuple(MockModeElement(mode=mode, index=i) for i in range(size))
+    return tuple(MockModeElement(mode=mode, index=i) for i in range(mode.size))
 
 
 def _space_from_modes(*modes: MockMode) -> HilbertSpace:
