@@ -291,9 +291,9 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
         `Union[Tensor, Tuple[Tensor, ...]]`
             Return value depends on call form:
             - For `condition.where(input, other)`, returns a single `Tensor`
-              with `dims == condition.dims`. Data is selected elementwise:
-              `input` where condition is `True`, and `other` where condition is
-              `False` (after both are aligned to `condition.dims`).
+              with `dims == union_dims(condition.dims, input.dims, other.dims,
+              allow_merge=False)`. Data is selected elementwise after all
+              operands are aligned/broadcast to these merged dims.
             - For `condition.where()`, returns `Tuple[Tensor, ...]` with one
               1D index tensor per condition axis (same ordering as
               `torch.where(condition)` / `torch.nonzero(as_tuple=True)`).
@@ -2458,25 +2458,26 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
     Parameters
     ----------
     `condition` : `Tensor[torch.BoolTensor]`
-        Boolean mask tensor that defines the output dimensions.
+        Boolean mask tensor participating in symmetric union alignment.
     `input` : `Tensor`
-        Values chosen where the mask is `True`. Must be alignable to
-        `condition.dims`.
+        Values chosen where the mask is `True`. Must be compatible with
+        `condition` and `other` under `union_dims(..., allow_merge=False)`.
     `other` : `Tensor`
-        Values chosen where the mask is `False`. Must be alignable to
-        `condition.dims`.
+        Values chosen where the mask is `False`. Must be compatible with
+        `condition` and `input` under `union_dims(..., allow_merge=False)`.
 
     Returns
     -------
     `Tensor`
-        Tensor with `dims == condition.dims`.
+        Tensor with `dims == union_dims(condition.dims, input.dims, other.dims,
+        allow_merge=False)`.
 
     Raises
     ------
     `TypeError`
         If `condition.data` is not boolean.
     `ValueError`
-        If `input` or `other` cannot be aligned to `condition.dims`.
+        If operands cannot be aligned/broadcast to shared union dims.
     """
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
