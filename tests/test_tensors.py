@@ -18,7 +18,7 @@ from pyhilbert.tensors import (
     ones,
     zeros,
 )
-from pyhilbert.hilbert_space import HilbertSpace, Ket, U1Basis, hilbert
+from pyhilbert.hilbert_space import HilbertSpace, U1Basis, hilbert
 from pyhilbert.state_space import (
     BroadcastSpace,
     FactorSpace,
@@ -1319,8 +1319,8 @@ class TestTensorGetitem:
         assert torch.equal(out.data, expected)
 
     def test_getitem_with_u1basis_index(self):
-        b0 = U1Basis(irrep=sy.Integer(0), kets=(Ket(sy.Integer(0)),))
-        b1 = U1Basis(irrep=sy.Integer(1), kets=(Ket(sy.Integer(1)),))
+        b0 = U1Basis(u1=sy.Integer(0), rep=(sy.Integer(0),))
+        b1 = U1Basis(u1=sy.Integer(1), rep=(sy.Integer(1),))
         space = hilbert((b0, b1))
         data = torch.arange(8, dtype=torch.float64).reshape(2, 2, 2)
         tensor = Tensor(data=data, dims=(space, space, space))
@@ -1372,9 +1372,7 @@ def _simple_hilbert(tag: str, size: int, make_irrep=None) -> HilbertSpace:
         def make_irrep(n):
             return (tag, n)
 
-    basis = tuple(
-        U1Basis(irrep=sy.Integer(1), kets=(Ket(make_irrep(n)),)) for n in range(size)
-    )
+    basis = tuple(U1Basis(u1=sy.Integer(1), rep=(make_irrep(n),)) for n in range(size))
     return hilbert(basis)
 
 
@@ -1383,9 +1381,7 @@ def test_factorize_dim_then_product_dims_roundtrip_hilbert():
     right = _simple_hilbert("right", 3)
 
     factorizable = hilbert(
-        U1Basis(irrep=sy.Integer(1), kets=(Ket(i), Ket(j)))
-        for i in (0, 1)
-        for j in ("a", "b", "c")
+        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b", "c")
     )
 
     data = torch.arange(
@@ -1614,9 +1610,7 @@ def test_kernel_tensor_builds_rank2_tensor_from_kernel():
     left = _simple_hilbert("left", 3)
     right = _simple_hilbert("right", 2)
 
-    out = kernel_tensor(
-        lambda x, y: x.kets[0].irrep[1] - 10 * y.kets[0].irrep[1], (left, right)
-    )
+    out = kernel_tensor(lambda x, y: x.rep[0][1] - 10 * y.rep[0][1], (left, right))
 
     expected = torch.tensor(
         [[0, -10], [1, -9], [2, -8]],
@@ -1633,9 +1627,7 @@ def test_kernel_tensor_builds_rank3_tensor_from_kernel():
     c = _simple_hilbert("c", 2)
 
     out = kernel_tensor(
-        lambda x, y, z: x.kets[0].irrep[1]
-        + 2 * y.kets[0].irrep[1]
-        + 3 * z.kets[0].irrep[1],
+        lambda x, y, z: x.rep[0][1] + 2 * y.rep[0][1] + 3 * z.rep[0][1],
         (a, b, c),
     )
 
@@ -1643,9 +1635,7 @@ def test_kernel_tensor_builds_rank3_tensor_from_kernel():
     for i, x in enumerate(a.elements()):
         for j, y in enumerate(b.elements()):
             for k, z in enumerate(c.elements()):
-                expected[i, j, k] = (
-                    x.kets[0].irrep[1] + 2 * y.kets[0].irrep[1] + 3 * z.kets[0].irrep[1]
-                )
+                expected[i, j, k] = x.rep[0][1] + 2 * y.rep[0][1] + 3 * z.rep[0][1]
 
     assert out.dims == (a, b, c)
     assert torch.equal(out.data, expected)

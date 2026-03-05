@@ -3,7 +3,7 @@ import sympy as sy
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 
-from pyhilbert.hilbert_space import Ket, U1Basis, U1Span, HilbertSpace, hilbert
+from pyhilbert.hilbert_space import U1Basis, U1Span, HilbertSpace, hilbert
 from pyhilbert.state_space import MomentumSpace, brillouin_zone
 from pyhilbert.spatials import Lattice, Offset
 
@@ -14,7 +14,7 @@ class Orb:
 
 
 def _state(r: Offset, orb: str = "s", irrep: sy.Expr = sy.Integer(1)) -> U1Basis:
-    return U1Basis(irrep=irrep, kets=(Ket(r), Ket(Orb(orb))))
+    return U1Basis(u1=irrep, rep=(r, Orb(orb)))
 
 
 def test_u1_state_basic_properties_and_overlap():
@@ -41,12 +41,12 @@ def test_u1_state_irrep_access_and_replace():
 
     replaced = psi.replace(r1)
     assert replaced.irrep_of(Offset) == r1
-    assert replaced.kets[1] == Ket(Orb("p"))
+    assert replaced.rep[1] == Orb("p")
 
 
 def test_u1_state_rejects_non_unity_type_multiplicity():
     with pytest.raises(ValueError, match="unity multiplicity"):
-        U1Basis(irrep=sy.Integer(1), kets=(Ket("a"), Ket("b")))
+        U1Basis(u1=sy.Integer(1), rep=("a", "b"))
 
 
 def test_u1_span_addition_and_deduplication():
@@ -271,3 +271,73 @@ def test_statespace_type_errors():
 
     with pytest.raises(ValueError, match="different types"):
         hs & ms
+
+
+def test_hilbert_space_tensor_product_order_and_content():
+    left = hilbert(
+        (
+            U1Basis(u1=sy.Integer(1), rep=(0,)),
+            U1Basis(u1=sy.Integer(1), rep=(1,)),
+        )
+    )
+    right = hilbert(
+        (
+            U1Basis(u1=sy.Integer(1), rep=(Orb("a"),)),
+            U1Basis(u1=sy.Integer(1), rep=(Orb("b"),)),
+            U1Basis(u1=sy.Integer(1), rep=(Orb("c"),)),
+        )
+    )
+
+    out = left.tensor_product(right)
+    expected = tuple(a @ b for a in left.elements() for b in right.elements())
+
+    assert out.dim == left.dim * right.dim
+    assert out.elements() == expected
+
+
+def test_hilbert_space_factorize_success_two_groups():
+    h = hilbert(
+        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b", "c")
+    )
+
+    factorization = h.factorize((int,), (str,))
+    left, right = factorization.factorized
+
+    assert left.elements() == (
+        U1Basis(u1=sy.Integer(1), rep=(0,)),
+        U1Basis(u1=sy.Integer(1), rep=(1,)),
+    )
+    assert right.elements() == (
+        U1Basis(u1=sy.Integer(1), rep=("a",)),
+        U1Basis(u1=sy.Integer(1), rep=("b",)),
+        U1Basis(u1=sy.Integer(1), rep=("c",)),
+    )
+    assert factorization.align_dim.elements() == h.elements()
+
+
+def test_hilbert_space_factorize_rejects_missing_type():
+    h = hilbert(
+        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b")
+    )
+    with pytest.raises(ValueError, match="does not match space irrep types"):
+        h.factorize((int,))
+
+
+def test_hilbert_space_factorize_rejects_duplicate_type_request():
+    h = hilbert(
+        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b")
+    )
+    with pytest.raises(ValueError, match="must appear exactly once"):
+        h.factorize((int,), (int, str))
+
+
+def test_hilbert_space_factorize_rejects_incomplete_cartesian_product():
+    h = hilbert(
+        (
+            U1Basis(u1=sy.Integer(1), rep=(1, "a")),
+            U1Basis(u1=sy.Integer(1), rep=(1, "b")),
+            U1Basis(u1=sy.Integer(1), rep=(2, "a")),
+        )
+    )
+    with pytest.raises(ValueError, match="complete Cartesian product"):
+        h.factorize((int,), (str,))

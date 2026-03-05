@@ -14,7 +14,6 @@ from .state_space import MomentumSpace, same_span
 from .hilbert_space import (
     U1Operator,
     HilbertSpace,
-    Ket,
     U1Basis,
     U1Span,
     FuncOpr,
@@ -660,54 +659,20 @@ def _affine_transform_momentum(
     return irrep, new_k
 
 
-@AffineGroupElement.register(Ket)
-def _affine_transform_ket(
-    t: AffineGroupElement, ket: Ket[Any]
-) -> Tuple[sy.Expr, Ket[Any]]:
-    """
-    Apply an affine transform to a single ket when its irrep is supported.
-
-    The transform acts only on the ket's irrep payload. If the affine element
-    declares compatibility via `t.allows(ket.irrep)`, we apply `t` to that irrep
-    and return the resulting gauge factor with a ket rebuilt from the transformed
-    irrep. Unsupported ket payload types are treated as gauge-invariant and are
-    returned unchanged with unit gauge.
-
-    Parameters
-    ----------
-    `t` : `AffineGroupElement`
-        Affine symmetry operation.
-    `ket` : `Ket[Any]`
-        Input ket whose `irrep` payload may or may not be transformable by `t`.
-
-    Returns
-    -------
-    `Tuple[sy.Expr | None, Ket[Any]]`
-        Gauge factor and transformed ket. For unsupported payload types, the
-        ket is returned unchanged with unit gauge. For supported payload types,
-        the gauge is whatever is returned by applying `t` to `ket.irrep` (which
-        may be `None` for non-fixed-point objects in current dispatch rules).
-    """
-    if t.allows(ket.irrep):
-        gauge, new_irrep = t(ket.irrep)
-        return cast(sy.Expr, gauge), Ket(new_irrep)
-    return sy.Integer(1), ket  # Treat all other types as gauge invariant
-
-
 @AffineGroupElement.register(U1Basis)
 def _affine_transform_u1_state(
     t: AffineGroupElement, psi: U1Basis
 ) -> Tuple[sy.Expr | None, U1Basis]:
     """
-    Apply an affine transform to a `U1Basis` by transforming each ket component.
+    Apply an affine transform to a `U1Basis` by transforming each irrep component.
 
-    For each ket in `psi.kets`, this method delegates to `_affine_transform_ket`
-    (through multimethod dispatch `t(ket)`), multiplies all returned gauge factors,
-    and rebuilds the state from transformed kets. The state's irrep label is
+    For each irrep in `psi.rep`, this method applies `t` when compatible
+    (`t.allows(irrep)`), multiplies returned gauge factors, and rebuilds the state
+    from transformed irreps. The state's U(1) label is
     updated by the same accumulated gauge product when well-defined.
 
-    If any ket transform reports `None` gauge, the overall state gauge is set to
-    `None` (non-eigenstate under this symmetry), but ket transformations are still
+    If any irrep transform reports `None` gauge, the overall state gauge is set to
+    `None` (non-eigenstate under this symmetry), but irrep transformations are still
     applied and returned.
 
     Parameters
@@ -723,18 +688,21 @@ def _affine_transform_u1_state(
         Overall gauge (or `None` if not a symmetry eigenstate) and transformed
         `U1Basis`.
     """
-    overall_gauge: sy.Expr | None = psi.irrep
-    new_irrep: sy.Expr = psi.irrep
-    new_kets: Tuple[Ket[Any], ...] = tuple()
-    for ket in psi.kets:
-        gauge, new_ket = t(ket)
+    overall_gauge: sy.Expr | None = psi.u1
+    new_u1: sy.Expr = psi.u1
+    new_rep: Tuple[Any, ...] = tuple()
+    for irrep in psi.rep:
+        if t.allows(irrep):
+            gauge, transformed_irrep = t(irrep)
+        else:
+            gauge, transformed_irrep = sy.Integer(1), irrep
         if gauge is None:
             overall_gauge = None
         elif overall_gauge is not None:
             overall_gauge *= gauge
-            new_irrep *= gauge
-        new_kets += (new_ket,)
-    return overall_gauge, U1Basis(new_irrep, new_kets)
+            new_u1 *= gauge
+        new_rep += (transformed_irrep,)
+    return overall_gauge, U1Basis(new_u1, new_rep)
 
 
 @AffineGroupElement.register(U1Span)

@@ -3,14 +3,12 @@ import sympy as sy
 
 from pyhilbert.decompose import eig, eigh, eigvals, qr, svd
 from pyhilbert.state_space import FactorSpace
-from pyhilbert.hilbert_space import Ket, U1Basis, hilbert
+from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.tensors import Tensor
 
 
 def _space(name: str, n: int):
-    return hilbert(
-        U1Basis(irrep=sy.Integer(1), kets=(Ket((name, i)),)) for i in range(n)
-    )
+    return hilbert(U1Basis(u1=sy.Integer(1), rep=((name, i),)) for i in range(n))
 
 
 def test_eigh_reconstructs_hermitian_matrix():

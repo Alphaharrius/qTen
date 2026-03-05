@@ -13,7 +13,7 @@ from pyhilbert.affine_transform import (
 )
 from pyhilbert.fourier import fourier_transform
 from pyhilbert.state_space import MomentumSpace, brillouin_zone
-from pyhilbert.hilbert_space import HilbertSpace, Ket, U1Basis, FuncOpr, hilbert
+from pyhilbert.hilbert_space import HilbertSpace, U1Basis, FuncOpr, hilbert
 from pyhilbert.spatials import AffineSpace, Momentum, Offset
 from pyhilbert.spatials import Lattice
 from pyhilbert.tensors import Tensor
@@ -25,7 +25,7 @@ class Orb:
 
 
 def _state(*irreps, irrep: sy.Expr = sy.Integer(1)) -> U1Basis:
-    return U1Basis(irrep=irrep, kets=tuple(Ket(x) for x in irreps))
+    return U1Basis(u1=irrep, rep=tuple(irreps))
 
 
 def _space_and_offset(dim: int):
@@ -428,7 +428,7 @@ def test_affine_transform_eigen_opr_enforces_closure():
         non_closed_op(v)
 
 
-def test_affine_transform_ket_preserves_nontransformable_and_marks_nonclosure():
+def test_affine_transform_u1basis_preserves_nontransformable_and_marks_nonclosure():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
     t = AffineGroupElement(
@@ -439,18 +439,22 @@ def test_affine_transform_ket_preserves_nontransformable_and_marks_nonclosure():
     )
 
     gauge_offset, new_ket_offset = t(
-        Ket(Offset(rep=ImmutableDenseMatrix([0]), space=space))
+        U1Basis(
+            u1=sy.Integer(1), rep=(Offset(rep=ImmutableDenseMatrix([0]), space=space),)
+        )
     )
     assert gauge_offset is None
-    assert cast(Offset, new_ket_offset.irrep).rep == ImmutableDenseMatrix([1])
+    assert cast(Offset, new_ket_offset.irrep_of(Offset)).rep == ImmutableDenseMatrix(
+        [1]
+    )
 
-    orb_ket = Ket(Orb("p"))
+    orb_ket = U1Basis(u1=sy.Integer(1), rep=(Orb("p"),))
     gauge_orb, new_orb_ket = t(orb_ket)
     assert gauge_orb == 1
     assert new_orb_ket == orb_ket
 
 
-def test_affine_transform_u1state_propagates_none_gauge_when_any_ket_nonclosed():
+def test_affine_transform_u1state_propagates_none_gauge_when_any_irrep_nonclosed():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
     t = AffineGroupElement(
@@ -467,7 +471,7 @@ def test_affine_transform_u1state_propagates_none_gauge_when_any_ket_nonclosed()
     )
     gauge, new_psi = t(psi)
     assert gauge is None
-    assert new_psi.irrep == sy.Integer(2)
+    assert new_psi.u1 == sy.Integer(2)
     assert cast(Offset, new_psi.irrep_of(Offset)).rep == ImmutableDenseMatrix([1])
     assert cast(Orb, new_psi.irrep_of(Orb)).name == "p"
 

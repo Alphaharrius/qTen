@@ -6,7 +6,7 @@ import torch
 
 import plotly.graph_objects as go
 
-from pyhilbert.hilbert_space import Ket, U1Basis, hilbert
+from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.spatials import Lattice
 from pyhilbert.state_space import brillouin_zone
 from pyhilbert.tensors import Tensor
@@ -18,7 +18,7 @@ class Orb:
 
 
 def _basis_state(name: str) -> U1Basis:
-    return U1Basis(irrep=sy.Integer(1), kets=(Ket(Orb(name)),))
+    return U1Basis(u1=sy.Integer(1), rep=(Orb(name),))
 
 
 def _space(size: int, prefix: str):

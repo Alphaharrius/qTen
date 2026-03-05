@@ -11,7 +11,7 @@ from pyhilbert.spatials import (
     Momentum,
 )
 from pyhilbert.state_space import brillouin_zone
-from pyhilbert.hilbert_space import Ket, U1Basis, hilbert
+from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.tensors import Tensor
 from pyhilbert.basis_transform import bandfold, BasisTransform
 
@@ -22,7 +22,7 @@ class Orb:
 
 
 def _mode(r: Offset, orb: str = "s") -> U1Basis:
-    return U1Basis(irrep=sy.Integer(1), kets=(Ket(r), Ket(Orb(orb))))
+    return U1Basis(u1=sy.Integer(1), rep=(r, Orb(orb)))
 
 
 def test_bandfold_1d():

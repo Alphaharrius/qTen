@@ -37,59 +37,13 @@ _IrrepType = TypeVar("_IrrepType")
 """Defines a irreducible representation type."""
 
 
-@dataclass(frozen=True)  # eq=False, Skipping Operable.__eq__
-class Ket(Generic[_IrrepType], AbstractKet[int], Operable, Convertible):
-    """
-    A single basis label in the Hilbert construction.
-
-    A `Ket` wraps one irreducible-representation object (`irrep`). It does not
-    store amplitudes; it is only the symbolic building block used to form larger
-    tensor-product states with `@`.
-
-    Notes
-    -----
-    `Ket` can be converted to `U1Basis` via `ket.convert(U1Basis)`.
-    """
-
-    # TODO: In the future if we replace @dispatch operator_xxx with Opeator.register, check if this type defines __lt__ or __gt__
-    irrep: _IrrepType
-
-    @override
-    def ket(self, another: "Ket[_IrrepType]") -> int:
-        """
-        Return the overlap of this ket with another ket.
-
-        Parameters
-        ----------
-        `another` : `Ket[_IrrepType]`
-            The ket to compute the overlap with.
-
-        Returns
-        -------
-        `int`
-            `1` if the irreps of this ket and `another` are equal, `0` otherwise.
-        """
-        return int(self.irrep == another.irrep)
-
-
-@dispatch(Ket, Ket)
-def operator_lt(a: Ket[_IrrepType], b: Ket[_IrrepType]) -> bool:
-    return a.irrep < b.irrep  # type: ignore[operator]
-
-
-@dispatch(Ket, Ket)
-def operator_gt(a: Ket[_IrrepType], b: Ket[_IrrepType]) -> bool:
-    return a.irrep > b.irrep  # type: ignore[operator]
-
-
 @dataclass(frozen=True)
 class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     """
     Immutable single-particle basis state built from typed irreps.
 
     `U1Basis` is a symbolic tensor-product state with U(1) irreducible representation
-    presented as an ordered tuple of `Ket` objects. Each ket contributes one
-    irreducible representation label (`ket.irrep`) to the state. This object is
+    presented as an ordered tuple of irreps. This object is
     intentionally symbolic: it stores basis labels only and does not store amplitudes
     or coefficients.
 
@@ -100,32 +54,32 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
 
     Parameters
     ----------
-    `irrep`: `sy.Expr`
+    `u1`: `sy.Expr`
         The irrep of this state under an recent operation.
-    `kets` : `Tuple[Ket[Any], ...]`
-        Tuple of kets that defines the state. Input order is canonicalized in
-        `__post_init__` by sorting on `full_typename(type(ket.irrep))`.
+    `rep` : `Tuple[Any, ...]`
+        Tuple of irreps that defines the state. Input order is canonicalized in
+        `__post_init__` by sorting on `full_typename(type(irrep))`.
 
     Attributes
     ----------
-    `irrep`: `sy.Expr`
+    `u1`: `sy.Expr`
         The irrep of this state under an recent operation.
-    `kets` : `Tuple[Ket[Any], ...]`
-        Immutable canonical ket order sorted by concrete irrep type name
+    `rep` : `Tuple[Any, ...]`
+        Immutable canonical irrep order sorted by concrete irrep type name
         (`module.qualname`).
 
     Notes
     -----
     - `dim` is always `1`; this type represents one basis vector.
-    - Ket order is canonicalized at construction; permutations of the same
-      typed irreps produce the same internal `kets` tuple.
-    - `replace(irrep)` substitutes the unique ket whose irrep has the same
+    - Irrep order is canonicalized at construction; permutations of the same
+      typed irreps produce the same internal `rep` tuple.
+    - `replace(irrep)` substitutes the unique irrep with the same
       concrete runtime type as `irrep`.
-    - `@` dispatch overloads combine kets/states into a new `U1Basis`.
+    - `@` dispatch overloads combine reps/states into a new `U1Basis`.
     - `|` dispatch overloads build a `U1Span` of distinct `U1Basis` values.
     - Ordering (`<`, `>`) compares, in order: number of irreps, tuple of
       fully-qualified irrep type names (`module.qualname`) from
-      `canonical_repr()`, then the canonical irrep-value tuple itself.
+      `self.rep`, then the canonical irrep-value tuple itself.
       If irrep values of matching types are not orderable, the comparison
       raises from the underlying irrep objects.
 
@@ -136,13 +90,13 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         different from `1`.
     """
 
-    irrep: sy.Expr
-    kets: Tuple[Ket[Any], ...]
+    u1: sy.Expr
+    rep: Tuple[Any, ...]
 
     def __post_init__(self) -> None:
         counts: Dict[Type, int] = {}
-        for ket in self.kets:
-            irrep_type = type(ket.irrep)
+        for irrep in self.rep:
+            irrep_type = type(irrep)
             counts[irrep_type] = counts.get(irrep_type, 0) + 1
         non_singletons = {t: c for t, c in counts.items() if c != 1}
         if non_singletons:
@@ -153,14 +107,32 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
             )
         object.__setattr__(
             self,
-            "kets",
+            "rep",
             tuple(
                 sorted(
-                    self.kets,
-                    key=lambda ket: full_typename(type(ket.irrep)),
+                    self.rep,
+                    key=lambda irrep: full_typename(type(irrep)),
                 )
             ),
         )
+
+    @staticmethod
+    def build(*rep: Any) -> "U1Basis":
+        """
+        Build a `U1Basis` with the given reps and a default U(1) value of `1`.
+
+        Parameters
+        ----------
+        `rep` : `Any`
+            Irreps to build the state from. Input order is canonicalized in
+            `__post_init__` by sorting on `full_typename(type(irrep))`.
+
+        Returns
+        -------
+        `U1Basis`
+            A `U1Basis` instance with the given reps and a default U(1) value of `1`.
+        """
+        return U1Basis(u1=sy.Integer(1), rep=tuple(rep))
 
     @property
     def dim(self) -> int:
@@ -171,9 +143,9 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         """
         Return a new state where the irrep of the same concrete type is replaced.
 
-        The method searches this state's ket tuple for the unique ket whose irrep has
+        The method searches this state's irrep tuple for the unique irrep whose type has
         the same *exact* runtime type as `irrep` (using `type(x) is type(y)`), then
-        returns a new `U1Basis` with that ket substituted. The original instance is
+        returns a new `U1Basis` with that irrep substituted. The original instance is
         not modified.
 
         Parameters
@@ -185,19 +157,19 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         Returns
         -------
         `U1Basis`
-            A new `U1Basis` with one ket replaced.
+            A new `U1Basis` with one irrep replaced.
 
         Raises
         ------
         `ValueError`
-            If this state does not contain any ket whose irrep has the same concrete
+            If this state does not contain any irrep with the same concrete
             type as `irrep`.
         """
         target_type = type(irrep)
-        kets = self.kets
-        for i, ket in enumerate(kets):
-            if type(ket.irrep) is target_type:
-                return replace(self, kets=kets[:i] + (Ket(irrep),) + kets[i + 1 :])
+        reps = self.rep
+        for i, x in enumerate(reps):
+            if type(x) is target_type:
+                return replace(self, rep=reps[:i] + (irrep,) + reps[i + 1 :])
         raise ValueError(
             f"U1Basis has no irrep of type {target_type.__name__} to replace."
         )
@@ -206,8 +178,8 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         """
         Return the unique irrep in this state whose concrete type is `T`.
 
-        This method performs a direct scan over `self.kets` and returns the
-        first irrep satisfying `type(ket.irrep) is T`. Because
+        This method performs a direct scan over `self.rep` and returns the
+        first irrep satisfying `type(irrep) is T`. Because
         `U1Basis.__post_init__` enforces unity multiplicity for each irrep
         type, the match is unique whenever it exists.
 
@@ -230,11 +202,10 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         -----
         - Matching uses exact runtime type identity (`type(x) is T`), not
           subclass checks.
-        - Runtime is linear in the number of kets (`O(n)`), with no temporary
+        - Runtime is linear in the number of irreps (`O(n)`), with no temporary
           mapping allocations.
         """
-        for ket in self.kets:
-            irrep = ket.irrep
+        for irrep in self.rep:
             if type(irrep) is T:
                 return cast(_IrrepType, irrep)
         raise ValueError(f"U1Basis {self} has no irrep of type {T.__name__}.")
@@ -252,24 +223,24 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         Returns
         -------
         `sy.Expr`
-            The symbolic overlap of this state with `psi`. If the kets of the
-            two states do not match, the overlap is `0`. If the kets match, the
-            overlap is the product of this state's irrep and the conjugate of
-            `psi`'s irrep.
+            The symbolic overlap of this state with `psi`. If the irreps of the
+            two states do not match, the overlap is `0`. If the irreps match, the
+            overlap is the product of this state's U(1) value and the conjugate of
+            `psi`'s U(1) value.
         """
-        if not self.kets == psi.kets:
+        if self.rep != psi.rep:
             return sy.Integer(0)
-        return cast(sy.Expr, (sy.conjugate(self.irrep) * psi.irrep).simplify())
+        return cast(sy.Expr, (sy.conjugate(self.u1) * psi.u1).simplify())
 
     def __str__(self) -> str:
         ket_repr = "⊗".join(
             f"|{irrep_repr}⟩"
-            if len(irrep_repr := repr(ket.irrep)) <= 32
-            else f"|{type(ket.irrep).__name__}⟩"
-            for ket in self.kets
+            if len(irrep_repr := repr(irrep)) <= 32
+            else f"|{type(irrep).__name__}⟩"
+            for irrep in self.rep
         )
-        if self.irrep != sy.Integer(1):
-            ket_repr = f"({self.irrep}) * " + ket_repr
+        if self.u1 != sy.Integer(1):
+            ket_repr = f"({self.u1}) * " + ket_repr
         return ket_repr
 
     def __repr__(self) -> str:
@@ -278,48 +249,27 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     @override
     def unit(self) -> "U1Basis":
         """Get a new copy from this `U1Basis` with the U(1) irrep being `1`."""
-        return replace(self, irrep=sy.Integer(1))
+        return replace(self, u1=sy.Integer(1))
 
-    @lru_cache
-    def canonical_repr(self) -> Tuple[Any, ...]:
-        """
-        Get a canonical representation of this `U1Basis` for hashing and comparison.
-
-        Kets are canonicalized in `U1Basis` init with sorting on
-        `full_typename(type(ket.irrep))`, so this returns the ordered irrep tuple.
-
-        Returns
-        -------
-        `Tuple[Any, ...]`
-            Canonical irrep tuple in deterministic type-name order.
-        """
-        return tuple(ket.irrep for ket in self.kets)
-
-    def canonical_repr_types(self) -> Tuple[Type, ...]:
+    def repr_types(self) -> Tuple[Type, ...]:
         """
         Get a tuple of concrete irrep types in this `U1Basis` in canonical order.
 
-        This is the same order as `canonical_repr()`, which is determined by
-        sorting on `full_typename(type(ket.irrep))`.
+        This is the same order as `self.rep`, which is determined by
+        sorting on `full_typename(type(irrep))`.
 
         Returns
         -------
         `Tuple[Type, ...]`
             Tuple of concrete irrep types in deterministic type-name order.
         """
-        return tuple(type(ket.irrep) for ket in self.kets)
-
-
-@Ket.add_conversion(U1Basis)
-def ket_to_u1basis(ket: Ket[_IrrepType]) -> U1Basis:
-    """Convert a `Ket` to a `U1Basis` with the ket as its only element."""
-    return U1Basis(irrep=sy.Integer(1), kets=(ket,))
+        return tuple(type(irrep) for irrep in self.rep)
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_lt(a: U1Basis, b: U1Basis) -> bool:
-    rep_a = a.canonical_repr()
-    rep_b = b.canonical_repr()
+    rep_a = a.rep
+    rep_b = b.rep
     if len(rep_a) < len(rep_b):
         return True
     if len(rep_a) > len(rep_b):
@@ -335,8 +285,8 @@ def operator_lt(a: U1Basis, b: U1Basis) -> bool:
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_gt(a: U1Basis, b: U1Basis) -> bool:
-    rep_a = a.canonical_repr()
-    rep_b = b.canonical_repr()
+    rep_a = a.rep
+    rep_b = b.rep
     if len(rep_a) > len(rep_b):
         return True
     if len(rep_a) < len(rep_b):
@@ -717,9 +667,9 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         elements = self.elements()
         if not elements:  # An empty Hilbert space is considered homogeneous.
             return True
-        irrep_types = elements[0].canonical_repr_types()
+        irrep_types = elements[0].repr_types()
         for el in elements[1:]:
-            if el.canonical_repr_types() != irrep_types:
+            if el.repr_types() != irrep_types:
                 return False
         return True
 
@@ -751,7 +701,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         elements = self.elements()
         if not elements:
             return ()
-        return elements[0].canonical_repr_types()
+        return elements[0].repr_types()
 
     def factorize(self, *irrep_types: Tuple[Type, ...]) -> StateSpaceFactorization:
         """
@@ -820,7 +770,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         if any(not group for group in irrep_types):
             raise ValueError("Each irrep group in factorize must be non-empty.")
 
-        canonical_types = elements[0].canonical_repr_types()
+        canonical_types = elements[0].repr_types()
         requested_types = tuple(T for group in irrep_types for T in group)
         requested_set = set(requested_types)
         canonical_set = set(canonical_types)
@@ -852,10 +802,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
             keys: OrderedDict[Tuple[Any, ...], None] = OrderedDict()
             for el in elements:
                 keys[tuple(el.irrep_of(T) for T in group)] = None
-            grouped_basis = tuple(
-                U1Basis(sy.Integer(1), tuple(Ket(irrep) for irrep in key))
-                for key in keys
-            )
+            grouped_basis = tuple(U1Basis(sy.Integer(1), tuple(key)) for key in keys)
             factor_keys.append(tuple(keys.keys()))
             factorized.append(hilbert(grouped_basis))
 
@@ -1209,38 +1156,18 @@ def same_span(a: U1Span, b: U1Span) -> bool:
     return set(a.unit().span) == set(b.unit().span)
 
 
-@dispatch(Ket, Ket)
-def operator_eq(a: Ket, b: Ket) -> bool:
-    return a.irrep == b.irrep
-
-
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_eq(a: U1Basis, b: U1Basis) -> bool:
-    return a.irrep == b.irrep and a.kets == b.kets
-
-
-@dispatch(Ket, Ket)  # type: ignore[no-redef]
-def operator_matmul(a: Ket, b: Ket) -> U1Basis:
-    return U1Basis(sy.Integer(1), (a, b))
-
-
-@dispatch(U1Basis, Ket)  # type: ignore[no-redef]
-def operator_matmul(psi: U1Basis, ket: Ket) -> U1Basis:
-    return U1Basis(psi.irrep, psi.kets + (ket,))
-
-
-@dispatch(Ket, U1Basis)  # type: ignore[no-redef]
-def operator_matmul(ket: Ket, psi: U1Basis) -> U1Basis:
-    return U1Basis(psi.irrep, (ket,) + psi.kets)
+    return a.u1 == b.u1 and a.rep == b.rep
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_matmul(a: U1Basis, b: U1Basis) -> U1Basis:
-    if not a.kets:
+    if not a.rep:
         return b
-    if not b.kets:
+    if not b.rep:
         return a
-    return U1Basis((a.irrep * b.irrep).simplify(), a.kets + b.kets)
+    return U1Basis((a.u1 * b.u1).simplify(), a.rep + b.rep)
 
 
 @dispatch(U1Basis, U1Basis)
