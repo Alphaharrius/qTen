@@ -17,6 +17,7 @@ from pyhilbert.tensors import (
     matmul,
     one_hot,
     ones,
+    where,
     zeros,
 )
 from pyhilbert.hilbert_space import HilbertSpace, U1Basis, hilbert
@@ -1704,6 +1705,126 @@ def test_equal_returns_false_when_values_differ():
 
     assert not equal(a, b)
     assert not a.equal(b)
+
+
+def test_where_selects_between_input_and_other_with_alignment():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    mask_data = torch.tensor([True, False, True, False, True], dtype=torch.bool)
+    input_data_ab = torch.tensor([10.0, 11.0, 12.0, 13.0, 14.0], dtype=torch.float64)
+    other_data_ba = torch.tensor(
+        [100.0, 101.0, 102.0, 103.0, 104.0], dtype=torch.float64
+    )
+
+    condition = Tensor(data=mask_data, dims=(space_ab,))
+    input_tensor = Tensor(data=input_data_ab, dims=(space_ab,))
+    other_tensor = Tensor(data=other_data_ba, dims=(space_ba,))
+
+    out = where(condition, input_tensor, other_tensor)
+
+    aligned_other = other_tensor.align_all((space_ab,))
+    expected = torch.where(mask_data, input_data_ab, aligned_other.data)
+    assert out.dims == (space_ab,)
+    assert torch.equal(out.data, expected)
+
+
+def test_where_condition_only_returns_index_tensors():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_a = _space_from_modes(mode_a)
+    space_b = _space_from_modes(mode_b)
+
+    mask_data = torch.tensor(
+        [[True, False, True], [False, True, False]], dtype=torch.bool
+    )
+    condition = Tensor(data=mask_data, dims=(space_a, space_b))
+
+    out = where(condition)
+
+    expected = torch.where(mask_data)
+    assert len(out) == 2
+    assert len(expected) == 2
+    for actual, exp in zip(out, expected):
+        assert actual.dims == (IndexSpace.linear(exp.numel()),)
+        assert torch.equal(actual.data, exp)
+
+
+def test_where_rejects_non_bool_condition():
+    mode_a = make_mode("a", 2)
+    space_a = _space_from_modes(mode_a)
+    condition = Tensor(data=torch.tensor([1, 0], dtype=torch.int64), dims=(space_a,))
+    input_tensor = Tensor(data=torch.tensor([1.0, 2.0]), dims=(space_a,))
+    other_tensor = Tensor(data=torch.tensor([3.0, 4.0]), dims=(space_a,))
+
+    with pytest.raises(TypeError, match="torch.bool"):
+        _ = where(condition, input_tensor, other_tensor)
+
+    with pytest.raises(TypeError, match="torch.bool"):
+        _ = where(condition)
+
+
+def test_tensor_where_method_supports_ternary_form():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space_ab,),
+    )
+    input_tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.float64),
+        dims=(space_ab,),
+    )
+    other_tensor = Tensor(
+        data=torch.tensor([10.0, 11.0, 12.0, 13.0, 14.0], dtype=torch.float64),
+        dims=(space_ba,),
+    )
+
+    out = condition.where(input_tensor, other_tensor)
+    expected = where(condition, input_tensor, other_tensor)
+
+    assert out.dims == expected.dims
+    assert torch.equal(out.data, expected.data)
+
+
+def test_tensor_where_method_supports_condition_only_form():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_a = _space_from_modes(mode_a)
+    space_b = _space_from_modes(mode_b)
+
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(space_a, space_b),
+    )
+
+    out = condition.where()
+    expected = where(condition)
+
+    assert len(out) == len(expected)
+    for actual, exp in zip(out, expected):
+        assert actual.dims == exp.dims
+        assert torch.equal(actual.data, exp.data)
+
+
+def test_tensor_where_method_rejects_single_argument():
+    mode_a = make_mode("a", 2)
+    space_a = _space_from_modes(mode_a)
+    condition = Tensor(
+        data=torch.tensor([True, False], dtype=torch.bool),
+        dims=(space_a,),
+    )
+    input_tensor = Tensor(data=torch.tensor([1.0, 2.0]), dims=(space_a,))
+
+    with pytest.raises(TypeError, match="where\\(\\) or where\\(input, other\\)"):
+        _ = condition.where(input=input_tensor)
 
 
 def test_equal_matches_torch_behavior_for_dtype_mismatch():

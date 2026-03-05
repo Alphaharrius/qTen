@@ -23,6 +23,7 @@ from .abstracts import Convertible, Operable, Plottable
 from .state_space import (
     StateSpace,
     BroadcastSpace,
+    IndexSpace,
     StateSpaceFactorization,
     embedding_order,
     permutation_order,
@@ -262,6 +263,56 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
             Boolean tensor after reduction.
         """
         return all(self, dim=dim, keepdim=keepdim)
+
+    def where(
+        self,
+        input: Optional["Tensor"] = None,
+        other: Optional["Tensor"] = None,
+    ) -> Union["Tensor", Tuple["Tensor", ...]]:
+        """
+        Apply `where` using this tensor as the boolean condition mask.
+
+        Supported call forms
+        --------------------
+        - `condition.where(input, other)`:
+          elementwise selection between `input` and `other`.
+        - `condition.where()`:
+          returns index tensors of `True` entries.
+
+        Parameters
+        ----------
+        `input` : `Optional[Tensor]`, optional
+            Tensor selected where `condition` is `True`.
+        `other` : `Optional[Tensor]`, optional
+            Tensor selected where `condition` is `False`.
+
+        Returns
+        -------
+        `Union[Tensor, Tuple[Tensor, ...]]`
+            Return value depends on call form:
+            - For `condition.where(input, other)`, returns a single `Tensor`
+              with `dims == condition.dims`. Data is selected elementwise:
+              `input` where condition is `True`, and `other` where condition is
+              `False` (after both are aligned to `condition.dims`).
+            - For `condition.where()`, returns `Tuple[Tensor, ...]` with one
+              1D index tensor per condition axis (same ordering as
+              `torch.where(condition)` / `torch.nonzero(as_tuple=True)`).
+              Each returned tensor has shape `(nnz,)` and
+              `dims == (IndexSpace.linear(nnz),)`, where `nnz` is the number of
+              `True` entries in `condition`.
+
+        Raises
+        ------
+        `TypeError`
+            If only one of `input`/`other` is provided.
+        """
+        if input is None and other is None:
+            return where(self)
+        if input is None or other is None:
+            raise TypeError(
+                "Tensor.where supports either where() or where(input, other)"
+            )
+        return where(self, input, other)
 
     def unsqueeze(self, dim: int) -> "Tensor":
         """
@@ -2033,3 +2084,88 @@ def product_dims(tensor: Tensor, *indices_group: Tuple[int, ...]) -> Tensor:
         cursor += len(group)
 
     return Tensor(data=permuted.data.reshape(tuple(new_shape)), dims=tuple(new_dims))
+
+
+@dispatch(Tensor, Tensor, Tensor)
+def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> Tensor:
+    """
+    Select values from `input` and `other` using a boolean mask.
+
+    This is the StateSpace-aware wrapper of `torch.where(condition, input, other)`.
+    The `input` and `other` tensors are first aligned to `condition.dims`, then
+    selection is applied elementwise:
+
+    - if `condition[i]` is `True`, output uses `input[i]`
+    - otherwise, output uses `other[i]`
+
+    Parameters
+    ----------
+    `condition` : `Tensor[torch.BoolTensor]`
+        Boolean mask tensor that defines the output dimensions.
+    `input` : `Tensor`
+        Values chosen where the mask is `True`. Must be alignable to
+        `condition.dims`.
+    `other` : `Tensor`
+        Values chosen where the mask is `False`. Must be alignable to
+        `condition.dims`.
+
+    Returns
+    -------
+    `Tensor`
+        Tensor with `dims == condition.dims`.
+
+    Raises
+    ------
+    `TypeError`
+        If `condition.data` is not boolean.
+    `ValueError`
+        If `input` or `other` cannot be aligned to `condition.dims`.
+    """
+    if condition.data.dtype != torch.bool:
+        raise TypeError("where expects condition.data to have dtype torch.bool")
+
+    input = input.align_all(condition.dims)
+    other = other.align_all(condition.dims)
+    return Tensor(
+        data=torch.where(condition.data, input.data, other.data),
+        dims=condition.dims,
+    )
+
+
+@dispatch(Tensor)  # type: ignore[no-redef]
+def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
+    """
+    Return coordinate tensors of `True` entries in a boolean mask.
+
+    This is the StateSpace-aware wrapper of `torch.where(condition)` and follows
+    `torch.nonzero(condition, as_tuple=True)` semantics.
+
+    For a mask of rank `R`, this returns `R` tensors. The `k`-th tensor stores
+    the indices along axis `k` for each `True` element. All returned tensors are
+    1D and share the same length, equal to the number of `True` entries.
+
+    The 1D dimension on each returned tensor is `IndexSpace.linear(nnz)`, where
+    `nnz` is the number of selected positions.
+
+    Parameters
+    ----------
+    `condition` : `Tensor[torch.BoolTensor]`
+        Boolean mask tensor.
+
+    Returns
+    -------
+    `Tuple[Tensor, ...]`
+        Tuple of index tensors with length matching `torch.where(condition)`.
+
+    Raises
+    ------
+    `TypeError`
+        If `condition.data` is not boolean.
+    """
+    if condition.data.dtype != torch.bool:
+        raise TypeError("where expects condition.data to have dtype torch.bool")
+
+    indices = torch.where(condition.data)
+    nnz = indices[0].numel() if len(indices) > 0 else 0
+    index_dim = IndexSpace.linear(nnz)
+    return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
