@@ -373,12 +373,8 @@ def u1basis_to_u1span(basis: U1Basis) -> U1Span:
     return U1Span((basis,))
 
 
-U1Elements = Union[U1Basis, U1Span]
-"""Union of valid element types in a `HilbertSpace`."""
-
-
 @dataclass(frozen=True)
-class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
+class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis, Tensor]):
     """
     Composite local Hilbert space built from states and state spans.
 
@@ -432,18 +428,8 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         if not self.structure:
             return f"{self}: <empty>"
 
-        def _format_el(el: U1Elements) -> str:
-            if isinstance(el, U1Basis):
-                return str(el)
-            span = cast(U1Span, el)
-            if span.dim <= 3:
-                preview = ", ".join(str(state) for state in span.span)
-            else:
-                preview = f"{span.span[0]}, {span.span[1]}, ..., {span.span[-1]}"
-            return f"U1Span(dim={span.dim})[{preview}]"
-
         body = "\n".join(
-            f"\t{n}: {s.start}:{s.stop} {_format_el(el)}"
+            f"\t{n}: {s.start}:{s.stop} {str(el)}"
             for n, (el, s) in enumerate(self.structure.items())
         )
         return f"{self}:\n{body}"
@@ -509,7 +495,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         `HilbertSpace`
             A new instance of `HilbertSpace` with all `HilbertSpan` flattened.
         """
-        flattened_elements: OrderedDict[U1Elements, slice] = OrderedDict()
+        flattened_elements: OrderedDict[U1Basis, slice] = OrderedDict()
         for el in self.structure.keys():
             if issubclass(type(el), U1Span):
                 for m in cast(U1Span, el).elements():
@@ -898,8 +884,8 @@ class HilbertSpace(HasUnit, StateSpace[U1Elements], Span[U1Elements, Tensor]):
         return Tensor(data=data, dims=(self, another.unit()))
 
 
-def hilbert(itr: Iterable[U1Elements]) -> HilbertSpace:
-    structure: OrderedDict[U1Elements, slice] = OrderedDict()
+def hilbert(itr: Iterable[U1Basis]) -> HilbertSpace:
+    structure: OrderedDict[U1Basis, slice] = OrderedDict()
     base = 0
     for el in itr:
         structure[el] = slice(base, base + el.dim)
