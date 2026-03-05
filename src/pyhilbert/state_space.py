@@ -46,12 +46,13 @@ class StateSpace(Spatial, Convertible, Generic[T]):
 
     def __post_init__(self) -> None:
         values = tuple(self.structure.values())
-        if any((not isinstance(v, int)) or isinstance(v, bool) for v in values):
+        if any(type(v) is not int for v in values):
             raise TypeError("StateSpace.structure values must be integer indices.")
         n = len(values)
-        if set(values) != set(range(n)):
+        if values != tuple(range(n)):
             raise ValueError(
-                "StateSpace.structure values must form a contiguous index set 0..n-1."
+                "StateSpace.structure values must match insertion order as contiguous "
+                "indices 0..n-1."
             )
 
     @property
@@ -231,14 +232,16 @@ def permutation_order(src: "StateSpace", dest: "StateSpace") -> Tuple[int, ...]:
     `ValueError`
         If a destination sector key is missing from the source state space.
     """
-    order_table = {k: n for n, k in enumerate(src.structure.keys())}
-    missing = [k for k in dest.structure.keys() if k not in order_table]
-    if missing:
+    src_indices = src.structure
+    dest_keys = dest.structure.keys()
+    try:
+        return tuple(src_indices[k] for k in dest_keys)
+    except KeyError:
+        missing = [k for k in dest_keys if k not in src_indices]
         raise ValueError(
             "Cannot build permutation order: destination contains keys not present "
             f"in source: {missing}"
-        )
-    return tuple(order_table[k] for k in dest.structure.keys())
+        ) from None
 
 
 @lru_cache
