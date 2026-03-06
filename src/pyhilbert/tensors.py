@@ -803,13 +803,9 @@ def _match_dims_for_matmul(left: Tensor, right: Tensor) -> Tuple[Tensor, Tensor]
         right = right.unsqueeze(-1)
 
     if left.rank() > right.rank():
-        # Unsqueeze right tensor
-        for _ in range(left.rank() - right.rank()):
-            right = right.unsqueeze(0)
+        right = promote_rank(right, left.rank())
     elif right.rank() > left.rank():
-        # Unsqueeze left tensor
-        for _ in range(right.rank() - left.rank()):
-            left = left.unsqueeze(0)
+        left = promote_rank(left, right.rank())
     return left, right
 
 
@@ -903,13 +899,9 @@ def operator_matmul(left: Tensor, right: Tensor) -> Tensor:
 
 def _match_dims_for_tensoradd(left: Tensor, right: Tensor) -> Tuple[Tensor, Tensor]:
     if left.rank() > right.rank():
-        # Unsqueeze right tensor
-        for _ in range(left.rank() - right.rank()):
-            right = right.unsqueeze(0)
+        right = promote_rank(right, left.rank())
     elif right.rank() > left.rank():
-        # Unsqueeze left tensor
-        for _ in range(right.rank() - left.rank()):
-            left = left.unsqueeze(0)
+        left = promote_rank(left, right.rank())
     return left, right
 
 
@@ -2204,6 +2196,46 @@ def product_dims(tensor: Tensor, *indices_group: Tuple[int, ...]) -> Tensor:
     return Tensor(data=permuted.data.reshape(tuple(new_shape)), dims=tuple(new_dims))
 
 
+def promote_rank(tensor: Tensor, target_rank: int) -> Tensor:
+    """
+    Return `tensor` with leading broadcast axes prepended to reach `target_rank`.
+
+    This function preserves the existing axis order and values while adding
+    `target_rank - tensor.rank()` leading singleton axes in `tensor.data`.
+    The corresponding leading entries in `dims` are `BroadcastSpace()`.
+
+    Parameters
+    ----------
+    `tensor` : `Tensor`
+        Input tensor.
+    `target_rank` : `int`
+        Desired output rank. Must satisfy `target_rank >= tensor.rank()`.
+
+    Returns
+    -------
+    `Tensor`
+        `tensor` if no promotion is needed; otherwise a tensor with prepended
+        broadcast axes and matching prepended `BroadcastSpace` dims.
+
+    Raises
+    ------
+    `ValueError`
+        If `target_rank < tensor.rank()`.
+    """
+    current_rank = tensor.rank()
+    if target_rank < current_rank:
+        raise ValueError(
+            f"Cannot promote rank {current_rank} tensor to lower target rank {target_rank}"
+        )
+    if target_rank == current_rank:
+        return tensor
+
+    prepend_count = target_rank - current_rank
+    new_dims = (BroadcastSpace(),) * prepend_count + tensor.dims
+    new_shape = (1,) * prepend_count + tuple(tensor.data.shape)
+    return Tensor(data=tensor.data.reshape(new_shape), dims=new_dims)
+
+
 @dispatch(Tensor, Tensor, Tensor)
 def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> Tensor:
     """
@@ -2452,10 +2484,10 @@ class TensorIndexing:
             tensor_entries = tuple(cast(Tensor, indices[i]) for i in tensor_positions)
             max_tensor_rank = max(idx.rank() for idx in tensor_entries)
             for pos in tensor_positions:
-                tensor_idx = cast(Tensor, indices[pos])
-                while tensor_idx.rank() < max_tensor_rank:
-                    tensor_idx = tensor_idx.unsqueeze(0)
-                promoted[pos] = tensor_idx
+                promoted[pos] = promote_rank(
+                    cast(Tensor, indices[pos]),
+                    max_tensor_rank,
+                )
         return promoted
 
     def _normalize(self) -> Tuple[TensorIndexType, ...]:
