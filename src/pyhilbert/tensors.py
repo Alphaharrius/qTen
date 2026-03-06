@@ -630,10 +630,15 @@ class Tensor(Generic[T], Operable, Plottable, Convertible):
           that output dimension.
         - `slice`:
           - full slice `:` preserves the current `StateSpace`,
-          - non-full slice uses `self.dims[axis][slice]`.
+          - non-full slice uses `self.dims[axis][slice]`, except
+            `BroadcastSpace` axes where metadata follows sliced size:
+            size `1` keeps `BroadcastSpace`, size `0` becomes
+            `IndexSpace.linear(0)`.
         - `None`: inserts a new output axis with `BroadcastSpace` and does not
           consume a source axis.
         - `StateSpace` / `Convertible`:
+          - indexing a `BroadcastSpace` axis with any non-`BroadcastSpace`
+            `StateSpace` is rejected (`IndexError`),
           - if equal to current axis space: behaves like full slice,
           - if same span: uses permutation indexing and output dim is the index
             `StateSpace`,
@@ -2374,9 +2379,13 @@ class TensorIndexing:
     - `int`: consumes one source axis; removes that axis from output metadata.
     - `slice`:
       - full `:` preserves the source axis `StateSpace`,
-      - non-full uses `dim[slice]`.
+      - non-full uses `dim[slice]`, except for `BroadcastSpace` where
+        output metadata follows sliced size (`BroadcastSpace` for size `1`,
+        `IndexSpace.linear(0)` for size `0`).
     - `None`: inserts one `BroadcastSpace` axis; consumes no source axis.
     - `StateSpace` / `Convertible`:
+      - on `BroadcastSpace` source axes, only `BroadcastSpace` is accepted;
+        other `StateSpace` indices raise `IndexError`,
       - equal space -> full-slice behavior,
       - same span -> permutation index (`Tuple[int, ...]`),
       - contained subspace -> embedding index (`Tuple[int, ...]`),
