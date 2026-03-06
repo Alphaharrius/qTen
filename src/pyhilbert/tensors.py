@@ -2242,8 +2242,10 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
     Select values from `input` and `other` using a boolean mask.
 
     This is the StateSpace-aware wrapper of `torch.where(condition, input, other)`.
-    The three tensors are first symmetrically aligned/broadcast to shared union
-    dims, then selection is applied elementwise:
+    The three tensors are first promoted to a common rank by prepending leading
+    `BroadcastSpace` axes (torch-style rank broadcasting), then symmetrically
+    aligned/broadcast to shared union dims, and finally selection is applied
+    elementwise:
 
     - if `condition[i]` is `True`, output uses `input[i]`
     - otherwise, output uses `other[i]`
@@ -2274,6 +2276,11 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
     """
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
+
+    target_rank = max(condition.rank(), input.rank(), other.rank())
+    condition = promote_rank(condition, target_rank)
+    input = promote_rank(input, target_rank)
+    other = promote_rank(other, target_rank)
 
     merged_dims = union_dims(condition.dims, input.dims, other.dims, allow_merge=False)
     condition = condition.align_all(merged_dims).expand_to_union(list(merged_dims))

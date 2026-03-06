@@ -1656,6 +1656,29 @@ def test_where_uses_symmetric_broadcast_dims():
     assert torch.equal(out.data, expected)
 
 
+def test_where_supports_scalar_condition_broadcast_to_higher_rank_operands():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    condition = Tensor(data=torch.tensor(True, dtype=torch.bool), dims=())
+    input_tensor = Tensor(
+        data=torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float64),
+        dims=(a, b),
+    )
+    other_tensor = Tensor(
+        data=torch.tensor(
+            [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]], dtype=torch.float64
+        ),
+        dims=(a, b),
+    )
+
+    out = where(condition, input_tensor, other_tensor)
+
+    expected = torch.where(condition.data, input_tensor.data, other_tensor.data)
+    assert out.dims == (a, b)
+    assert torch.equal(out.data, expected)
+
+
 def test_tensor_where_method_supports_ternary_form():
     mode_a = make_mode("a", 2)
     mode_b = make_mode("b", 3)
