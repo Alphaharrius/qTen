@@ -16,7 +16,6 @@ from typing import cast
 from typing_extensions import override
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator
-from functools import lru_cache
 from itertools import product
 
 import numpy as np
@@ -300,7 +299,7 @@ def operator_gt(a: U1Basis, b: U1Basis) -> bool:
 
 
 @dataclass(frozen=True)
-class U1Span(Span[U1Basis, sy.ImmutableDenseMatrix], Spatial, HasUnit, Convertible):
+class U1Span(Span[U1Basis], Spatial, HasUnit, Convertible):
     """
     Finite span of distinct single-particle basis states.
 
@@ -351,7 +350,6 @@ class U1Span(Span[U1Basis, sy.ImmutableDenseMatrix], Spatial, HasUnit, Convertib
         """Return the actual span without any basis scaling by a irrep."""
         return U1Span(tuple(m.unit() for m in self.span))
 
-    @override
     def gram(self, ket: "U1Span") -> sy.ImmutableDenseMatrix:
         tbl: Dict["U1Basis", Tuple[int, "U1Basis"]] = {
             psi.unit(): (n, psi) for n, psi in enumerate(ket.span)
@@ -373,7 +371,7 @@ def u1basis_to_u1span(basis: U1Basis) -> U1Span:
 
 
 @dataclass(frozen=True)
-class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis, Tensor]):
+class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
     """
     Composite local Hilbert space built from states and state spans.
 
@@ -470,11 +468,6 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis, Tensor]):
                 f"Multiple states found for query={query}; expected a unique match."
             )
         return matches[0]
-
-    @lru_cache
-    def elements(self) -> Tuple[U1Basis, ...]:
-        """Get the basis elements of this `HilbertSpace` in stored order."""
-        return tuple(self.structure.keys())
 
     def group(
         self, **groups: Union[Callable[[U1Basis], bool], Any]
@@ -1128,32 +1121,3 @@ def operator_or(state: U1Basis, space: HilbertSpace) -> HilbertSpace:
     if state in space.structure:
         return space
     return hilbert((state, *space.elements()))
-
-
-@dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
-def operator_or(a: HilbertSpace, b: HilbertSpace) -> HilbertSpace:
-    existing = set(a.structure.keys())
-    new_elements = tuple(el for el in b if el not in existing)
-    return hilbert((*a.elements(), *new_elements))
-
-
-@dispatch(HilbertSpace, U1Basis)  # type: ignore[no-redef]
-def operator_sub(space: HilbertSpace, state: U1Basis) -> HilbertSpace:
-    return hilbert(el for el in space if el != state)
-
-
-@dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
-def operator_sub(a: HilbertSpace, b: HilbertSpace) -> HilbertSpace:
-    b_elements = set(b.structure.keys())
-    return hilbert(el for el in a if el not in b_elements)
-
-
-@dispatch(HilbertSpace, U1Basis)  # type: ignore[no-redef]
-def operator_and(space: HilbertSpace, state: U1Basis) -> HilbertSpace:
-    return hilbert((state,)) if state in space.structure else hilbert(())
-
-
-@dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
-def operator_and(a: HilbertSpace, b: HilbertSpace) -> HilbertSpace:
-    b_elements = set(b.structure.keys())
-    return hilbert(el for el in a if el in b_elements)

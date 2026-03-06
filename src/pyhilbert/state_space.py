@@ -8,7 +8,7 @@ from itertools import islice
 
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 
-from .abstracts import Convertible
+from .abstracts import Convertible, Span
 from .spatials import (
     Spatial,
     ReciprocalLattice,
@@ -21,7 +21,7 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class StateSpace(Spatial, Convertible, Generic[T]):
+class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
     """
     `StateSpace` is a collection of indices with additional information attached to the elements,
     for the case of TNS there are only two types of state spaces: `MomentumSpace` and `HilbertSpace`.
@@ -60,9 +60,10 @@ class StateSpace(Spatial, Convertible, Generic[T]):
         """The total size of the vector space."""
         return len(self.structure)
 
+    @override
     def elements(self) -> Tuple[T, ...]:
         """Return the spatial elements as a tuple."""
-        return tuple(k for k in self.structure.keys())
+        return tuple(self.structure.keys())
 
     def __len__(self) -> int:
         """Return the number of spatial elements."""
@@ -70,7 +71,7 @@ class StateSpace(Spatial, Convertible, Generic[T]):
 
     def __iter__(self) -> Iterator[T]:
         """Iterate over spatial elements."""
-        return iter(k for k, _ in self.structure.items())
+        return iter(self.structure.keys())
 
     def __hash__(self):
         # TODO: Do we need to consider the order of the structure?

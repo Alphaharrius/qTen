@@ -495,10 +495,9 @@ class Functional(ABC):
 
 
 _ElementType = TypeVar("_ElementType")
-_MappingType = TypeVar("_MappingType")
 
 
-class Span(ABC, Generic[_ElementType, _MappingType]):
+class Span(ABC, Generic[_ElementType]):
     """
     An object representing the span of a set of elements.
 
@@ -523,24 +522,6 @@ class Span(ABC, Generic[_ElementType, _MappingType]):
         -------
         `Tuple[_ElementType, ...]`
             Immutable tuple of elements represented by this span.
-        """
-        pass
-
-    @abstractmethod
-    def gram(self, another: Self) -> _MappingType:
-        """
-        Return the gram matrix of this span to `another` with the current span
-        at the row space and `another` as the col space.
-
-        Parameters
-        ----------
-        `another` : `Self`
-            The another span.
-
-        Returns
-        -------
-        `_MappingType`
-            The mapping between this span and `another`, typically represented as a matrix.
         """
         pass
 

@@ -116,12 +116,6 @@ def test_hilbert_space_creation_and_operations():
     prepend_state = s2 | hs1
     assert list(prepend_state.structure.keys()) == [s2, s0, s1]
 
-    sub_state = hs1 - s0
-    assert list(sub_state.structure.keys()) == [s1]
-
-    inter_state = hs1 & s1
-    assert list(inter_state.structure.keys()) == [s1]
-
 
 def test_hilbert_space_group_with_kwargs_selector():
     basis = ImmutableDenseMatrix([[1]])
