@@ -2459,10 +2459,19 @@ class TensorIndexing:
 
     @dispatch(int, slice)  # type: ignore[no-redef]
     def _compile(self, idx: int, v: slice) -> Tuple[int, Tuple[StateSpace, ...], slice]:
+        dim = self.dims[idx]
         # Check if its a full slice `:`
         if v.start is None and v.stop is None and v.step is None:
-            return idx + 1, (self.dims[idx],), v
-        return idx + 1, (self.dims[idx][v],), v
+            return idx + 1, (dim,), v
+
+        if isinstance(dim, BroadcastSpace):
+            # BroadcastSpace always reports dim==1, but non-full slicing can
+            # produce an empty axis at runtime (e.g., unsqueeze(0)[1:]).
+            out_size = len(range(dim.dim)[v])
+            out_dim: StateSpace = dim if out_size == 1 else IndexSpace.linear(out_size)
+            return idx + 1, (out_dim,), v
+
+        return idx + 1, (dim[v],), v
 
     @dispatch(int, type(None))  # type: ignore[no-redef]
     def _compile(self, idx: int, _: None) -> Tuple[int, Tuple[StateSpace, ...], None]:
@@ -2475,6 +2484,17 @@ class TensorIndexing:
         if isinstance(v, Convertible) and not isinstance(v, StateSpace):
             v = v.convert(StateSpace)
         dim = self.dims[idx]
+
+        if isinstance(dim, BroadcastSpace):
+            if isinstance(v, BroadcastSpace):
+                return idx + 1, (dim,), slice(None)
+            raise IndexError(
+                "Cannot index a BroadcastSpace axis with StateSpace metadata. "
+                f"BroadcastSpace represents a singleton broadcast axis without "
+                f"concrete basis elements; received {type(v).__name__}(dim={v.dim}). "
+                "Use slice/int/None indexing instead."
+            )
+
         if dim == v:
             return idx + 1, (dim,), slice(None)
         if same_span(dim, v):

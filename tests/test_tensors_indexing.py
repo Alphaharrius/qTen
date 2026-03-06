@@ -183,6 +183,44 @@ class TestTensorGetitem:
         expected = getitem_ctx.data_3d[0:2, :, :]
         assert torch.equal(out.data, expected)
 
+    def test_getitem_non_full_slice_on_unsqueezed_axis_keeps_shape_consistent(
+        self, getitem_ctx
+    ):
+        tensor = getitem_ctx.tensor_mat.unsqueeze(0)
+        out = tensor[1:]
+        expected = getitem_ctx.data_mat.unsqueeze(0)[1:]
+
+        assert isinstance(out, Tensor)
+        assert torch.equal(out.data, expected)
+        assert tuple(d.dim for d in out.dims) == tuple(out.data.shape)
+
+    def test_getitem_broadcast_axis_with_singleton_statespace_index_raises(
+        self, getitem_ctx
+    ):
+        tensor = getitem_ctx.tensor_mat.unsqueeze(0)
+        singleton = IndexSpace.linear(1)
+
+        with pytest.raises(IndexError, match="Cannot index a BroadcastSpace axis"):
+            _ = tensor[singleton]
+
+    def test_getitem_broadcast_axis_with_empty_statespace_index_raises(
+        self, getitem_ctx
+    ):
+        tensor = getitem_ctx.tensor_mat.unsqueeze(0)
+        empty = IndexSpace.linear(0)
+
+        with pytest.raises(IndexError, match="Cannot index a BroadcastSpace axis"):
+            _ = tensor[empty]
+
+    def test_getitem_broadcast_axis_with_non_singleton_statespace_raises(
+        self, getitem_ctx
+    ):
+        tensor = getitem_ctx.tensor_mat.unsqueeze(0)
+        non_singleton = IndexSpace.linear(2)
+
+        with pytest.raises(IndexError, match="Cannot index a BroadcastSpace axis"):
+            _ = tensor[non_singleton]
+
     def test_getitem_with_u1basis_index(self):
         b0 = U1Basis(u1=sy.Integer(0), rep=(sy.Integer(0),))
         b1 = U1Basis(u1=sy.Integer(1), rep=(sy.Integer(1),))
