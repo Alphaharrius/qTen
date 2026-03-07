@@ -4,13 +4,17 @@ from sympy import ImmutableDenseMatrix
 from pyhilbert.spatials import Lattice, Offset, Momentum
 from pyhilbert.hilbert import hilbert, Mode, brillouin_zone
 from pyhilbert.fourier import fourier_transform
+from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.utils import FrozenDict
-
 
 def test_fourier_kernel_1d():
     # 1D Lattice a=1
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual
 
     # Define K points: 0, 0.25, 0.5, 0.75 (fractional in reciprocal basis)
@@ -44,7 +48,11 @@ def test_fourier_kernel_1d():
 def test_fourier_tensor_construction():
     # 1D Lattice
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))  # 2 unit cells
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )  # 2 unit cells
     recip = lat.dual
 
     # k-space: 2 points (0, 0.5)
@@ -86,7 +94,11 @@ def test_fourier_tensor_unitarity():
     # 1D Lattice
     basis = ImmutableDenseMatrix([[1]])
     n_cells = 4
-    lat = Lattice(basis=basis, shape=(n_cells,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(n_cells)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual
 
     # k-space: 4 points

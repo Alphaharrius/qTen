@@ -10,13 +10,19 @@ from pyhilbert.spatials import (
     AffineSpace,
     AbstractLattice,
 )
+from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.utils import FrozenDict
+
 
 
 def test_lattice_creation_and_dual():
     # 2D square lattice
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lattice = Lattice(basis=basis, shape=(2, 2))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
 
     assert lattice.dim == 2
     assert lattice.shape == (2, 2)
@@ -43,7 +49,14 @@ def test_lattice_creation_and_dual():
 def test_lattice_with_unit_cell():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     unit_cell_input = {"a": (0, 0), "b": (0.5, 0.5)}
-    lattice = Lattice(basis=basis, shape=(2, 2), unit_cell=unit_cell_input)
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={
+            "a": ImmutableDenseMatrix(unit_cell_input["a"]),
+            "b": ImmutableDenseMatrix(unit_cell_input["b"]),
+        },
+    )
 
     assert isinstance(lattice.unit_cell, FrozenDict)
     assert len(lattice.unit_cell) == 2
@@ -54,12 +67,16 @@ def test_lattice_with_unit_cell():
 
     # ReciprocalLattice should not accept unit_cell
     with pytest.raises(TypeError):
-        ReciprocalLattice(basis=basis, shape=(2, 2), unit_cell=unit_cell_input)
+        ReciprocalLattice(basis=basis, lattice=lattice, unit_cell=unit_cell_input)
 
 
 def test_cartes_lattice():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lattice = Lattice(basis=basis, shape=(2, 2))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
 
     # cartes should return offsets for (0,0), (0,1), (1,0), (1,1)
     points = cartes(lattice)
@@ -80,7 +97,11 @@ def test_cartes_lattice():
 def test_cartes_reciprocal_lattice():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     # shape (2, 2)
-    lattice = Lattice(basis=basis, shape=(2, 2))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     reciprocal = lattice.dual
 
     points = cartes(reciprocal)
@@ -100,13 +121,21 @@ def test_cartes_reciprocal_lattice():
 def test_coords():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     # Default unit cell (empty -> one atom at origin)
-    lattice = Lattice(basis=basis, shape=(2, 2))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     coords = lattice.coords()
     assert coords.shape == (4, 2)
 
     # Explicit unit cell
     unit_cell = {"a": (0.1, 0.1)}
-    lattice_offset = Lattice(basis=basis, shape=(2, 2), unit_cell=unit_cell)
+    lattice_offset = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"a": ImmutableDenseMatrix(unit_cell["a"])},
+    )
     coords_offset = lattice_offset.coords()
     assert coords_offset.shape == (4, 2)
 

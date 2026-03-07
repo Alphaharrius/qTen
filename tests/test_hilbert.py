@@ -1,6 +1,7 @@
 import pytest
 from pyhilbert.hilbert import Mode, hilbert, HilbertSpace, MomentumSpace, brillouin_zone
 from pyhilbert.spatials import Lattice
+from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.utils import FrozenDict
 from sympy import ImmutableDenseMatrix
 
@@ -137,7 +138,11 @@ def test_statespace_getitem():
 
 def test_momentum_space_brillouin():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lat = Lattice(basis=basis, shape=(2, 2))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     recip = lat.dual
 
     ms = brillouin_zone(recip)
