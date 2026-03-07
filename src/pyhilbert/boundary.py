@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from itertools import product
 import sympy as sy
 from sympy import ImmutableDenseMatrix
-from sympy.matrices.normalforms import smith_normal_decomp
+from sympy.matrices.normalforms import smith_normal_decomp  # type: ignore[import-untyped]
 
 
 class BoundaryCondition(ABC):

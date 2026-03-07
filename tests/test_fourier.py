@@ -24,7 +24,7 @@ def test_fourier_kernel_1d():
 
     # Define R offsets: 0, 1, 2, 3 (fractional/integer in lattice basis)
     r_reps = [0, 1, 2, 3]
-    R = tuple(Offset(rep=ImmutableDenseMatrix([r]), space=lat.affine) for r in r_reps)
+    R = tuple(Offset(rep=ImmutableDenseMatrix([r]), space=lat) for r in r_reps)
 
     # Compute Fourier
     ft = fourier_transform(K, R)
@@ -61,8 +61,8 @@ def test_fourier_tensor_construction():
     assert k_space.dim == 2
 
     # Region space: 2 sites, one at 0, one at 1.
-    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
-    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat)
+    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat)
 
     m0 = Mode(count=1, attr=FrozenDict({"r": r0, "orb": "s"}))
     m1 = Mode(count=1, attr=FrozenDict({"r": r1, "orb": "s"}))
@@ -111,14 +111,14 @@ def test_fourier_tensor_unitarity():
     # The region is the whole crystal.
     region_modes = []
     for i in range(n_cells):
-        r = Offset(rep=ImmutableDenseMatrix([i]), space=lat.affine)
+        r = Offset(rep=ImmutableDenseMatrix([i]), space=lat)
         m = Mode(count=1, attr=FrozenDict({"r": r, "orb": "s"}))
         region_modes.append(m)
     region_space = hilbert(region_modes)
     assert region_space.dim == n_cells
 
     # Bloch space: 1 site at 0 (defines the unit cell for Bloch states)
-    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat)
     b0 = Mode(count=1, attr=FrozenDict({"r": r0, "orb": "s"}))
     bloch_space = hilbert([b0])
     assert bloch_space.dim == 1

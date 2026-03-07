@@ -404,7 +404,7 @@ def test_affine_transform_momentum_c4_ignores_translation_and_wraps_fractional()
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([2, -3]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([2, -3]), space=lattice),
         basis_function_order=1,
     )
     k = Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 4), 0]), space=recip)
@@ -425,11 +425,11 @@ def test_affine_transform_mode_transforms_supported_attrs_only():
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
-    r = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)
+    r = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice)
     m = Mode(count=1, attr=FrozenDict({"r": r, "orb": "p"}))
     out = t(m)
 
@@ -439,7 +439,7 @@ def test_affine_transform_mode_transforms_supported_attrs_only():
     assert out_mode.count == m.count
     assert out_mode["orb"] == "p"  # non-transformable attribute preserved
     assert out_mode["r"] == Offset(
-        rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice.affine
+        rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice
     )
 
 
@@ -453,12 +453,12 @@ def test_affine_transform_hilbert_c4_mode_mapping():
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
-    r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)
-    r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice.affine)
+    r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice)
+    r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice)
     m_x = Mode(count=1, attr=FrozenDict({"r": r_x, "orb": "p"}))
     m_y = Mode(count=1, attr=FrozenDict({"r": r_y, "orb": "p"}))
     h = hilbert([m_x, m_y])
@@ -538,7 +538,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     k_space = brillouin_zone(lattice.dual)
 
     # Single-orbital Hilbert space in a square unit cell.
-    r0 = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    r0 = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
     mode = Mode(count=1, attr=FrozenDict({"r": r0, "orb": "s"})).with_gauge_repr(
         AbelianIrrep(
             expr=x - sy.I * y,
@@ -563,7 +563,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     c4 = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
@@ -584,8 +584,8 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     k_space = brillouin_zone(lattice.dual)
 
     # Two orbitals exchanged by C4 around origin.
-    r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)
-    r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice.affine)
+    r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice)
+    r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice)
     m_x = Mode(count=1, attr=FrozenDict({"r": r_x, "orb": "p"}))
     m_y = Mode(count=1, attr=FrozenDict({"r": r_y, "orb": "p"}))
     h_space = hilbert([m_x, m_y])
@@ -606,7 +606,7 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     c4 = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 

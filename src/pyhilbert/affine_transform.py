@@ -9,10 +9,11 @@ import sympy as sy
 import torch
 
 from .abstracts import HasBase, Functional, Gaugable, GaugeBasis, Gauged, GaugeInvariant
-from .spatials import AffineSpace, Spatial, Offset, Momentum
+from .spatials import Lattice, Spatial, Offset, Momentum
 from .hilbert import Mode, MomentumSpace, HilbertSpace, hilbert
 from .tensors import Tensor, mapping_matrix
 from .fourier import fourier_transform
+from .boundary import PeriodicBoundary
 from .utils import FrozenDict
 
 
@@ -83,7 +84,7 @@ class AbelianIrrepSet(Gaugable, GaugeBasis):
 
 
 @dataclass(frozen=True)
-class AffineGroupElement(Functional, HasBase[AffineSpace]):
+class AffineGroupElement(Functional, HasBase[Lattice]):
     """
     Affine group element acting on polynomial coordinate functions.
 
@@ -100,7 +101,7 @@ class AffineGroupElement(Functional, HasBase[AffineSpace]):
     axes : Tuple[sy.Symbol, ...]
         Ordered symbols defining the coordinate axes (used to build monomials).
     offset : Offset
-        Translation component with its associated `AffineSpace`.
+        Translation component with its associated lattice space.
     basis_function_order : int
         Polynomial order used to build the monomial basis (degree).
     """
@@ -172,7 +173,7 @@ class AffineGroupElement(Functional, HasBase[AffineSpace]):
     @lru_cache
     def affine_rep(self) -> sy.ImmutableDenseMatrix:
         """
-        Use the `AffineSpace` of `offset` to build the affine transform matrix in
+        Use the lattice space of `offset` to build the affine transform matrix in
         physical (space-basis) coordinates.
         It will take the form of:
         ```
@@ -222,13 +223,13 @@ class AffineGroupElement(Functional, HasBase[AffineSpace]):
 
         return FrozenDict(tbl)
 
-    def base(self) -> AffineSpace:
+    def base(self) -> Lattice:
         """Get the acting space of this affine group element."""
         return self.offset.space
 
-    def rebase(self, new_base: AffineSpace) -> "AffineGroupElement":
+    def rebase(self, new_base: Lattice) -> "AffineGroupElement":
         """
-        Change the acting space of this affine group element to a new `AffineSpace`.
+        Change the acting space of this affine group element to a new `Lattice`.
         """
         return AffineGroupElement(
             irrep=self.irrep,
@@ -466,7 +467,7 @@ def _affine_transform_offset(t: AffineGroupElement, offset: Offset) -> Offset:
     Apply an affine group element to a spatial Offset using homogeneous coordinates.
 
     This implementation:
-    - Ensures the transform acts in the same AffineSpace as the input Offset by
+    - Ensures the transform acts in the same lattice space as the input Offset by
       rebasing the transform if necessary.
     - Uses the affine (homogeneous) representation of the transform to combine
       rotation/shear and translation in a single matrix multiply.
@@ -483,7 +484,7 @@ def _affine_transform_offset(t: AffineGroupElement, offset: Offset) -> Offset:
     Returns
     -------
     `Offset`
-        A new `Offset` expressed in the same `AffineSpace` as the input `offset`.
+        A new `Offset` expressed in the same lattice as the input `offset`.
 
     Notes
     -----
@@ -549,7 +550,7 @@ def _affine_transform_momentum(t: AffineGroupElement, k: Momentum) -> Momentum:
         The transformed momentum in the same reciprocal lattice space as `k`,
         wrapped into the first Brillouin zone via `.fractional()`.
     """
-    real_space = k.base().dual.affine
+    real_space = k.base().dual
     if t.base() != real_space:
         t = t.rebase(real_space)
 
@@ -966,7 +967,7 @@ def pointgroup(query: str) -> AffineGroupElement:
     Returns an `AffineGroupElement` with:
     - `irrep`: the linear matrix representation from query semantics,
     - `axes`: symbols in ambient order,
-    - `offset`: zero offset in identity `AffineSpace`,
+    - `offset`: zero offset in the identity lattice,
     - `basis_function_order`: parsed `<order>`.
 
     Examples
@@ -1019,7 +1020,11 @@ def pointgroup(query: str) -> AffineGroupElement:
             f"Unsupported group '{group}'. Supported groups are cyclic and mirror."
         )
 
-    space = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(dim))
+    space = Lattice(
+        basis=sy.ImmutableDenseMatrix.eye(dim),
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.eye(dim)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0] * dim)},
+    )
     zero = Offset(rep=sy.ImmutableDenseMatrix([0] * dim), space=space)
     return AffineGroupElement(
         irrep=irrep,

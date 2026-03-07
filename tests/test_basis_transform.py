@@ -29,7 +29,7 @@ def test_bandfold_1d():
     assert k_space.dim == 4
 
     # 1b. Define a simple 1-dim Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
     h_space = hilbert([Mode(count=1, attr=FrozenDict({"r": r_offset}))])
     assert h_space.dim == 1
 
@@ -85,7 +85,7 @@ def test_bandfold_2d():
     assert k_space.dim == 4
 
     # 1b. Define a simple Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
     h_space = hilbert([Mode(count=1, attr=FrozenDict({"orb": "s", "r": r_offset}))])
     assert h_space.dim == 1
 
@@ -187,8 +187,12 @@ def test_reciprocal_lattice_transform():
 
 def test_offset_transform():
     basis = ImmutableDenseMatrix([[1]])
-    space = AffineSpace(basis=basis)
-    offset = Offset(rep=ImmutableDenseMatrix([1]), space=space)
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    offset = Offset(rep=ImmutableDenseMatrix([1]), space=lattice)
 
     M = ImmutableDenseMatrix([[2]])
     t = BasisTransform(M)

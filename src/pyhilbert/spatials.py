@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from .precision import get_precision_config
 from sympy import ImmutableDenseMatrix, sympify
-from sympy.matrices.normalforms import smith_normal_form
+from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 from .utils import FrozenDict
 from .abstracts import Operable, HasDual, HasBase, Plottable
 from .boundary import BoundaryCondition
@@ -52,9 +52,7 @@ class AbstractLattice(AffineSpace, HasDual):
 @dataclass(frozen=True)
 class Lattice(AbstractLattice):
     boundaries: BoundaryCondition
-    _unit_cell_fractional: FrozenDict[str, ImmutableDenseMatrix] = field(
-        init=False, repr=False, compare=True
-    )
+    _unit_cell_fractional: FrozenDict = field(init=False, repr=False, compare=True)
 
     @property
     @lru_cache
@@ -97,7 +95,7 @@ class Lattice(AbstractLattice):
 
     @property
     @lru_cache
-    def unit_cell(self) -> FrozenDict[str, "Offset"]:
+    def unit_cell(self) -> FrozenDict:
         return FrozenDict(
             {
                 site: Offset(rep=offset, space=self)
@@ -156,7 +154,7 @@ class ReciprocalLattice(AbstractLattice):
     @property
     @lru_cache
     def size(self) -> int:
-        return np.prod(self.shape)
+        return int(np.prod(self.shape))
 
     @property
     @lru_cache
@@ -253,6 +251,8 @@ class Offset(Spatial, HasBase[Lattice]):
 
 @dataclass(frozen=True)
 class Momentum(Offset, HasBase[ReciprocalLattice]):
+    space: ReciprocalLattice  # type: ignore[assignment]
+
     @override
     def fractional(self) -> "Momentum":
         """
@@ -264,7 +264,7 @@ class Momentum(Offset, HasBase[ReciprocalLattice]):
 
     fractional = lru_cache(fractional)  # Prevent mypy type checking issues
 
-    def base(self) -> ReciprocalLattice:
+    def base(self) -> ReciprocalLattice:  # type: ignore[override]
         """Get the `ReciprocalLattice` this `Momentum` is expressed in."""
         assert isinstance(self.space, ReciprocalLattice), (
             "Momentum.space must be a ReciprocalLattice"
@@ -331,9 +331,7 @@ def operator_sub(a: Momentum, b: Momentum) -> Momentum:
 @lru_cache
 def cartes(lattice: Lattice) -> Tuple[Offset, ...]:
     elements = product(*tuple(range(n) for n in lattice.shape))
-    return tuple(
-        Offset(rep=ImmutableDenseMatrix(el), space=lattice.affine) for el in elements
-    )
+    return tuple(Offset(rep=ImmutableDenseMatrix(el), space=lattice) for el in elements)
 
 
 @dispatch(ReciprocalLattice)  # type: ignore[no-redef]

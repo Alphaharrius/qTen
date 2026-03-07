@@ -66,9 +66,7 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
     if lat.unit_cell:
         items = lat.unit_cell.items()
     else:
-        default_offset = Offset(
-            rep=ImmutableDenseMatrix([0] * lat.dim), space=lat.affine
-        )
+        default_offset = Offset(rep=ImmutableDenseMatrix([0] * lat.dim), space=lat)
         items = [("0", default_offset)]
 
     new_basis = t.M @ lat.basis
@@ -182,7 +180,7 @@ def bandfold(
     scaled_offsets = sorted(
         scaled_lattice.unit_cell.values(), key=lambda x: tuple(x.rep)
     )
-    enlarge_unit_cell = tuple(r.rebase(lattice.affine) for r in scaled_offsets)
+    enlarge_unit_cell = tuple(r.rebase(lattice) for r in scaled_offsets)
 
     # Transform based on opt
     switch_index = -2 if opt == "left" else -1
