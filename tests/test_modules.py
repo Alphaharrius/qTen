@@ -29,6 +29,18 @@ class NestedBlock(Module):
         self.scale = Tensor(data=torch.tensor([1.0, 2.0]), dims=()).attach()
 
 
+class DispatchedAffineBlock(Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = Tensor(data=torch.tensor([2.0, -1.0]), dims=()).attach()
+        self.bias = Tensor(data=torch.tensor([0.5, 1.5]), dims=()).attach()
+
+
+@DispatchedAffineBlock.register(torch.Tensor)
+def _apply_dispatched_affine(module: DispatchedAffineBlock, x: torch.Tensor) -> Tensor:
+    return Tensor(data=module.weight.data * x + module.bias.data, dims=())
+
+
 @nograd_tensors("cache")
 class ParentAnnotatedBlock(Module):
     def __init__(self):
@@ -165,6 +177,23 @@ class TestModules:
         assert module.weight.grad.equal(Tensor(data=expected_weight_grad, dims=()))
         assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=()))
         assert module.basis.grad is None
+
+    def test_functional_dispatch_path_preserves_gradients(self):
+        module = DispatchedAffineBlock()
+        x = torch.tensor([3.0, -2.0])
+        target = torch.tensor([1.0, -1.0])
+
+        output = module(x)
+        loss = Tensor(data=((output.data - target) ** 2).sum(), dims=())
+        loss.backward()
+
+        expected_weight_grad = 2 * (output.data.detach() - target) * x
+        expected_bias_grad = 2 * (output.data.detach() - target)
+
+        assert module.weight.grad is not None
+        assert module.bias.grad is not None
+        assert module.weight.grad.equal(Tensor(data=expected_weight_grad, dims=()))
+        assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=()))
 
     def test_nograd_tensor_annotations_are_inherited_and_applied(self):
         module = ChildAnnotatedBlock()
