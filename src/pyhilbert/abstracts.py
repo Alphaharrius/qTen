@@ -441,7 +441,7 @@ class Functional(ABC):
         """
         return self._resolve_method(type(obj), type(self)) is not None
 
-    def apply(self, obj: Any, **kwargs) -> Any:
+    def invoke(self, obj: Any, **kwargs) -> Any:
         functional_class = type(self)
         obj_class = type(obj)
         method = self._resolve_method(obj_class, functional_class)
@@ -455,7 +455,7 @@ class Functional(ABC):
         return method(self, obj, **kwargs)
 
     def __call__(self, obj: Any, **kwargs) -> Any:
-        return self.apply(obj, **kwargs)
+        return self.invoke(obj, **kwargs)
 
 
 _ElementType = TypeVar("_ElementType")

@@ -998,10 +998,10 @@ class U1Operator(Generic[_ObservableType], Functional, Operable, ABC):
     """
 
     @override
-    def apply(  # type: ignore[override]
+    def invoke(  # type: ignore[override]
         self, v: U1Basis, **kwargs
     ) -> Tuple[_ObservableType, U1Basis]:
-        result = super().apply(v, **kwargs)
+        result = super().invoke(v, **kwargs)
         assert isinstance(result, tuple), (
             f"Operator {type(self)} acting on {type(v).__name__} should yield a Tuple[Any, Any]!"
         )
@@ -1058,7 +1058,7 @@ class U1Operator(Generic[_ObservableType], Functional, Operable, ABC):
         - Fail fast with `ValueError` if `state` is not an eigenstate.
         """
         op = copy(self)
-        apply = op.apply
+        apply = op.invoke
 
         def eigen_apply(v: U1Basis, **kwargs) -> Tuple[_ObservableType, U1Basis]:
             """
@@ -1104,7 +1104,7 @@ class U1Operator(Generic[_ObservableType], Functional, Operable, ABC):
                 )
             return o, ov
 
-        object.__setattr__(op, "apply", eigen_apply)
+        object.__setattr__(op, "invoke", eigen_apply)
         return op
 
 
