@@ -24,7 +24,7 @@ import sympy as sy
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from .utils import FrozenDict, full_typename
-from .validations import Validator, Validatable, validate_by
+from .validations import need_validation
 from .abstracts import AbstractKet, Convertible, Operable, Functional, Span, HasUnit
 from .spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
@@ -36,46 +36,23 @@ _IrrepType = TypeVar("_IrrepType")
 """Defines a irreducible representation type."""
 
 
-class ValidateU1BasisMultiplicity(Validator["U1Basis"]):
-    """
-    Validate that each concrete irrep type appears exactly once in a `U1Basis`.
-
-    `U1Basis` relies on unity multiplicity so type-based operations such as
-    `replace()` and `irrep_of()` remain unambiguous.
-    """
-
-    @override
-    def validate(self, value: "U1Basis") -> None:
-        """
-        Reject basis states whose irrep tuple contains repeated concrete types.
-
-        Parameters
-        ----------
-        `value` : `U1Basis`
-            Basis state whose canonicalized `rep` tuple is being checked.
-
-        Raises
-        ------
-        `ValueError`
-            If any concrete irrep type appears with multiplicity different
-            from `1`.
-        """
-        counts: Dict[Type, int] = {}
-        for irrep in value.rep:
-            irrep_type = type(irrep)
-            counts[irrep_type] = counts.get(irrep_type, 0) + 1
-        non_singletons = {t: c for t, c in counts.items() if c != 1}
-        if non_singletons:
-            detail = ", ".join(f"{t.__name__}:{c}" for t, c in non_singletons.items())
-            raise ValueError(
-                "U1Basis allows only irrep with unity multiplicity; "
-                f"got multiple non-singleton types ({detail})."
-            )
+def _check_u1_multiplicity(value: "U1Basis") -> None:
+    counts: Dict[Type, int] = {}
+    for irrep in value.rep:
+        irrep_type = type(irrep)
+        counts[irrep_type] = counts.get(irrep_type, 0) + 1
+    non_singletons = {t: c for t, c in counts.items() if c != 1}
+    if non_singletons:
+        detail = ", ".join(f"{t.__name__}:{c}" for t, c in non_singletons.items())
+        raise ValueError(
+            "U1Basis allows only irrep with unity multiplicity; "
+            f"got multiple non-singleton types ({detail})."
+        )
 
 
-@validate_by(ValidateU1BasisMultiplicity())
+@need_validation(_check_u1_multiplicity)
 @dataclass(frozen=True)
-class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible, Validatable):
+class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     """
     Immutable single-particle basis state built from typed irreps.
 
@@ -398,6 +375,7 @@ def u1basis_to_u1span(basis: U1Basis) -> U1Span:
     return U1Span((basis,))
 
 
+@need_validation()
 @dataclass(frozen=True)
 class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
     """

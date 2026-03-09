@@ -75,6 +75,33 @@ def test_affine_group_rep_shape_for_order_two():
     assert t.rep.shape == (3, 3)
 
 
+def test_affine_group_rejects_non_invertible_irrep():
+    x, y = sy.symbols("x y")
+    _, offset = _space_and_offset(2)
+
+    with pytest.raises(ValueError, match="non-zero determinant"):
+        AffineGroupElement(
+            irrep=ImmutableDenseMatrix([[1, 0], [0, 0]]),
+            axes=(x, y),
+            offset=offset,
+            basis_function_order=1,
+        )
+
+
+def test_affine_group_rejects_non_numerical_irrep():
+    x, y = sy.symbols("x y")
+    a = sy.symbols("a")
+    _, offset = _space_and_offset(2)
+
+    with pytest.raises(ValueError, match="contain only numerical entries"):
+        AffineGroupElement(
+            irrep=ImmutableDenseMatrix([[1, a], [0, 1]]),
+            axes=(x, y),
+            offset=offset,
+            basis_function_order=1,
+        )
+
+
 def test_affine_group_affine_rep_identity_basis():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(2)

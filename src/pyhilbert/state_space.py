@@ -9,7 +9,7 @@ from itertools import islice
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from .abstracts import Convertible, Span
-from .validations import Validator, Validatable, validate_by
+from .validations import need_validation
 from .spatials import (
     Spatial,
     ReciprocalLattice,
@@ -21,69 +21,25 @@ from .spatials import (
 T = TypeVar("T")
 
 
-class ValidateIntegerIndices(Validator["StateSpace"]):
+def _check_contiguous_indices(s: "StateSpace") -> None:
     """
-    Validate that `StateSpace.structure` values are plain integer indices.
+    Validator function to check that a state space's structure indices are contiguous.
 
-    `StateSpace` uses these values as flattened sector positions, so they must
-    be concrete `int` values rather than arbitrary numeric types.
+    This is a standalone function version of `ValidateContiguousIndices.validate`
+    for use in `@need_validation` without needing to define a separate class.
     """
-
-    @override
-    def validate(self, value: "StateSpace") -> None:
-        """
-        Reject state spaces whose structure values are not plain integers.
-
-        Parameters
-        ----------
-        `value` : `StateSpace`
-            State space whose structure index values are being checked.
-
-        Raises
-        ------
-        `TypeError`
-            If any structure value is not an `int`.
-        """
-        if any(type(v) is not int for v in value.structure.values()):
-            raise TypeError("StateSpace.structure values must be integer indices.")
+    values = tuple(s.structure.values())
+    n = len(values)
+    if values != tuple(range(n)):
+        raise ValueError(
+            "StateSpace.structure values must match insertion order as contiguous "
+            "indices 0..n-1."
+        )
 
 
-class ValidateContiguousIndices(Validator["StateSpace"]):
-    """
-    Validate that `StateSpace.structure` indices match insertion order `0..n-1`.
-
-    This ensures the structure mapping is a compact, order-preserving index
-    table with no gaps or out-of-order assignments.
-    """
-
-    @override
-    def validate(self, value: "StateSpace") -> None:
-        """
-        Reject state spaces whose indices are not contiguous in insertion order.
-
-        Parameters
-        ----------
-        `value` : `StateSpace`
-            State space whose flattened index ordering is being checked.
-
-        Raises
-        ------
-        `ValueError`
-            If the structure values do not exactly equal `0, 1, ..., n-1` in
-            insertion order.
-        """
-        values = tuple(value.structure.values())
-        n = len(values)
-        if values != tuple(range(n)):
-            raise ValueError(
-                "StateSpace.structure values must match insertion order as contiguous "
-                "indices 0..n-1."
-            )
-
-
-@validate_by(ValidateIntegerIndices(), ValidateContiguousIndices())
+@need_validation(_check_contiguous_indices)
 @dataclass(frozen=True)
-class StateSpace(Spatial, Convertible, Generic[T], Span[T], Validatable):
+class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
     """
     `StateSpace` is a collection of indices with additional information attached to the elements,
     for the case of TNS there are only two types of state spaces: `MomentumSpace` and `HilbertSpace`.
@@ -377,6 +333,7 @@ def operator_eq(a: StateSpace, b: StateSpace):
     return a.structure == b.structure
 
 
+@need_validation()
 @dataclass(frozen=True)
 class MomentumSpace(StateSpace[Momentum]):
     # Ensure that __hash__ is inherited from StateSpace since the hash of StateSpace is specifically
@@ -419,6 +376,7 @@ class _BAxis:
     pass
 
 
+@need_validation()
 @dataclass(frozen=True)
 class BroadcastSpace(StateSpace[_BAxis]):
     """
@@ -507,12 +465,16 @@ def operator_add(a: BroadcastSpace, b: StateSpace):
     return b
 
 
+@need_validation()
+@dataclass(frozen=True)
 class IndexSpace(StateSpace[int]):
     """
     A simple state space where the spatial elements are just integer indices.
     This can be useful for representing generic tensor dimensions that don't
     have a specific physical interpretation, such as the virtual bond dimension in a TNS.
     """
+
+    __hash__ = StateSpace.__hash__
 
     @staticmethod
     def linear(size: int) -> "IndexSpace":

@@ -11,7 +11,8 @@ import torch
 from .precision import get_precision_config
 from sympy import ImmutableDenseMatrix, sympify
 from .utils import FrozenDict
-from .validations import Validator, Validatable, validate_by
+from .validations import need_validation
+from .validations.symbolics import check_invertibility, check_numerical
 from .abstracts import Convertible, Operable, HasDual, HasBase, Plottable
 
 
@@ -23,6 +24,7 @@ class Spatial(Operable, Plottable, ABC):
         raise NotImplementedError()
 
 
+@need_validation(check_invertibility("basis"))
 @dataclass(frozen=True)
 class AffineSpace(Spatial):
     basis: ImmutableDenseMatrix
@@ -169,40 +171,17 @@ _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
 """Type variable for vector types that can be returned by `Offset.to_vec()`."""
 
 
-class ValidateOffsetMatchesSpace(Validator["Offset"]):
-    """
-    Validate that an `Offset` representation is compatible with its affine space.
-
-    `Offset.rep` is required to be a column vector with one row per spatial
-    dimension in `Offset.space`.
-    """
-
-    @override
-    def validate(self, value: "Offset") -> None:
-        """
-        Reject offsets whose coordinate representation does not match the space.
-
-        Parameters
-        ----------
-        `value` : `Offset`
-            Offset instance whose representation/space compatibility is being
-            checked.
-
-        Raises
-        ------
-        `ValueError`
-            If `value.rep.shape` is not `(value.space.dim, 1)`.
-        """
-        if value.rep.shape != (value.space.dim, 1):
-            raise ValueError(
-                f"Offset.rep must have shape {(value.space.dim, 1)} to match its affine space, "
-                f"got {value.rep.shape}."
-            )
+def _check_offset_matches_space(r: "Offset") -> None:
+    if r.rep.shape != (r.space.dim, 1):
+        raise ValueError(
+            f"Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
+            f"got {r.rep.shape}."
+        )
 
 
-@validate_by(ValidateOffsetMatchesSpace())
+@need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)
-class Offset(Spatial, HasBase[AffineSpace], Validatable):
+class Offset(Spatial, HasBase[AffineSpace]):
     """
     Offset vector in an affine basis.
 

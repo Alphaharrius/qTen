@@ -113,3 +113,25 @@ def test_coords():
     # Check that (0.1, 0.1) is in the coordinates (corresponding to cell 0,0)
     expected = torch.tensor([0.1, 0.1], dtype=torch.float64)
     assert torch.any(torch.all(torch.isclose(coords_offset, expected), dim=1))
+
+
+def test_offset_rejects_rep_with_wrong_dim():
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+
+    with pytest.raises(ValueError, match="must have shape"):
+        Offset(rep=ImmutableDenseMatrix([1, 2, 3]), space=space)
+
+
+def test_offset_rejects_row_vector_rep():
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+
+    with pytest.raises(ValueError, match="must have shape"):
+        Offset(rep=ImmutableDenseMatrix([[1, 2]]), space=space)
+
+
+def test_offset_rejects_non_numerical_rep():
+    x = sy.symbols("x")
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+
+    with pytest.raises(ValueError, match="contain only numerical entries"):
+        Offset(rep=ImmutableDenseMatrix([x, 1]), space=space)

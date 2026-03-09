@@ -9,7 +9,8 @@ import numpy as np
 
 from .abstracts import Functional
 from .utils import FrozenDict, matchby
-from .validations import Validator, Validatable, validate_by
+from .validations import need_validation
+from .validations.symbolics import check_invertibility, check_numerical
 from .spatials import Lattice, ReciprocalLattice, Offset, Momentum, AffineSpace
 from .state_space import MomentumSpace, brillouin_zone
 from .hilbert_space import HilbertSpace, U1Basis, hilbert
@@ -17,36 +18,9 @@ from .tensors import Tensor, mapping_matrix
 from .fourier import fourier_transform
 
 
-# TODO: This can actually be used for other matrix like transformations, this is for the `HasRep` update to handle
-class ValidateInvertibility(Validator["BasisTransform"]):
-    """
-    Validate that a basis transform matrix is invertible.
-
-    `BasisTransform` operations require `M` to define a non-singular lattice
-    basis change, so zero-determinant matrices are rejected at construction.
-    """
-
-    def validate(self, transform: "BasisTransform") -> None:
-        """
-        Reject transforms whose matrix has zero determinant.
-
-        Parameters
-        ----------
-        `transform` : `BasisTransform`
-            Transform instance whose matrix is being validated.
-
-        Raises
-        ------
-        `ValueError`
-            If `transform.M` is singular.
-        """
-        if transform.M.det() == 0:
-            raise ValueError("M must have non-zero determinant")
-
-
-@validate_by(ValidateInvertibility())
+@need_validation(check_invertibility("M"), check_numerical("M"))
 @dataclass(frozen=True)
-class BasisTransform(Functional, Validatable):
+class BasisTransform(Functional):
     M: ImmutableDenseMatrix
 
 

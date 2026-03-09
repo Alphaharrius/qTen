@@ -23,16 +23,12 @@ from .spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .tensors import Tensor
 from .utils import FrozenDict
-from .validations import Validatable, Validator
 
 _IrrepType = TypeVar("_IrrepType")
 _ObservableType = TypeVar("_ObservableType")
 _OperableType = TypeVar("_OperableType", bound=Operable)
 
-class ValidateU1BasisMultiplicity(Validator["U1Basis"]):
-    def validate(self, value: U1Basis) -> None: ...
-
-class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible, Validatable):
+class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     u1: sy.Expr
     rep: Tuple[Any, ...]
     def __init__(self, u1: sy.Expr, rep: Tuple[Any, ...]) -> None: ...
