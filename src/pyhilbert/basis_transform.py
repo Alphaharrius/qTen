@@ -17,6 +17,7 @@ from .tensors import Tensor, mapping_matrix
 from .fourier import fourier_transform
 
 
+# TODO: This can actually be used for other matrix like transformations, this is for the `HasRep` update to handle
 class ValidateInvertibility(Validator["BasisTransform"]):
     """
     Validate that a basis transform matrix is invertible.
