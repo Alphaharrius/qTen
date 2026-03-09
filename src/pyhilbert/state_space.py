@@ -106,6 +106,17 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T], Validatable):
     `Momentum`) to its single flattened index.
     """
 
+    def __post_init__(self) -> None:
+        values = tuple(self.structure.values())
+        if any(type(v) is not int for v in values):
+            raise TypeError("StateSpace.structure values must be integer indices.")
+        n = len(values)
+        if values != tuple(range(n)):
+            raise ValueError(
+                "StateSpace.structure values must match insertion order as contiguous "
+                "indices 0..n-1."
+            )
+
     @property
     def dim(self) -> int:
         """The total size of the vector space."""
