@@ -13,7 +13,6 @@ from .hilbert_space import HilbertSpace
 @Lattice.register_plot_method("structure", backend="matplotlib")
 def plot_structure_mpl(
     obj: Lattice,
-    subs: Optional[Dict] = None,
     spin_data: Optional[Union[np.ndarray, torch.Tensor]] = None,
     plot_type: str = "edge-and-node",
     elev: float = 30,
@@ -29,8 +28,6 @@ def plot_structure_mpl(
     ----------
     obj : Lattice
         The lattice instance to plot.
-    subs : dict, optional
-        Dictionary of symbolic substitutions for lattice parameters (e.g., {'a': 1.0}).
     spin_data : array-like, optional
         (N_sites, 3) array containing spin vectors for each site.
     plot_type : {'edge-and-node', 'scatter'}, default 'edge-and-node'
@@ -56,7 +53,7 @@ def plot_structure_mpl(
     if plot_type not in valid_types:
         raise ValueError(f"Invalid plot_type '{plot_type}'. Options: {valid_types}")
 
-    coords = obj.coords(subs)
+    coords = obj.coords()
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -421,7 +418,6 @@ def plot_bandstructure_mpl(
     obj: Tensor,
     title: str = "Band Structure",
     save_path: Optional[str] = None,
-    subs: Optional[Dict] = None,
     ax: Optional[Any] = None,
     data_aspect: bool = True,
     **kwargs,
@@ -432,8 +428,6 @@ def plot_bandstructure_mpl(
 
     Parameters
     ----------
-    subs : dict, optional
-        Dictionary of symbol substitutions for lattice parameters.
     ax : matplotlib.axes.Axes, optional
         Existing axes to plot on. If provided, the plot is added to this axes and
         the corresponding figure is returned via `ax.get_figure()`.
@@ -481,17 +475,11 @@ def plot_bandstructure_mpl(
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
-        if subs:
-            basis_eval = basis_sym.subs(subs)
-        else:
-            basis_eval = basis_sym.subs({s: 1.0 for s in basis_sym.free_symbols})
-        basis_mat = np.array(basis_eval.evalf()).astype(float)
+        basis_mat = np.array(basis_sym.evalf()).astype(float)
 
         k_fracs = []
         for k in k_points:
             rep = k.rep
-            if subs:
-                rep = rep.subs(subs)
             k_fracs.append(np.array(rep).astype(float).flatten())
         k_fracs_arr = np.stack(k_fracs)
         k_cart = k_fracs_arr @ basis_mat

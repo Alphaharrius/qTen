@@ -14,7 +14,6 @@ from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 @Lattice.register_plot_method("structure", backend="plotly")
 def plot_structure(
     obj: Lattice,
-    subs: Optional[Dict] = None,
     spin_data: Optional[Union[np.ndarray, torch.Tensor]] = None,
     plot_type: str = "edge-and-node",
     show: bool = True,
@@ -31,8 +30,6 @@ def plot_structure(
     ----------
     obj : Lattice
         The lattice instance to visualize.
-    subs : dict, optional
-        Dictionary of symbol substitutions for lattice parameters.
     spin_data : array-like, optional
         (N_sites, 3) array of spin vectors.
     plot_type : {'edge-and-node', 'scatter'}, default 'edge-and-node'
@@ -54,7 +51,7 @@ def plot_structure(
         raise ValueError(f"Invalid plot_type '{plot_type}'. Options: {valid_types}")
 
     # Use method on Lattice object
-    coords = obj.coords(subs)
+    coords = obj.coords()
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -496,7 +493,6 @@ def plot_bandstructure(
     obj: Tensor,
     title: str = "Band Structure",
     show: bool = True,
-    subs: Optional[Dict] = None,
     fig: Optional[go.Figure] = None,
     **kwargs,
 ) -> go.Figure:
@@ -511,8 +507,6 @@ def plot_bandstructure(
         Title of the plot.
     show : bool, default True
         Whether to show the plot immediately.
-    subs : dict, optional
-        Dictionary of symbol substitutions for lattice parameters.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
     **kwargs
@@ -549,12 +543,7 @@ def plot_bandstructure(
         recip = k_points[0].space
         basis_sym = recip.basis
 
-        if subs:
-            basis_eval = basis_sym.subs(subs)
-        else:
-            basis_eval = basis_sym.subs({s: 1.0 for s in basis_sym.free_symbols})
-
-        basis_mat = np.array(basis_eval.evalf()).astype(float)
+        basis_mat = np.array(basis_sym.evalf()).astype(float)
 
         k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
         k_fracs_arr = np.stack(k_fracs)  # Shape: (K, 2)

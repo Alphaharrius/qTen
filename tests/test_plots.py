@@ -96,15 +96,13 @@ def test_plot_spectrum_hermitian_and_nonhermitian():
 
 
 def test_plot_structure_2d_and_3d():
-    a = sy.Symbol("a")
-
-    basis_2d = sy.ImmutableDenseMatrix([[a, 0], [0, a]])
+    basis_2d = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
     lattice_2d = Lattice(basis=basis_2d, shape=(3, 3))
-    fig_2d = lattice_2d.plot("structure", subs={a: 1.5}, show=False)
+    fig_2d = lattice_2d.plot("structure", show=False)
 
-    basis_3d = sy.ImmutableDenseMatrix([[a, 0, 0], [0, a, 0], [0, 0, a]])
+    basis_3d = sy.ImmutableDenseMatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     lattice_3d = Lattice(basis=basis_3d, shape=(2, 2, 2))
-    fig_3d = lattice_3d.plot("structure", subs={a: 1.0}, show=False)
+    fig_3d = lattice_3d.plot("structure", show=False)
 
     assert isinstance(fig_2d, go.Figure)
     assert isinstance(fig_3d, go.Figure)
@@ -115,8 +113,7 @@ def test_plot_structure_2d_and_3d():
 def test_bandstructure_plot():
     # 1. Define Lattice (2D Square)
     # Basis: [[a, 0], [0, a]]
-    a = sy.Symbol("a")
-    basis = sy.ImmutableDenseMatrix([[a, 0.0], [0.0, a]])
+    basis = sy.ImmutableDenseMatrix([[1, 0.0], [0.0, 1]])
     # Small shape for test speed
     lat = Lattice(basis=basis, shape=(4, 4))
 
@@ -177,7 +174,6 @@ def test_bandstructure_plot():
         backend="plotly",
         title="Test Bandstructure",
         show=False,
-        subs={a: 1.0},
     )
 
     assert isinstance(fig, go.Figure)
