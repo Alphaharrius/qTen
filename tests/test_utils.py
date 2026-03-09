@@ -1,5 +1,5 @@
 import pytest
-from pyhilbert.utils import FrozenDict
+from pyhilbert.utils import Device, FrozenDict
 
 
 def test_frozendict_creation_and_access():
@@ -40,3 +40,18 @@ def test_frozendict_eq():
 
     d3 = FrozenDict({"a": 2})
     assert d1 != d3
+
+
+def test_device_new_accepts_supported_forms():
+    assert Device.new("cpu") == Device("cpu")
+    assert Device.new("gpu") == Device("gpu")
+    assert Device.new("gpu:0") == Device("gpu", 0)
+    assert Device.new("gpu:12") == Device("gpu", 12)
+
+
+@pytest.mark.parametrize(
+    "name", ["gpu0", "gpu1", "gpu:", "gpu:-1", "gpu:abc", "gpu:1:2"]
+)
+def test_device_new_rejects_invalid_gpu_forms(name):
+    with pytest.raises(ValueError, match=f"Invalid device name: {name}"):
+        Device.new(name)

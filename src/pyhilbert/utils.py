@@ -271,12 +271,12 @@ class Device:
         """
         if name == "cpu":
             return Device(name="cpu")
-        if name.startswith("gpu"):
-            parts = name.split(":")
-            if len(parts) == 1:
-                return Device(name="gpu")
-            elif len(parts) == 2 and parts[1].isdigit():
-                return Device(name="gpu", index=int(parts[1]))
+        if name == "gpu":
+            return Device(name="gpu")
+        if name.startswith("gpu:"):
+            index = name[4:]
+            if index.isdigit():
+                return Device(name="gpu", index=int(index))
         raise ValueError(f"Invalid device name: {name}")
 
     def torch_device(self) -> torch.device:
