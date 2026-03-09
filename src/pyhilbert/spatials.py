@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Tuple, Optional, Dict, Type, TypeVar, Union, cast
+from typing import Tuple, Type, TypeVar, Union, cast
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from multipledispatch import dispatch  # type: ignore[import-untyped]
@@ -92,7 +92,6 @@ class Lattice(AbstractLattice):
 
     def coords(
         self,
-        subs: Optional[Dict] = None,
     ) -> torch.Tensor:
         """
         Vectorized calculation of all site coordinates.
@@ -100,19 +99,14 @@ class Lattice(AbstractLattice):
         """
         precision = get_precision_config()
         basis_sym = self.basis
-        if subs:
-            basis_eval = basis_sym.subs(subs)
-        else:
-            basis_eval = basis_sym.subs({s: 1.0 for s in basis_sym.free_symbols})
-
         try:
             basis_mat = torch.tensor(
-                np.array(basis_eval).astype(precision.np_float),
+                np.array(basis_sym.evalf()).astype(precision.np_float),
                 dtype=precision.torch_float,
             )
         except Exception as e:
             raise ValueError(
-                f"Basis matrix contains unresolved symbols: {basis_eval.free_symbols}"
+                f"Basis matrix contains unresolved symbols: {basis_sym.free_symbols}"
             ) from e
 
         lat_offsets = cartes(self)
@@ -135,8 +129,6 @@ class Lattice(AbstractLattice):
             sorted_unit_cell = sorted(self.unit_cell.items(), key=lambda x: str(x[0]))
             for _, site_offset in sorted_unit_cell:
                 site_vec = site_offset.rep
-                if subs:
-                    site_vec = site_vec.subs(subs)
                 basis_reps.append(
                     np.array(site_vec).flatten().astype(precision.np_float)
                 )
