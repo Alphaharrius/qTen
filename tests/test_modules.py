@@ -8,17 +8,20 @@ from pyhilbert.modules import (
     TENSOR_PARAM_PREFIX,
     nograd_tensors,
 )
+from pyhilbert.state_space import IndexSpace
 from pyhilbert.tensors import Tensor
 from pyhilbert.utils import Device, FrozenDict
+
+VECTOR_DIM = (IndexSpace.linear(2),)
 
 
 @nograd_tensors("basis")
 class AffineBlock(Module):
     def __init__(self):
         super().__init__()
-        self.weight = Tensor(data=torch.tensor([2.0, -1.0]), dims=()).attach()
-        self.bias = Tensor(data=torch.tensor([0.5, 1.5]), dims=()).attach()
-        self.basis = Tensor(data=torch.tensor([3.0, 4.0]), dims=()).attach()
+        self.weight = Tensor(data=torch.tensor([2.0, -1.0]), dims=VECTOR_DIM).attach()
+        self.bias = Tensor(data=torch.tensor([0.5, 1.5]), dims=VECTOR_DIM).attach()
+        self.basis = Tensor(data=torch.tensor([3.0, 4.0]), dims=VECTOR_DIM).attach()
         self.label = "affine"
 
 
@@ -26,34 +29,36 @@ class NestedBlock(Module):
     def __init__(self):
         super().__init__()
         self.inner = AffineBlock()
-        self.scale = Tensor(data=torch.tensor([1.0, 2.0]), dims=()).attach()
+        self.scale = Tensor(data=torch.tensor([1.0, 2.0]), dims=VECTOR_DIM).attach()
 
 
 class DispatchedAffineBlock(Module):
     def __init__(self):
         super().__init__()
-        self.weight = Tensor(data=torch.tensor([2.0, -1.0]), dims=()).attach()
-        self.bias = Tensor(data=torch.tensor([0.5, 1.5]), dims=()).attach()
+        self.weight = Tensor(data=torch.tensor([2.0, -1.0]), dims=VECTOR_DIM).attach()
+        self.bias = Tensor(data=torch.tensor([0.5, 1.5]), dims=VECTOR_DIM).attach()
 
 
 @DispatchedAffineBlock.register(torch.Tensor)
 def _apply_dispatched_affine(module: DispatchedAffineBlock, x: torch.Tensor) -> Tensor:
-    return Tensor(data=module.weight.data * x + module.bias.data, dims=())
+    return Tensor(data=module.weight.data * x + module.bias.data, dims=VECTOR_DIM)
 
 
 @nograd_tensors("cache")
 class ParentAnnotatedBlock(Module):
     def __init__(self):
         super().__init__()
-        self.cache = Tensor(data=torch.tensor([5.0, 6.0]), dims=()).attach()
+        self.cache = Tensor(data=torch.tensor([5.0, 6.0]), dims=VECTOR_DIM).attach()
 
 
 @nograd_tensors("projection")
 class ChildAnnotatedBlock(ParentAnnotatedBlock):
     def __init__(self):
         super().__init__()
-        self.projection = Tensor(data=torch.tensor([7.0, 8.0]), dims=()).attach()
-        self.weight = Tensor(data=torch.tensor([1.0, -3.0]), dims=()).attach()
+        self.projection = Tensor(
+            data=torch.tensor([7.0, 8.0]), dims=VECTOR_DIM
+        ).attach()
+        self.weight = Tensor(data=torch.tensor([1.0, -3.0]), dims=VECTOR_DIM).attach()
 
 
 class TestModules:
@@ -100,7 +105,7 @@ class TestModules:
         assert set(state_dict) == {weight_name, bias_name, basis_name}
 
     def test_module_tensor_assignment_copies_input_storage(self):
-        source = Tensor(data=torch.tensor([9.0, -4.0]), dims=()).attach()
+        source = Tensor(data=torch.tensor([9.0, -4.0]), dims=VECTOR_DIM).attach()
 
         module = Module()
         assert module.device == Device("cpu")
@@ -117,7 +122,7 @@ class TestModules:
         assert torch.equal(module.weight.data.detach(), torch.tensor([10.0, -3.0]))
 
     def test_tensor_ownership_lifecycle_through_module_pipeline(self):
-        source = Tensor(data=torch.tensor([1.0, 2.0]), dims=()).attach()
+        source = Tensor(data=torch.tensor([1.0, 2.0]), dims=VECTOR_DIM).attach()
         source_before_assignment = source.clone()
 
         module = Module()
@@ -137,7 +142,9 @@ class TestModules:
         loss = Tensor(data=(module.weight.data**2).sum(), dims=())
         loss.backward()
         assert module.weight.grad is not None
-        assert module.weight.grad.equal(Tensor(data=torch.tensor([2.0, 4.0]), dims=()))
+        assert module.weight.grad.equal(
+            Tensor(data=torch.tensor([2.0, 4.0]), dims=VECTOR_DIM)
+        )
         assert source.grad is None
 
         with torch.no_grad():
@@ -151,13 +158,13 @@ class TestModules:
         assert exported.data is not module.weight.data
         assert not exported.requires_grad
         assert exported.device == module.weight.device
-        assert exported.equal(Tensor(data=torch.tensor([4.0, 5.0]), dims=()))
+        assert exported.equal(Tensor(data=torch.tensor([4.0, 5.0]), dims=VECTOR_DIM))
 
         with torch.no_grad():
             module.weight.data.add_(1.0)
 
         # Exported tensors are independent snapshots after leaving the module.
-        assert exported.equal(Tensor(data=torch.tensor([4.0, 5.0]), dims=()))
+        assert exported.equal(Tensor(data=torch.tensor([4.0, 5.0]), dims=VECTOR_DIM))
         assert torch.equal(module.weight.data.detach(), torch.tensor([5.0, 6.0]))
 
     def test_module_backward_computes_grads_only_for_trainable_tensors(self):
@@ -174,8 +181,10 @@ class TestModules:
 
         assert module.weight.grad is not None
         assert module.bias.grad is not None
-        assert module.weight.grad.equal(Tensor(data=expected_weight_grad, dims=()))
-        assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=()))
+        assert module.weight.grad.equal(
+            Tensor(data=expected_weight_grad, dims=VECTOR_DIM)
+        )
+        assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=VECTOR_DIM))
         assert module.basis.grad is None
 
     def test_functional_dispatch_path_preserves_gradients(self):
@@ -192,8 +201,10 @@ class TestModules:
 
         assert module.weight.grad is not None
         assert module.bias.grad is not None
-        assert module.weight.grad.equal(Tensor(data=expected_weight_grad, dims=()))
-        assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=()))
+        assert module.weight.grad.equal(
+            Tensor(data=expected_weight_grad, dims=VECTOR_DIM)
+        )
+        assert module.bias.grad.equal(Tensor(data=expected_bias_grad, dims=VECTOR_DIM))
 
     def test_nograd_tensor_annotations_are_inherited_and_applied(self):
         module = ChildAnnotatedBlock()
@@ -243,12 +254,14 @@ class TestModules:
         assert module.inner.basis.grad is None
 
         assert module.inner.weight.grad.equal(
-            Tensor(data=expected_inner_weight_grad, dims=())
+            Tensor(data=expected_inner_weight_grad, dims=VECTOR_DIM)
         )
         assert module.inner.bias.grad.equal(
-            Tensor(data=expected_inner_bias_grad, dims=())
+            Tensor(data=expected_inner_bias_grad, dims=VECTOR_DIM)
         )
-        assert module.scale.grad.equal(Tensor(data=expected_scale_grad, dims=()))
+        assert module.scale.grad.equal(
+            Tensor(data=expected_scale_grad, dims=VECTOR_DIM)
+        )
 
         named_parameters = dict(module.named_parameters())
         assert f"inner.{TENSOR_PARAM_PREFIX}weight" in named_parameters
@@ -311,7 +324,7 @@ class TestModules:
         module.weight = 3
         assert f"{TENSOR_PARAM_PREFIX}weight" not in dict(module.named_parameters())
 
-        module.bias = Tensor(data=torch.tensor([7.0, 8.0]), dims=()).attach()
+        module.bias = Tensor(data=torch.tensor([7.0, 8.0]), dims=VECTOR_DIM).attach()
         assert (
             dict(module.named_parameters())[f"{TENSOR_PARAM_PREFIX}bias"]
             is module.bias.data

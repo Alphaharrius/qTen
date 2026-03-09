@@ -151,7 +151,7 @@ class TestTensorAutograd:
 
         # d(2*y)/dx = 2 * dy/dx = 2 * 1 = 2
         assert x.grad is not None
-        assert x.grad.item() == 2.0
+        assert x.grad.equal(Tensor(data=torch.tensor([2.0]), dims=dims))
 
     def test_backward_aligns_gradient_with_permuted_dimension_elements(self):
         left = hilbert(_state("left", i) for i in range(2))

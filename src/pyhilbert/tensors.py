@@ -11,20 +11,20 @@ from typing import (
     Any,
     Optional,
     Callable,
-    Literal,
     TypeAlias,
 )
-from numbers import Number
-from dataclasses import dataclass
-from types import EllipsisType
-from multipledispatch import dispatch  # type: ignore[import-untyped]
-import torch
 from typing_extensions import override
-from .precision import get_precision_config
 from functools import wraps, reduce
 from itertools import product
+from numbers import Number
+from dataclasses import dataclass, replace
+from types import EllipsisType
+
+from multipledispatch import dispatch  # type: ignore[import-untyped]
+import torch
 
 from .abstracts import Convertible, Operable, Plottable
+from .precision import get_precision_config
 from .utils import Device, DeviceBounded
 from .state_space import (
     StateSpace,
@@ -1008,7 +1008,7 @@ def operator_eq(left: TensorType, right: Tensor) -> TensorType:
             f"merged_dims={_format_dims(merged_dims)}, "
             f"expected_shape={expected_shape}, runtime_shape={tuple(runtime_shape)}"
         )
-    return replace(data=aligned_left.data == aligned_right.data, dims=merged_dims)
+    return replace(left, data=aligned_left.data == aligned_right.data, dims=merged_dims)
 
 
 @dispatch(Tensor)
