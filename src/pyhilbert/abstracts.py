@@ -473,8 +473,7 @@ class Span(ABC, Generic[_ElementType]):
     Implementations should define what it means to be an element and how to
     determine if an object is contained within the span.
 
-    The `_ElementType` type variable represents the type of elements that define the span,
-    while the `_MappingType` is the type of the mapping between spans of this type.
+    The `_ElementType` type variable represents the type of elements that define the span.
     """
 
     @abstractmethod
