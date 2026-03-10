@@ -88,7 +88,7 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
             f"BasisTransform currently supports PeriodicBoundary only, got {type(lat.boundaries).__name__}."
         )
 
-    new_boundary_basis = ImmutableDenseMatrix(M_inv.T @ lat.boundaries.basis)
+    new_boundary_basis = lat.basis.inv() @ M_inv @ lat.basis @ lat.boundaries.basis
     if any(x.q != 1 for x in new_boundary_basis):
         raise ValueError(
             "Transformed boundary basis must remain integral for PeriodicBoundary."

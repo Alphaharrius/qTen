@@ -219,3 +219,108 @@ def test_potential_errors():
     offset_3d = Offset(rep=sy.ImmutableDenseMatrix([1, 1, 1]), space=space)
     with pytest.raises(Exception):  # sympy 矩陣乘法會報錯 ShapeError
         offset_3d.rebase(lattice_2d)
+
+
+def test_periodic_boundary_physical_invariance():
+    """
+    Test that wrapping a point always produces a physical shift
+    that is exactly a linear combination of the physical boundary vectors.
+    """
+    # Create a boundary condition matrix N
+    # Physical boundary vectors are B * N
+    B = ImmutableDenseMatrix([[2, 1], [1, 2]])
+    N = ImmutableDenseMatrix([[4, -1], [0, 4]])
+
+    boundaries = PeriodicBoundary(N)
+
+    # We want to check wrapping a point
+    test_rep = col(5, -6)
+
+    # Mocking Lattice-like behavior since boundary.wrap acts on relative indices,
+    # and offset relies on Lattice basis. Here boundary.basis is N.
+    # The actual physical shift is (B * N) * k, but inside boundary.py,
+    # the shift applied is N * k
+    wrapped_rep = boundaries.wrap(test_rep)
+
+    # The shift in representation space is: test_rep - wrapped_rep
+    rep_shift = test_rep - wrapped_rep
+
+    # This shift must be an integer combination of the columns of N.
+    # N * k = rep_shift => k = N^{-1} * rep_shift
+    k = N.inv() @ rep_shift
+    assert all(val.is_integer for val in k)
+
+    # The physical shift is B * rep_shift.
+    # The physical boundaries are B * N.
+    # We can also verify that the physical shift is an integer combination of physical boundaries:
+    # (B*N)^{-1} * physical_shift = N^{-1} * B^{-1} * B * rep_shift = N^{-1} * rep_shift = k
+    physical_shift = B @ rep_shift
+    physical_boundaries = B @ N
+    k_phys = physical_boundaries.inv() @ physical_shift
+    assert all(val.is_integer for val in k_phys)
+    assert k == k_phys
+
+
+def test_periodic_boundary_representatives_physical_domain():
+    """
+    Test that all generated representatives are properly wrapped within the
+    fundamental domain defined by the wrapping rules.
+    """
+    N = ImmutableDenseMatrix([[4, -2], [1, 3]])
+    boundaries = PeriodicBoundary(N)
+
+    reps = boundaries.representatives()
+
+    # By definition, wrapping a representative should return itself
+    for rep in reps:
+        assert boundaries.wrap(rep) == rep
+
+    # And there should be exactly abs(det(N)) representatives
+    assert len(reps) == abs(int(N.det()))
+
+
+def test_lattice_rebase_physical_invariance():
+    """
+    Test that offsetting and rebasing an Offset between two lattices related by a basis
+    transform correctly preserves the absolute physical space position and periodicity.
+    """
+    from pyhilbert.basis_transform import BasisTransform
+
+    basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
+    boundaries = PeriodicBoundary(basis * 4)
+    lattice = Lattice(
+        basis=basis,
+        boundaries=boundaries,
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    # Basis transform M
+    M = ImmutableDenseMatrix([[1, 4], [0, 1]])
+    T = BasisTransform(M)
+    lat_new = T(lattice)
+
+    # Two points
+    a = Offset(rep=ImmutableDenseMatrix([1, 1]), space=lattice)
+    b = Offset(rep=ImmutableDenseMatrix([0, 4]), space=lattice)
+
+    # In old lattice, a + b = [1, 5] which wraps to [1, 1] because period is 4
+    c = a + b
+
+    a_new = a.rebase(lat_new)
+    b_new = b.rebase(lat_new)
+    c_new = a_new + b_new
+
+    # Even after mapping, the physical vector should be invariant
+    # Note: b_new wraps to zero since it's exactly on a boundary vector mapping.
+    # Therefore, c_new physical vector must be identically aligned in the physical boundary!
+
+    phys_c = c.to_vec(ImmutableDenseMatrix)
+    phys_c_new = c_new.to_vec(ImmutableDenseMatrix)
+
+    # The physical vectors might not be strictly identical if they wrapped to different
+    # cells, but their DIFFERENCE must be an integer multiple of the PHYSICAL boundaries.
+    physical_boundaries = lattice.basis @ lattice.boundaries.basis
+    diff = phys_c_new - phys_c
+    k = physical_boundaries.inv() @ diff
+
+    assert all(val.is_integer for val in k)

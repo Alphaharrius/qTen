@@ -70,12 +70,13 @@ class PeriodicBoundary(BoundaryCondition):
             ]
             return ImmutableDenseMatrix(self.basis.rows, 1, wrapped_entries)
 
-        coordinates = ImmutableDenseMatrix(self._U @ index)
+        coordinates = ImmutableDenseMatrix(self.basis.inv() @ index)
         wrapped_entries = [
-            sy.Mod(coordinates[i, 0], self._periods[i]) for i in range(self.basis.rows)
+            coordinates[i, 0] - sy.floor(coordinates[i, 0])
+            for i in range(self.basis.rows)
         ]
         wrapped_coords = ImmutableDenseMatrix(self.basis.rows, 1, wrapped_entries)
-        return ImmutableDenseMatrix(self._U_inv @ wrapped_coords)
+        return ImmutableDenseMatrix(self.basis @ wrapped_coords).applyfunc(sy.Rational)
 
     def representatives(self) -> tuple[ImmutableDenseMatrix, ...]:
         if self.basis.is_diagonal():
@@ -87,9 +88,12 @@ class PeriodicBoundary(BoundaryCondition):
             )
 
         elements = product(*(range(period) for period in self._periods))
+        # Ensure representatives are within the fundamental domain by wrapping them
         return tuple(
-            ImmutableDenseMatrix(
-                self._U_inv @ ImmutableDenseMatrix(self.basis.rows, 1, el)
+            self.wrap(
+                ImmutableDenseMatrix(
+                    self._U_inv @ ImmutableDenseMatrix(self.basis.rows, 1, el)
+                )
             )
             for el in elements
         )
