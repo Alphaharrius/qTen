@@ -92,6 +92,12 @@ def matmul_ctx():
 
 
 class TestMatmul:
+    def test_tensor_constructor_rejects_shape_dim_mismatch(self):
+        space = _space_from_modes(make_mode("a", 2), make_mode("b", 3))
+
+        with pytest.raises(ValueError, match="does not match expected shape"):
+            Tensor(data=torch.randn(4), dims=(space,))
+
     def test_basic_matmul(self, matmul_ctx):
         # A (2, 5) x B (5, 4) -> C (2, 4)
         # Dimensions: (space2, space1) x (space1, space2)

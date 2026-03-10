@@ -26,6 +26,7 @@ import torch
 from .abstracts import Convertible, Operable, Plottable
 from .precision import get_precision_config
 from .utils import Device, DeviceBounded
+from .validations import need_validation
 from .state_space import (
     StateSpace,
     BroadcastSpace,
@@ -46,17 +47,25 @@ such as `torch.FloatTensor`, `torch.DoubleTensor`, etc.
 """
 
 
+def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
+    """
+    Validator function to check that a tensor's data shape matches its dims.
+
+    This is a standalone function version of `ValidateDataDimsCompatibility.validate`
+    for use in `@need_validation` without needing to define a separate class.
+    """
+    shape = tuple(d.dim for d in tensor.dims)
+    if tensor.data.shape != shape:
+        raise ValueError(
+            f"Tensor data shape {tensor.data.shape} does not match expected shape {shape}."
+        )
+
+
+@need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
 class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     data: T
     dims: Tuple[StateSpace, ...]
-
-    def __post_init__(self) -> None:
-        shape = tuple(d.dim for d in self.dims)
-        if self.data.shape != shape:
-            raise ValueError(
-                f"Tensor data shape {self.data.shape} does not match expected shape {shape}"
-            )
 
     @staticmethod
     def scalar(number: Number) -> "Tensor":

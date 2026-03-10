@@ -2,6 +2,7 @@ import torch
 import sympy as sy
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
+import pytest
 
 from pyhilbert.spatials import (
     Lattice,
@@ -139,6 +140,11 @@ def test_affine_space_transform():
     new_space = t(space)
     assert isinstance(new_space, AffineSpace)
     assert new_space.basis == M @ basis
+
+
+def test_basis_transform_rejects_non_invertible_matrix():
+    with pytest.raises(ValueError, match="positive determinant"):
+        BasisTransform(ImmutableDenseMatrix([[1, 0], [0, 0]]))
 
 
 def test_lattice_transform():

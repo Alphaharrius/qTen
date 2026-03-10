@@ -1,4 +1,5 @@
 import pytest
+
 from pyhilbert.utils import FrozenDict
 
 

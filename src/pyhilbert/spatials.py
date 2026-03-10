@@ -11,6 +11,8 @@ import torch
 from .precision import get_precision_config
 from sympy import ImmutableDenseMatrix, sympify
 from .utils import FrozenDict
+from .validations import need_validation
+from .validations.symbolics import check_invertibility, check_numerical
 from .abstracts import Convertible, Operable, HasDual, HasBase, Plottable
 
 
@@ -22,6 +24,7 @@ class Spatial(Operable, Plottable, ABC):
         raise NotImplementedError()
 
 
+@need_validation(check_numerical("basis"), check_invertibility("basis"))
 @dataclass(frozen=True)
 class AffineSpace(Spatial):
     basis: ImmutableDenseMatrix
@@ -160,6 +163,15 @@ _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
 """Type variable for vector types that can be returned by `Offset.to_vec()`."""
 
 
+def _check_offset_matches_space(r: "Offset") -> None:
+    if r.rep.shape != (r.space.dim, 1):
+        raise ValueError(
+            f"Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
+            f"got {r.rep.shape}."
+        )
+
+
+@need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)
 class Offset(Spatial, HasBase[AffineSpace]):
     """
@@ -200,10 +212,6 @@ class Offset(Spatial, HasBase[AffineSpace]):
 
     rep: ImmutableDenseMatrix
     space: AffineSpace
-
-    def __post_init__(self):
-        if self.rep.shape != (self.space.dim, 1):
-            raise ValueError("Invalid Shape")
 
     @property
     def dim(self) -> int:

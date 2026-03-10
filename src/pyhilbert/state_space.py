@@ -9,6 +9,7 @@ from itertools import islice
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from .abstracts import Convertible, Span
+from .validations import need_validation
 from .spatials import (
     Spatial,
     ReciprocalLattice,
@@ -20,6 +21,23 @@ from .spatials import (
 T = TypeVar("T")
 
 
+def _check_contiguous_indices(s: "StateSpace") -> None:
+    """
+    Validator function to check that a state space's structure indices are contiguous.
+
+    This is a standalone function version of `ValidateContiguousIndices.validate`
+    for use in `@need_validation` without needing to define a separate class.
+    """
+    values = tuple(s.structure.values())
+    n = len(values)
+    if values != tuple(range(n)):
+        raise ValueError(
+            "StateSpace.structure values must match insertion order as contiguous "
+            "indices 0..n-1."
+        )
+
+
+@need_validation(_check_contiguous_indices)
 @dataclass(frozen=True)
 class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
     """
@@ -43,17 +61,6 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
     An ordered dictionary mapping each spatial component (e.g., `Offset`,
     `Momentum`) to its single flattened index.
     """
-
-    def __post_init__(self) -> None:
-        values = tuple(self.structure.values())
-        if any(type(v) is not int for v in values):
-            raise TypeError("StateSpace.structure values must be integer indices.")
-        n = len(values)
-        if values != tuple(range(n)):
-            raise ValueError(
-                "StateSpace.structure values must match insertion order as contiguous "
-                "indices 0..n-1."
-            )
 
     @property
     def dim(self) -> int:
@@ -326,6 +333,7 @@ def operator_eq(a: StateSpace, b: StateSpace):
     return a.structure == b.structure
 
 
+@need_validation()
 @dataclass(frozen=True)
 class MomentumSpace(StateSpace[Momentum]):
     # Ensure that __hash__ is inherited from StateSpace since the hash of StateSpace is specifically
@@ -368,6 +376,7 @@ class _BAxis:
     pass
 
 
+@need_validation()
 @dataclass(frozen=True)
 class BroadcastSpace(StateSpace[_BAxis]):
     """
@@ -456,12 +465,16 @@ def operator_add(a: BroadcastSpace, b: StateSpace):
     return b
 
 
+@need_validation()
+@dataclass(frozen=True)
 class IndexSpace(StateSpace[int]):
     """
     A simple state space where the spatial elements are just integer indices.
     This can be useful for representing generic tensor dimensions that don't
     have a specific physical interpretation, such as the virtual bond dimension in a TNS.
     """
+
+    __hash__ = StateSpace.__hash__
 
     @staticmethod
     def linear(size: int) -> "IndexSpace":

@@ -21,6 +21,8 @@ from .hilbert_space import (
 )
 from .tensors import Tensor
 from .fourier import fourier_transform
+from .validations import need_validation
+from .validations.symbolics import check_invertibility, check_numerical
 from .utils import FrozenDict
 
 
@@ -73,6 +75,7 @@ def operator_gt(a: AbelianBasis, b: AbelianBasis) -> bool:
     return str(a.expr) > str(b.expr)
 
 
+@need_validation(check_invertibility("irrep"), check_numerical("irrep"))
 @dataclass(frozen=True)
 class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
     """
