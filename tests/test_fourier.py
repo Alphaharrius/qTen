@@ -7,6 +7,7 @@ from pyhilbert.spatials import Lattice, Offset, Momentum
 from pyhilbert.state_space import brillouin_zone
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.fourier import fourier_transform
+from pyhilbert.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,11 @@ def _mode(r: Offset, orb: str = "s") -> U1Basis:
 def test_fourier_kernel_1d():
     # 1D Lattice a=1
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual
 
     # Define K points: 0, 0.25, 0.5, 0.75 (fractional in reciprocal basis)
@@ -30,7 +35,7 @@ def test_fourier_kernel_1d():
 
     # Define R offsets: 0, 1, 2, 3 (fractional/integer in lattice basis)
     r_reps = [0, 1, 2, 3]
-    R = tuple(Offset(rep=ImmutableDenseMatrix([r]), space=lat.affine) for r in r_reps)
+    R = tuple(Offset(rep=ImmutableDenseMatrix([r]), space=lat) for r in r_reps)
 
     # Compute Fourier
     ft = fourier_transform(K, R)
@@ -55,7 +60,11 @@ def test_fourier_kernel_1d():
 def test_fourier_tensor_construction():
     # 1D Lattice
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))  # 2 unit cells
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )  # 2 unit cells
     recip = lat.dual
 
     # k-space: 2 points (0, 0.5)
@@ -63,8 +72,8 @@ def test_fourier_tensor_construction():
     assert k_space.dim == 2
 
     # Region space: 2 sites, one at 0, one at 1.
-    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
-    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat)
+    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat)
 
     m0 = _mode(r0, "s")
     m1 = _mode(r1, "s")
@@ -97,7 +106,11 @@ def test_fourier_tensor_unitarity():
     # 1D Lattice
     basis = ImmutableDenseMatrix([[1]])
     n_cells = 4
-    lat = Lattice(basis=basis, shape=(n_cells,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(n_cells)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual
 
     # k-space: 4 points

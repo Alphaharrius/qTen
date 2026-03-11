@@ -14,6 +14,7 @@ from pyhilbert.state_space import (
 )
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.spatials import Lattice
+from pyhilbert.boundary import PeriodicBoundary
 
 
 class TestTensorGetitem:
@@ -234,7 +235,11 @@ class TestTensorGetitem:
         assert torch.equal(out.data, data[:, :, 1:2])
 
     def test_getitem_with_momentum_index(self):
-        lattice = Lattice(basis=ImmutableDenseMatrix([[1]]), shape=(2,))
+        lattice = Lattice(
+            basis=ImmutableDenseMatrix([[1]]),
+            boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+            unit_cell={"r": ImmutableDenseMatrix([0])},
+        )
         momentum_space = brillouin_zone(lattice.dual)
         _k0, k1 = tuple(momentum_space.structure.keys())
 

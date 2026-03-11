@@ -20,8 +20,13 @@ def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.T
     """
     Compute Fourier phase factors between momentum and real-space offsets.
 
-    This returns the kernel `exp(-2π i k·r)` evaluated for all pairs of
-    momentum points in `K` and offsets in `R`.
+    This returns the Fourier kernel evaluated for all pairs of momentum points
+    in `K` and offsets in `R`.
+
+    `Momentum.to_vec()` uses the reciprocal basis (which already carries the
+    `2π` convention via `Lattice.dual`), so the phase is computed as
+    `exp(-i k_cart·r_cart)`. Equivalently, in fractional coordinates this is
+    `exp(-2π i κ·n)`.
 
     Parameters
     ----------
@@ -34,22 +39,33 @@ def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.T
     -------
     `torch.Tensor`
         Complex tensor of shape `(len(K), len(R))` with elements
-        `exp(-2π i k·r)`.
+        `exp(-i k_cart·r_cart)` (equivalently `exp(-2π i κ·n)` in fractional
+        coordinates).
     """
     precision = get_precision_config()
     ten_K = torch.from_numpy(  # (K, d)
         np.stack(
-            [np.array(k.rep, dtype=precision.np_float).reshape(-1) for k in K],
+            [
+                np.array(k.to_vec(np.ndarray), dtype=precision.np_float).reshape(-1)
+                for k in K
+            ],
             axis=0,
         )
     )
     ten_R = torch.from_numpy(  # (d, R)
         np.stack(
-            [np.array(r.rep, dtype=precision.np_float).reshape(-1) for r in R],
+            [
+                np.array(
+                    (r - r.fractional()).to_vec(np.ndarray), dtype=precision.np_float
+                ).reshape(-1)
+                for r in R
+            ],
             axis=1,
         )
     )
-    exponent = -2j * np.pi * torch.matmul(ten_K, ten_R)  # (K, R)
+    # `ten_K` is already in Cartesian reciprocal coordinates (includes 2π),
+    # so multiplying by `2π` here would double count the phase.
+    exponent = -1j * torch.matmul(ten_K, ten_R)  # (K, R)
     return torch.exp(exponent)  # (K, R)
 
 

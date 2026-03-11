@@ -95,7 +95,7 @@ class AffineTransform(U1Operator, HasBase[AffineSpace]):
     axes : Tuple[sy.Symbol, ...]
         Ordered symbols defining the coordinate axes (used to build monomials).
     offset : Offset
-        Translation component with its associated `AffineSpace`.
+        Translation component with its associated lattice space.
     basis_function_order : int
         Polynomial order used to build the monomial basis (degree).
     """
@@ -228,7 +228,7 @@ class AffineTransform(U1Operator, HasBase[AffineSpace]):
     @lru_cache
     def affine_rep(self) -> sy.ImmutableDenseMatrix:
         """
-        Use the `AffineSpace` of `offset` to build the affine transform matrix in
+        Use the lattice space of `offset` to build the affine transform matrix in
         physical (space-basis) coordinates.
         It will take the form of:
         ```
@@ -545,7 +545,7 @@ def _(t: AffineTransform, offset: Offset) -> Offset:
     Apply an affine group element to a spatial Offset using homogeneous coordinates.
 
     This implementation:
-    - Ensures the transform acts in the same AffineSpace as the input Offset by
+    - Ensures the transform acts in the same lattice space as the input Offset by
       rebasing the transform if necessary.
     - Uses the affine (homogeneous) representation of the transform to combine
       rotation/shear and translation in a single matrix multiply.
@@ -631,7 +631,7 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
         and the transformed momentum in the same reciprocal lattice space as `k`,
         wrapped into the first Brillouin zone via `.fractional()`.
     """
-    real_space = k.base().dual.affine
+    real_space = k.base().dual
     if t.base() != real_space:
         t = t.rebase(real_space)
 
@@ -1020,7 +1020,7 @@ def pointgroup(query: str) -> AffineTransform:
     Returns an `AffineTransform` with:
     - `irrep`: the linear matrix representation from query semantics,
     - `axes`: symbols in ambient order,
-    - `offset`: zero offset in identity `AffineSpace`,
+    - `offset`: zero offset in the identity lattice,
     - `basis_function_order`: parsed `<order>`.
 
     Examples
