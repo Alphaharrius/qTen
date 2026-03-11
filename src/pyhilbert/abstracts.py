@@ -535,14 +535,14 @@ class Span(ABC, Generic[_ElementType]):
         return all(el in base for el in v.elements())
 
 
-class HasUnit(ABC):
+class HasRayRepr(ABC):
     """
-    An object that has a unit representation.
+    An object that can return a canonical representative of its ray.
     """
 
     @abstractmethod
-    def unit(self) -> Self:
-        """Return the unit representation of this object."""
+    def ray_repr(self) -> Self:
+        """Return a canonical representative of this object's ray."""
         raise NotImplementedError()
 
 

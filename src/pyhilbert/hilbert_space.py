@@ -23,7 +23,14 @@ from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from .utils import FrozenDict, full_typename
 from .validations import need_validation
-from .abstracts import AbstractKet, Convertible, Operable, Functional, Span, HasUnit
+from .abstracts import (
+    AbstractKet,
+    Convertible,
+    Operable,
+    Functional,
+    Span,
+    HasRayRepr,
+)
 from .spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .tensors import Tensor
@@ -52,7 +59,7 @@ def _check_u1_multiplicity(value: "U1Basis") -> None:
 @need_validation(_check_u1_multiplicity)
 @dataclass(frozen=True)
 class U1Basis(
-    Spatial, Multiple[Tuple[Any, ...]], AbstractKet[sy.Expr], HasUnit, Convertible
+    Spatial, Multiple[Tuple[Any, ...]], AbstractKet[sy.Expr], HasRayRepr, Convertible
 ):
     """
     Immutable single-particle basis state built from typed irreps.
@@ -248,8 +255,8 @@ class U1Basis(
         return self.__str__()
 
     @override
-    def unit(self) -> "U1Basis":
-        """Get a new copy from this `U1Basis` with the U(1) irrep being `1`."""
+    def ray_repr(self) -> "U1Basis":
+        """Return the canonical ray representative with U(1) coefficient `1`."""
         return replace(self, coef=sy.Integer(1))
 
     def repr_types(self) -> Tuple[Type, ...]:
@@ -302,7 +309,7 @@ def operator_gt(a: U1Basis, b: U1Basis) -> bool:
 
 
 @dataclass(frozen=True)
-class U1Span(Span[U1Basis], Spatial, HasUnit, Convertible):
+class U1Span(Span[U1Basis], Spatial, HasRayRepr, Convertible):
     """
     Finite span of distinct single-particle basis states.
 
@@ -349,20 +356,20 @@ class U1Span(Span[U1Basis], Spatial, HasUnit, Convertible):
         return self.span
 
     @override
-    def unit(self) -> "U1Span":
-        """Return the actual span without any basis scaling by a irrep."""
-        return U1Span(tuple(m.unit() for m in self.span))
+    def ray_repr(self) -> "U1Span":
+        """Return the span obtained by replacing each basis state by its ray representative."""
+        return U1Span(tuple(m.ray_repr() for m in self.span))
 
     def cross_gram(self, ket: "U1Span") -> sy.ImmutableDenseMatrix:
         tbl: Dict["U1Basis", Tuple[int, "U1Basis"]] = {
-            psi.unit(): (n, psi) for n, psi in enumerate(ket.span)
+            psi.ray_repr(): (n, psi) for n, psi in enumerate(ket.span)
         }
         out = sy.zeros(self.dim, ket.dim)
         for n, psi in enumerate(self.span):
-            unit = psi.unit()
-            if unit not in tbl:
+            ray_repr = psi.ray_repr()
+            if ray_repr not in tbl:
                 continue
-            m, kpsi = tbl[unit]
+            m, kpsi = tbl[ray_repr]
             out[n, m] = psi.ket(kpsi)
         return sy.ImmutableDenseMatrix(out)
 
@@ -375,7 +382,7 @@ def u1basis_to_u1span(basis: U1Basis) -> U1Span:
 
 @need_validation()
 @dataclass(frozen=True)
-class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
+class HilbertSpace(HasRayRepr, StateSpace[U1Basis], Span[U1Basis]):
     """
     Composite local Hilbert space built from states and state spans.
 
@@ -391,9 +398,9 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
       `HilbertSpace` values.
 
     As a `Span`, `HilbertSpace` supports overlap/mapping computations through
-    `gram`, which builds a `Tensor` map between two spaces using `U1Basis`
-    overlap (`U1Span.cross_gram`). As a `HasUnit`, `unit()` keeps basis structure
-    while replacing each element by its unit-normalized counterpart.
+    `cross_gram`, which builds a `Tensor` map between two spaces using `U1Basis`
+    overlap (`U1Span.cross_gram`). As a `HasRayRepr`, `ray_repr()` keeps basis
+    structure while replacing each element by its canonical ray representative.
 
     Parameters
     ----------
@@ -769,8 +776,9 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
         return hilbert(elements)
 
     @override
-    def unit(self) -> "HilbertSpace":
-        return hilbert(el.unit() for el in self)
+    def ray_repr(self) -> "HilbertSpace":
+        """Return the Hilbert space obtained by replacing each basis state by its ray representative."""
+        return hilbert(el.ray_repr() for el in self)
 
     @override
     def cross_gram(self, another: "HilbertSpace") -> Tensor:
@@ -783,8 +791,9 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
 
         Output dimension convention
         ---------------------------
-        The returned tensor uses dims `(self, another.unit())`.
-        The target (column) dimension is intentionally unitized (phase removed)
+        The returned tensor uses dims `(self, another.ray_repr())`.
+        The target (column) dimension is intentionally replaced by its canonical
+        ray representative (phase removed)
         so the codomain metadata is gauge-fixed, while phase information remains
         in matrix elements.
 
@@ -798,7 +807,7 @@ class HilbertSpace(HasUnit, StateSpace[U1Basis], Span[U1Basis]):
         data = torch.from_numpy(
             np.asarray(irrep.tolist(), dtype=precision.np_complex)
         ).to(dtype=precision.torch_complex)
-        return Tensor(data=data, dims=(self, another.unit()))
+        return Tensor(data=data, dims=(self, another.ray_repr()))
 
 
 def hilbert(itr: Iterable[U1Basis]) -> HilbertSpace:
@@ -833,8 +842,8 @@ def hilbertspace_to_hilbertspace(v: HilbertSpace) -> HilbertSpace:
 
 @dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
 def same_rays(a: HilbertSpace, b: HilbertSpace) -> bool:
-    return set(m.unit() for m in a.structure.keys()) == set(
-        m.unit() for m in b.structure.keys()
+    return set(m.ray_repr() for m in a.structure.keys()) == set(
+        m.ray_repr() for m in b.structure.keys()
     )
 
 
@@ -926,7 +935,7 @@ class FuncOpr(Generic[_IrrepType], U1Operator):
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def same_rays(a: U1Basis, b: U1Basis) -> bool:
     """Check if two `U1Basis` define the same ray."""
-    return a.unit() == b.unit()
+    return a.ray_repr() == b.ray_repr()
 
 
 @FuncOpr.register(U1Basis)
@@ -951,7 +960,7 @@ def _(f: FuncOpr, h: HilbertSpace) -> HilbertSpace:
 
 @dispatch(U1Span, U1Span)  # type: ignore[no-redef]
 def same_rays(a: U1Span, b: U1Span) -> bool:
-    return set(a.unit().span) == set(b.unit().span)
+    return set(a.ray_repr().span) == set(b.ray_repr().span)
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]

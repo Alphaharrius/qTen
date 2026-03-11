@@ -36,7 +36,7 @@ class MockMode:
     attr: FrozenDict
     size: int
 
-    def unit(self):
+    def ray_repr(self):
         return self
 
 
@@ -53,7 +53,7 @@ class MockModeElement:
     def dim(self) -> int:
         return 1
 
-    def unit(self):
+    def ray_repr(self):
         return self
 
 
