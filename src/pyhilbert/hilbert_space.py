@@ -1,11 +1,9 @@
 from abc import ABC
-from copy import copy
 from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
     Dict,
-    Self,
     Tuple,
     Type,
     TypeVar,
@@ -30,6 +28,7 @@ from .spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .tensors import Tensor
 from .precision import get_precision_config
+from .symbolics import Multiple
 
 
 _IrrepType = TypeVar("_IrrepType")
@@ -38,7 +37,7 @@ _IrrepType = TypeVar("_IrrepType")
 
 def _check_u1_multiplicity(value: "U1Basis") -> None:
     counts: Dict[Type, int] = {}
-    for irrep in value.rep:
+    for irrep in value.base:
         irrep_type = type(irrep)
         counts[irrep_type] = counts.get(irrep_type, 0) + 1
     non_singletons = {t: c for t, c in counts.items() if c != 1}
@@ -52,7 +51,9 @@ def _check_u1_multiplicity(value: "U1Basis") -> None:
 
 @need_validation(_check_u1_multiplicity)
 @dataclass(frozen=True)
-class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
+class U1Basis(
+    Spatial, Multiple[Tuple[Any, ...]], AbstractKet[sy.Expr], HasUnit, Convertible
+):
     """
     Immutable single-particle basis state built from typed irreps.
 
@@ -104,16 +105,13 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         different from `1`.
     """
 
-    u1: sy.Expr
-    rep: Tuple[Any, ...]
-
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
             "rep",
             tuple(
                 sorted(
-                    self.rep,
+                    self.base,
                     key=lambda irrep: full_typename(type(irrep)),
                 )
             ),
@@ -135,7 +133,7 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         `U1Basis`
             A `U1Basis` instance with the given reps and a default U(1) value of `1`.
         """
-        return U1Basis(u1=sy.Integer(1), rep=tuple(rep))
+        return U1Basis(coef=sy.Integer(1), base=tuple(rep))
 
     @property
     def dim(self) -> int:
@@ -169,10 +167,10 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
             type as `irrep`.
         """
         target_type = type(irrep)
-        reps = self.rep
+        reps = self.base
         for i, x in enumerate(reps):
             if type(x) is target_type:
-                return replace(self, rep=reps[:i] + (irrep,) + reps[i + 1 :])
+                return replace(self, base=reps[:i] + (irrep,) + reps[i + 1 :])
         raise ValueError(
             f"U1Basis has no irrep of type {target_type.__name__} to replace."
         )
@@ -208,7 +206,7 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         - Runtime is linear in the number of irreps (`O(n)`), with no temporary
           mapping allocations.
         """
-        for irrep in self.rep:
+        for irrep in self.base:
             if type(irrep) is T:
                 return cast(_IrrepType, irrep)
         raise ValueError(f"U1Basis {self} has no irrep of type {T.__name__}.")
@@ -231,19 +229,19 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
             overlap is the product of this state's U(1) value and the conjugate of
             `psi`'s U(1) value.
         """
-        if self.rep != psi.rep:
+        if self.base != psi.base:
             return sy.Integer(0)
-        return cast(sy.Expr, (sy.conjugate(self.u1) * psi.u1).simplify())
+        return cast(sy.Expr, (sy.conjugate(self.coef) * psi.coef).simplify())
 
     def __str__(self) -> str:
         ket_repr = "⊗".join(
             f"|{irrep_repr}⟩"
             if len(irrep_repr := repr(irrep)) <= 32
             else f"|{type(irrep).__name__}⟩"
-            for irrep in self.rep
+            for irrep in self.base
         )
-        if self.u1 != sy.Integer(1):
-            ket_repr = f"({self.u1}) * " + ket_repr
+        if self.coef != sy.Integer(1):
+            ket_repr = f"({self.coef}) * " + ket_repr
         return ket_repr
 
     def __repr__(self) -> str:
@@ -252,7 +250,7 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
     @override
     def unit(self) -> "U1Basis":
         """Get a new copy from this `U1Basis` with the U(1) irrep being `1`."""
-        return replace(self, u1=sy.Integer(1))
+        return replace(self, coef=sy.Integer(1))
 
     def repr_types(self) -> Tuple[Type, ...]:
         """
@@ -266,13 +264,13 @@ class U1Basis(Spatial, AbstractKet[sy.Expr], HasUnit, Convertible):
         `Tuple[Type, ...]`
             Tuple of concrete irrep types in deterministic type-name order.
         """
-        return tuple(type(irrep) for irrep in self.rep)
+        return tuple(type(irrep) for irrep in self.base)
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_lt(a: U1Basis, b: U1Basis) -> bool:
-    rep_a = a.rep
-    rep_b = b.rep
+    rep_a = a.base
+    rep_b = b.base
     if len(rep_a) < len(rep_b):
         return True
     if len(rep_a) > len(rep_b):
@@ -288,8 +286,8 @@ def operator_lt(a: U1Basis, b: U1Basis) -> bool:
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_gt(a: U1Basis, b: U1Basis) -> bool:
-    rep_a = a.rep
-    rep_b = b.rep
+    rep_a = a.base
+    rep_b = b.base
     if len(rep_a) > len(rep_b):
         return True
     if len(rep_a) < len(rep_b):
@@ -840,10 +838,10 @@ def same_span(a: HilbertSpace, b: HilbertSpace) -> bool:
     )
 
 
-_ObservableType = TypeVar("_ObservableType")
+_T = TypeVar("_T")
 
 
-class U1Operator(Generic[_ObservableType], Functional, Operable, ABC):
+class U1Operator(Functional, Operable, ABC):
     """
     A composable operator that acts on observable-compatible objects.
 
@@ -902,123 +900,25 @@ class U1Operator(Generic[_ObservableType], Functional, Operable, ABC):
 
     @override
     def invoke(  # type: ignore[override]
-        self, v: U1Basis, **kwargs
-    ) -> Tuple[_ObservableType, U1Basis]:
+        self, v: _T, **kwargs
+    ) -> Union[_T, Multiple[_T]]:
         result = super().invoke(v, **kwargs)
-        assert isinstance(result, tuple), (
-            f"Operator {type(self)} acting on {type(v).__name__} should yield a Tuple[Any, Any]!"
+        assert isinstance(result, type(v)) or (
+            type(result) is Multiple and isinstance(result.base, type(v))
+        ), (
+            f"Operator {type(self)} acting on {type(v).__name__} should yield same typed object"
+            f"or Multiple[{type(v).__name__}]"
         )
-        o, ov = result
-        assert isinstance(ov, type(v)), (
-            f"Operator {type(self)} acting on {type(v).__name__} should yield a Tuple[Any, {type(v).__name__}]!"
-        )
-        if type(v) is type(ov):
-            try:
-                needs_none = not same_span(v, ov)  # type: ignore[arg-type]
-            except Exception:
-                needs_none = v != ov
-        else:
-            needs_none = v != ov
-        if needs_none:
-            assert o is None, (
-                f"Un-closed operator action should have undefined irrep (None), got {o}!"
-            )
-
-        return o, ov
-
-    def eigen_opr(self) -> Self:
-        """
-        Return an eigenstate-validating copy of this operator.
-
-        This helper creates a shallow copy of the operator and wraps its
-        :meth:`apply` method with a post-condition check: the transformed output
-        must be equal to the input value. If the value changes, the wrapped
-        operator raises :class:`ValueError`.
-
-        Use this when downstream logic assumes that the input is already an
-        eigenstate of the operator and should therefore remain unchanged by the
-        operator action.
-
-        Returns
-        -------
-        Self
-            A copy of the current operator whose application enforces
-            the same closure condition as :meth:`apply`.
-
-        Raises
-        ------
-        ValueError
-            Raised at call time if the wrapped operator is applied to a value
-            that is not closure-preserving under :meth:`apply` semantics.
-
-        Examples
-        --------
-        A common use case is validating basis assumptions in algorithms that
-        require eigen-aligned states:
-
-        - Build `checked = op.eigen_opr()`.
-        - Apply `checked(state)` before a specialized computation.
-        - Fail fast with `ValueError` if `state` is not an eigenstate.
-        """
-        op = copy(self)
-        apply = op.invoke
-
-        def eigen_apply(v: U1Basis, **kwargs) -> Tuple[_ObservableType, U1Basis]:
-            """
-            Apply the copied operator and enforce closure-preserving output.
-
-            This wrapper delegates to the copied operator's original
-            :meth:`apply` implementation, then validates that the transformed
-            output remains closed with the input under the same semantics used by
-            :meth:`Operator.apply`:
-
-            - If both input and output are `U1Basis`, closure is checked
-              by span membership with `same_span(v, ov)`.
-            - Otherwise, closure is checked by strict value equality `ov == v`.
-
-            Parameters
-            ----------
-            `v` : `U1Basis`
-                Input object to transform.
-            `**kwargs`
-                Keyword arguments forwarded to the wrapped :meth:`apply` call.
-
-            Returns
-            -------
-            `Tuple[_ObservableType, U1Basis]`
-                The observable payload and transformed output from the wrapped
-                operator call, when closure is preserved.
-
-            Raises
-            ------
-            `ValueError`
-                If the transformed output is not closure-preserving with respect
-                to `v` under the branch-specific rule above.
-            """
-            o, ov = apply(v, **kwargs)
-            if isinstance(v, U1Basis) and isinstance(ov, U1Basis):
-                is_closed = same_span(v, ov)
-            else:
-                is_closed = ov == v
-            if not is_closed:
-                raise ValueError(
-                    f"{type(op).__name__} expected a closure-preserving state, but output "
-                    "{ov!r} is not closed with input {v!r}."
-                )
-            return o, ov
-
-        object.__setattr__(op, "invoke", eigen_apply)
-        return op
+        return result
 
 
 @dispatch(U1Operator, Operable)
 def operator_matmul(o: U1Operator, v: Operable):
-    _, v = o(v)
-    return v
+    return o(v)
 
 
 @dataclass(frozen=True)
-class FuncOpr(Generic[_IrrepType], U1Operator[sy.Integer]):
+class FuncOpr(Generic[_IrrepType], U1Operator):
     T: Type[_IrrepType]
     func: Callable
 
@@ -1030,28 +930,23 @@ def same_span(a: U1Basis, b: U1Basis) -> bool:
 
 
 @FuncOpr.register(U1Basis)
-def _func_opr_u1_state(f: FuncOpr, psi: U1Basis) -> Tuple[sy.Integer | None, U1Basis]:
+def _(f: FuncOpr, psi: U1Basis) -> U1Basis:
     irrep = psi.irrep_of(f.T)
     new_irrep = f.func(irrep)
-    func_irrep = sy.Integer(1) if irrep == new_irrep else None
     new_psi = psi.replace(new_irrep)
-    return func_irrep, new_psi
+    return new_psi
 
 
 @FuncOpr.register(U1Span)
-def _func_opr_u1_span(f: FuncOpr, s: U1Span) -> Tuple[sy.Integer | None, U1Span]:
+def _(f: FuncOpr, s: U1Span) -> U1Span:
     new_s: U1Span = replace(s, span=tuple(f @ psi for psi in s.span))
-    func_irrep = sy.Integer(1) if same_span(s, new_s) else None
-    return func_irrep, new_s
+    return new_s
 
 
 @FuncOpr.register(HilbertSpace)
-def _func_opr_hilbert(
-    f: FuncOpr, h: HilbertSpace
-) -> Tuple[sy.Integer | None, HilbertSpace]:
+def _(f: FuncOpr, h: HilbertSpace) -> HilbertSpace:
     new_h = hilbert(f @ el for el in h)
-    func_irrep = sy.Integer(1) if same_span(h, new_h) else None
-    return func_irrep, new_h
+    return new_h
 
 
 @dispatch(U1Span, U1Span)  # type: ignore[no-redef]
@@ -1061,16 +956,16 @@ def same_span(a: U1Span, b: U1Span) -> bool:
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_eq(a: U1Basis, b: U1Basis) -> bool:
-    return a.u1 == b.u1 and a.rep == b.rep
+    return a.coef == b.coef and a.base == b.base
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
 def operator_matmul(a: U1Basis, b: U1Basis) -> U1Basis:
-    if not a.rep:
+    if not a.base:
         return b
-    if not b.rep:
+    if not b.base:
         return a
-    return U1Basis((a.u1 * b.u1).simplify(), a.rep + b.rep)
+    return U1Basis((a.coef * b.coef).simplify(), a.base + b.base)
 
 
 @dispatch(U1Basis, U1Basis)

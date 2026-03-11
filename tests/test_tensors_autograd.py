@@ -6,7 +6,7 @@ from pyhilbert.state_space import IndexSpace
 
 
 def _state(tag: str, idx: int) -> U1Basis:
-    return U1Basis(u1=sy.Integer(1), rep=((tag, idx),))
+    return U1Basis(coef=sy.Integer(1), base=((tag, idx),))
 
 
 class TestTensorAutograd:

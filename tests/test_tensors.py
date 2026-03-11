@@ -1159,7 +1159,9 @@ def _simple_hilbert(tag: str, size: int, make_irrep=None) -> HilbertSpace:
         def make_irrep(n):
             return (tag, n)
 
-    basis = tuple(U1Basis(u1=sy.Integer(1), rep=(make_irrep(n),)) for n in range(size))
+    basis = tuple(
+        U1Basis(coef=sy.Integer(1), base=(make_irrep(n),)) for n in range(size)
+    )
     return hilbert(basis)
 
 
@@ -1168,7 +1170,9 @@ def test_factorize_dim_then_product_dims_roundtrip_hilbert():
     right = _simple_hilbert("right", 3)
 
     factorizable = hilbert(
-        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b", "c")
+        U1Basis(coef=sy.Integer(1), base=(i, j))
+        for i in (0, 1)
+        for j in ("a", "b", "c")
     )
 
     data = torch.arange(

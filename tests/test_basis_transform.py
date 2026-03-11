@@ -23,7 +23,7 @@ class Orb:
 
 
 def _mode(r: Offset, orb: str = "s") -> U1Basis:
-    return U1Basis(u1=sy.Integer(1), rep=(r, Orb(orb)))
+    return U1Basis(coef=sy.Integer(1), base=(r, Orb(orb)))
 
 
 def test_bandfold_1d():

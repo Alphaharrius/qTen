@@ -10,7 +10,7 @@ import sympy as sy
 
 from .abstracts import HasBase
 from .spatials import AffineSpace, Spatial, Offset, Momentum
-from .state_space import MomentumSpace, same_span
+from .state_space import MomentumSpace
 from .hilbert_space import (
     U1Operator,
     HilbertSpace,
@@ -24,6 +24,7 @@ from .fourier import fourier_transform
 from .validations import need_validation
 from .validations.symbolics import check_invertibility, check_numerical
 from .utils import FrozenDict
+from .symbolics import Multiple
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ def operator_gt(a: AbelianBasis, b: AbelianBasis) -> bool:
 
 @need_validation(check_invertibility("irrep"), check_numerical("irrep"))
 @dataclass(frozen=True)
-class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
+class AffineTransform(U1Operator, HasBase[AffineSpace]):
     """
     Affine group element acting on polynomial coordinate functions.
 
@@ -130,7 +131,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
             only by factor ordering are collapsed to a single representative.
         """
         indices = self.__full_indices()
-        _, select_rules = AffineGroupElement.__get_contract_select_rules(indices)
+        _, select_rules = AffineTransform.__get_contract_select_rules(indices)
         sorted_rules = sorted(select_rules, key=lambda x: x[1])
         return tuple(indices[n] for n, _ in sorted_rules)
 
@@ -298,7 +299,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
         """
         return self.offset.space
 
-    def rebase(self, new_base: AffineSpace) -> "AffineGroupElement":
+    def rebase(self, new_base: AffineSpace) -> "AffineTransform":
         """
         Re-express this transform in a different affine space basis.
 
@@ -309,18 +310,18 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
 
         Returns
         -------
-        `AffineGroupElement`
+        `AffineTransform`
             New element with the same symbolic linear representation and axes,
             but with `offset` rebased to `new_base`.
         """
-        return AffineGroupElement(
+        return AffineTransform(
             irrep=self.irrep,
             axes=self.axes,
             offset=self.offset.rebase(new_base),
             basis_function_order=self.basis_function_order,
         )
 
-    def with_origin(self, origin: Offset) -> "AffineGroupElement":
+    def with_origin(self, origin: Offset) -> "AffineTransform":
         """
         Return an equivalent affine group element expressed relative to a new origin.
 
@@ -339,7 +340,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
 
         Returns
         -------
-        `AffineGroupElement`
+        `AffineTransform`
             A new affine group element with the same linear part and adjusted
             translation so the action is expressed about `origin`.
         """
@@ -367,7 +368,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
         new_rep = t_rep + (irrep - ident) @ o_rep
         new_offset = Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=origin.space)
 
-        return AffineGroupElement(
+        return AffineTransform(
             irrep=irrep,
             axes=t.axes,
             offset=new_offset,
@@ -375,13 +376,13 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
         )
 
     @lru_cache
-    def group_elements(self, max_order: int = 128) -> Tuple["AffineGroupElement", ...]:
+    def group_elements(self, max_order: int = 128) -> Tuple["AffineTransform", ...]:
         """
         Generate powers of the linear irrep with a shared translation component.
 
         Starts from the identity matrix and repeatedly multiplies by `self.irrep`,
         stopping once the linear matrix repeats or `max_order` is reached.
-        Each returned `AffineGroupElement` uses:
+        Each returned `AffineTransform` uses:
         - the current linear power (`I, R, R^2, ...`) as `irrep`,
         - the same `axes` and `basis_function_order`,
         - the original `self.offset` unchanged.
@@ -396,7 +397,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
 
         Returns
         -------
-        `Tuple[AffineGroupElement, ...]`
+        `Tuple[AffineTransform, ...]`
             Sequence of elements whose linear parts are `[I, R, R^2, ...]`,
             truncated at linear cycle closure or `max_order`.
         """
@@ -418,7 +419,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
                 break
             seen.add(current)
             elements.append(
-                AffineGroupElement(
+                AffineTransform(
                     irrep=current,
                     axes=axes,
                     offset=self.offset,
@@ -450,7 +451,7 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
         group_order = len(self.group_elements())
         tbl: Dict[sy.Expr, AbelianBasis] = {}
         for n in range(group_order):
-            order_element = AffineGroupElement(
+            order_element = AffineTransform(
                 irrep=self.irrep,
                 axes=self.axes,
                 offset=self.offset,
@@ -464,10 +465,8 @@ class AffineGroupElement(U1Operator, HasBase[AffineSpace]):
         return FrozenDict(tbl)
 
 
-@AffineGroupElement.register(AbelianBasis)
-def _affine_transform_abelian_basis(
-    t: AffineGroupElement, f: AbelianBasis
-) -> Tuple[sy.Expr, AbelianBasis]:
+@AffineTransform.register(AbelianBasis)
+def _(t: AffineTransform, f: AbelianBasis) -> Multiple[AbelianBasis]:
     """
     Apply an affine group element to a basis function and extract its phase factor.
 
@@ -486,7 +485,7 @@ def _affine_transform_abelian_basis(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         The affine group element (transform) to apply.
     `f` : `AbelianBasis`
         The basis function to be transformed.
@@ -509,7 +508,7 @@ def _affine_transform_abelian_basis(
         )
 
     if t.basis_function_order != f.order:
-        t = AffineGroupElement(
+        t = AffineTransform(
             irrep=t.irrep,
             axes=t.axes,
             offset=t.offset,
@@ -537,13 +536,11 @@ def _affine_transform_abelian_basis(
     if phase is None:
         raise ValueError(f"{f} is a trivial basis function: zero")
 
-    return phase, f
+    return Multiple(phase, f)
 
 
-@AffineGroupElement.register(Offset)
-def _affine_transform_offset(
-    t: AffineGroupElement, offset: Offset
-) -> Tuple[sy.Expr | None, Offset]:
+@AffineTransform.register(Offset)
+def _(t: AffineTransform, offset: Offset) -> Offset:
     """
     Apply an affine group element to a spatial Offset using homogeneous coordinates.
 
@@ -556,7 +553,7 @@ def _affine_transform_offset(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         The affine group element to apply. If its internal `offset.space` does
         not match `offset.space`, the transform is rebased to the Offset's space.
     `offset` : `Offset`
@@ -586,14 +583,11 @@ def _affine_transform_offset(
     new_hom = affine_rep @ hom
     new_rep = new_hom[:-1, :]
     new_offset = Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
-    irrep = sy.Integer(1) if new_offset == offset else None
-    return irrep, new_offset
+    return new_offset
 
 
-@AffineGroupElement.register(Momentum)
-def _affine_transform_momentum(
-    t: AffineGroupElement, k: Momentum
-) -> Tuple[sy.Expr | None, Momentum]:
+@AffineTransform.register(Momentum)
+def _(t: AffineTransform, k: Momentum) -> Momentum:
     """
     Apply an affine group element to a Momentum in fractional reciprocal coordinates.
 
@@ -623,7 +617,7 @@ def _affine_transform_momentum(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         The affine group element to apply. If its base affine space does not
         match the real-space dual of `k`, it is rebased accordingly.
     `k` : `Momentum`
@@ -658,14 +652,11 @@ def _affine_transform_momentum(
         rep = sy.ImmutableDenseMatrix(rep)
     new_rep = reciprocal_rep @ rep
     new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base()).fractional()
-    irrep = sy.Integer(1) if new_k == k else None
-    return irrep, new_k
+    return new_k
 
 
-@AffineGroupElement.register(U1Basis)
-def _affine_transform_u1_state(
-    t: AffineGroupElement, psi: U1Basis
-) -> Tuple[sy.Expr | None, U1Basis]:
+@AffineTransform.register(U1Basis)
+def _(t: AffineTransform, psi: U1Basis) -> U1Basis:
     """
     Apply an affine transform to a `U1Basis` by transforming each irrep component.
 
@@ -680,7 +671,7 @@ def _affine_transform_u1_state(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         Affine symmetry operation.
     `psi` : `U1Basis`
         State to transform.
@@ -691,27 +682,21 @@ def _affine_transform_u1_state(
         Overall gauge (or `None` if not a symmetry eigenstate) and transformed
         `U1Basis`.
     """
-    overall_gauge: sy.Expr | None = psi.u1
-    new_u1: sy.Expr = psi.u1
-    new_rep: Tuple[Any, ...] = tuple()
-    for irrep in psi.rep:
-        if t.allows(irrep):
-            gauge, transformed_irrep = t(irrep)
+    new_coef: sy.Expr = psi.coef
+    new_base: Tuple[Any, ...] = tuple()
+    for rep in psi.base:
+        ret = t(rep) if t.allows(rep) else rep
+        if isinstance(ret, Multiple):
+            new_coef *= ret.coef
+            rep = ret.base
         else:
-            gauge, transformed_irrep = sy.Integer(1), irrep
-        if gauge is None:
-            overall_gauge = None
-        elif overall_gauge is not None:
-            overall_gauge *= gauge
-            new_u1 *= gauge
-        new_rep += (transformed_irrep,)
-    return overall_gauge, U1Basis(new_u1, new_rep)
+            rep = ret
+        new_base += (rep,)
+    return U1Basis(new_coef, new_base)
 
 
-@AffineGroupElement.register(U1Span)
-def _affine_transform_u1_span(
-    t: AffineGroupElement, v: U1Span
-) -> Tuple[sy.ImmutableDenseMatrix | None, U1Span]:
+@AffineTransform.register(U1Span)
+def _(t: AffineTransform, v: U1Span) -> U1Span:
     """
     Apply an affine transform to a span of `U1Basis`s and extract its matrix irrep.
 
@@ -723,7 +708,7 @@ def _affine_transform_u1_span(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         Affine symmetry operation.
     `v` : `U1Span`
         Span to transform.
@@ -734,18 +719,12 @@ def _affine_transform_u1_span(
         Matrix-valued irrep on the span basis when invariant, otherwise `None`,
         together with the transformed span.
     """
-    new_span: Tuple[U1Basis, ...] = tuple(t @ psi for psi in v.span)
-    new_v = U1Span(new_span)
-    if not same_span(v, new_v):
-        return None, new_v
-    irrep = v.gram(new_v)
-    return irrep, new_v
+    new_span: Tuple[U1Basis, ...] = tuple(cast(U1Basis, t @ psi) for psi in v.span)
+    return U1Span(new_span)
 
 
-@AffineGroupElement.register(HilbertSpace)
-def _affine_transform_hilbert(
-    t: AffineGroupElement, h: HilbertSpace
-) -> Tuple[Tensor | None, HilbertSpace]:
+@AffineTransform.register(HilbertSpace)
+def _(t: AffineTransform, h: HilbertSpace) -> HilbertSpace:
     """
     Apply an affine transform to a `HilbertSpace` basis and compute its action.
 
@@ -756,7 +735,7 @@ def _affine_transform_hilbert(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         Affine symmetry operation.
     `h` : `HilbertSpace`
         Hilbert-space basis to transform.
@@ -767,15 +746,12 @@ def _affine_transform_hilbert(
         Tensor representation of the symmetry action in the original basis when
         invariant, otherwise `None`; and the transformed Hilbert space.
     """
-    new_h = hilbert(t @ el for el in h)
-    if not same_span(h, new_h):
-        return None, new_h
-    gram = h.gram(new_h)
-    return gram, new_h
+    new_h = hilbert(cast(U1Basis, t @ el) for el in h)
+    return new_h
 
 
 def bandtransform(
-    t: AffineGroupElement,
+    t: AffineTransform,
     tensor: Tensor,
     opt: Literal["left", "right", "both"] = "both",
 ) -> Tensor:
@@ -800,7 +776,7 @@ def bandtransform(
 
     Parameters
     ----------
-    `t` : `AffineGroupElement`
+    `t` : `AffineTransform`
         Affine transformation to apply.
     `tensor` : `Tensor`
         Momentum-space tensor with dims
@@ -835,7 +811,7 @@ def bandtransform(
 
     def build_transform(space: HilbertSpace) -> Tensor:
         fractional = FuncOpr(Offset, Offset.fractional)
-        new_space = fractional @ (t @ space)
+        new_space = cast(HilbertSpace, fractional @ (t @ space))
         bloch_transform: Tensor = cast(Tensor, space.gram(new_space)).h(
             -2, -1
         )  # (B', B)
@@ -983,9 +959,9 @@ def _build_mirror_irrep(ambient: str, target: str) -> sy.ImmutableDenseMatrix:
     return sy.ImmutableDenseMatrix(mutable)
 
 
-def pointgroup(query: str) -> AffineGroupElement:
+def pointgroup(query: str) -> AffineTransform:
     """
-    Build an `AffineGroupElement` from a compact query string.
+    Build an `AffineTransform` from a compact query string.
 
     This is a user-facing constructor for common point operations in Cartesian
     axes (`x`, `y`, `z`), currently supporting cyclic rotations and mirrors.
@@ -1006,7 +982,7 @@ def pointgroup(query: str) -> AffineGroupElement:
       defining the space dimension and basis-axis order in the returned transform.
       Examples: `x`, `xy`, `xyz`, `yzx`.
     - `<target>` chooses where the group action lives (must be subset of ambient).
-    - `<order>` is the polynomial basis-function order for `AffineGroupElement`.
+    - `<order>` is the polynomial basis-function order for `AffineTransform`.
 
     Group semantics
     ---------------
@@ -1041,7 +1017,7 @@ def pointgroup(query: str) -> AffineGroupElement:
 
     Return value
     ------------
-    Returns an `AffineGroupElement` with:
+    Returns an `AffineTransform` with:
     - `irrep`: the linear matrix representation from query semantics,
     - `axes`: symbols in ambient order,
     - `offset`: zero offset in identity `AffineSpace`,
@@ -1099,7 +1075,7 @@ def pointgroup(query: str) -> AffineGroupElement:
 
     space = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(dim))
     zero = Offset(rep=sy.ImmutableDenseMatrix([0] * dim), space=space)
-    return AffineGroupElement(
+    return AffineTransform(
         irrep=irrep,
         axes=axes,
         offset=zero,

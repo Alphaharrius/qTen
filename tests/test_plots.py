@@ -20,7 +20,7 @@ class Orb:
 
 
 def _basis_state(name: str) -> U1Basis:
-    return U1Basis(u1=sy.Integer(1), rep=(Orb(name),))
+    return U1Basis(coef=sy.Integer(1), base=(Orb(name),))
 
 
 def _space(size: int, prefix: str):
