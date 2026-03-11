@@ -8,7 +8,6 @@ from pyhilbert.state_space import brillouin_zone
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.fourier import fourier_transform
 from pyhilbert.boundary import PeriodicBoundary
-from pyhilbert.utils import FrozenDict
 
 
 @dataclass(frozen=True)

@@ -7,6 +7,7 @@ from pyhilbert.affine_transform import AffineGroupElement, pointgroup
 import sympy as sy
 from pyhilbert.basis_transform import BasisTransform
 
+
 def col(*values: int) -> ImmutableDenseMatrix:
     return ImmutableDenseMatrix(list(values))
 
@@ -218,7 +219,9 @@ def test_potential_errors():
 
     # Rebasing a 3D offset to a 2D lattice should raise an error
     offset_3d = Offset(rep=sy.ImmutableDenseMatrix([1, 1, 1]), space=space)
-    with pytest.raises(Exception):  # Sympy matrix multiplication should raise ShapeError
+    with pytest.raises(
+        Exception
+    ):  # Sympy matrix multiplication should raise ShapeError
         offset_3d.rebase(lattice_2d)
 
 
@@ -325,6 +328,7 @@ def test_lattice_rebase_physical_invariance():
 
     assert all(val.is_integer for val in k)
 
+
 def assert_equivalent_mod_physical_boundaries(
     reference_vec: ImmutableDenseMatrix,
     candidate_vec: ImmutableDenseMatrix,
@@ -340,6 +344,7 @@ def assert_equivalent_mod_physical_boundaries(
     # Full-rank boundary basis should yield a unique solution.
     assert params.shape == (0, 1)
     assert all(value.is_integer for value in coeffs)
+
 
 def test_lattice_rebase_physical_invariance_3d():
     """
@@ -391,7 +396,7 @@ def test_affine_transform_boundary_condition_3d():
     )
 
     point = Offset(rep=ImmutableDenseMatrix([3, 2, 4]), space=lattice)
-    transformed = t(point)
+    transformed = t @ point
 
     # Unwrapped affine action in representation coordinates.
     unwrapped_rep = t.irrep @ point.rep + t.offset.rep

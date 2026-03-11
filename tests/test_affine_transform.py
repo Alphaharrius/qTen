@@ -784,7 +784,11 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
 
 def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
     x, y = sy.symbols("x y")
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     k_space = brillouin_zone(lattice.dual)
 
     r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)

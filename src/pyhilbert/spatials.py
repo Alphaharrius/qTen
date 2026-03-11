@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Tuple, Type, TypeVar, Union, cast, Mapping, Generic
+from typing import Tuple, Type, TypeVar, Union, cast, Mapping, Generic, Sequence
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from multipledispatch import dispatch  # type: ignore[import-untyped]
@@ -12,8 +12,8 @@ from .precision import get_precision_config
 from sympy import ImmutableDenseMatrix, sympify
 from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 from .utils import FrozenDict
-from .abstracts import Operable, HasDual, HasBase, Plottable
-from .boundary import BoundaryCondition
+from .abstracts import Operable, HasDual, HasBase, Plottable, Convertible
+from .boundary import BoundaryCondition, PeriodicBoundary
 from .validations import need_validation
 from .validations.symbolics import check_invertibility, check_numerical
 
@@ -66,11 +66,35 @@ class Lattice(AbstractLattice):
     def __init__(
         self,
         basis: ImmutableDenseMatrix,
-        boundaries: BoundaryCondition,
-        unit_cell: Mapping[str, ImmutableDenseMatrix],
+        boundaries: BoundaryCondition | None = None,
+        unit_cell: Mapping[str, ImmutableDenseMatrix] | None = None,
+        shape: Sequence[int] | None = None,
     ):
         object.__setattr__(self, "basis", basis)
+
+        if boundaries is None:
+            if shape is None:
+                raise TypeError(
+                    "Lattice requires either `boundaries` or legacy `shape`."
+                )
+            if len(shape) != self.dim:
+                raise ValueError(
+                    f"shape must have length {self.dim}, got {len(shape)}."
+                )
+            if any(int(n) <= 0 for n in shape):
+                raise ValueError(f"shape entries must be positive, got {tuple(shape)}.")
+            boundaries = PeriodicBoundary(ImmutableDenseMatrix.diag(*map(int, shape)))
+        elif shape is not None and tuple(map(int, shape)) != tuple(
+            int(n) for n in smith_normal_form(boundaries.basis, domain=sy.ZZ).diagonal()
+        ):
+            raise ValueError(
+                "`shape` and `boundaries` are inconsistent; provide only one "
+                "or ensure they represent the same periodic extents."
+            )
         object.__setattr__(self, "boundaries", boundaries)
+
+        if unit_cell is None:
+            unit_cell = {"r": ImmutableDenseMatrix([0] * self.dim)}
 
         if len(unit_cell) == 0:
             raise ValueError(
@@ -172,14 +196,14 @@ _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
 def _check_offset_matches_space(r: "Offset") -> None:
     if r.rep.shape != (r.space.dim, 1):
         raise ValueError(
-            f"Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
+            f"Invalid Shape: Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
             f"got {r.rep.shape}."
         )
 
 
 S = TypeVar("S", bound=AffineSpace)
 """Generic type for the `AffineSpace`."""
-        
+
 
 @need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)

@@ -16,6 +16,7 @@ from .state_space import MomentumSpace, brillouin_zone
 from .hilbert_space import HilbertSpace, U1Basis, hilbert
 from .tensors import Tensor, mapping_matrix
 from .fourier import fourier_transform
+from .boundary import PeriodicBoundary
 
 
 @need_validation(check_proper_transformation("M"), check_numerical("M"))

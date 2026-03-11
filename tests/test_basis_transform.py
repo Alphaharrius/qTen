@@ -15,6 +15,7 @@ from pyhilbert.state_space import brillouin_zone
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.tensors import Tensor
 from pyhilbert.basis_transform import bandfold, BasisTransform
+from pyhilbert.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ def test_bandfold_1d():
     assert k_space.dim == 4
 
     # 1b. Define a simple 1-dim Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
     h_space = hilbert([_mode(r_offset)])
     assert h_space.dim == 1
 
@@ -95,7 +96,7 @@ def test_bandfold_2d():
     assert k_space.dim == 4
 
     # 1b. Define a simple Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
     h_space = hilbert([_mode(r_offset, "s")])
     assert h_space.dim == 1
 
