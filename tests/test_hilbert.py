@@ -37,7 +37,7 @@ def test_u1_state_basic_properties_and_overlap():
 
     assert psi.dim == 1
     assert psi.ket(psi_scaled) == sy.Integer(2)
-    assert psi.ray_repr() == _state(r0, "s", sy.Integer(1))
+    assert psi.rays() == _state(r0, "s", sy.Integer(1))
 
 
 def test_u1_state_irrep_access_and_replace():
@@ -245,7 +245,7 @@ def test_hilbert_space_gram_unitizes_target_dim():
 
     gram = hs.cross_gram(hs)
     assert gram.dims[0] == hs
-    assert gram.dims[1] == hs.ray_repr()
+    assert gram.dims[1] == hs.rays()
 
 
 def test_hilbert_space_lookup_exact_query_match():

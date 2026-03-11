@@ -535,13 +535,13 @@ class Span(ABC, Generic[_ElementType]):
         return all(el in base for el in v.elements())
 
 
-class HasRayRepr(ABC):
+class HasRays(ABC):
     """
     An object that can return a canonical representative of its ray.
     """
 
     @abstractmethod
-    def ray_repr(self) -> Self:
+    def rays(self) -> Self:
         """Return a canonical representative of this object's ray."""
         raise NotImplementedError()
 

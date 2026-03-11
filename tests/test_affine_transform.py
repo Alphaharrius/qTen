@@ -590,7 +590,7 @@ def test_affine_transform_hilbert_c4_u1state_mapping():
 
     tmat = h.cross_gram(gh)
     assert tmat.dims[0] == h
-    assert tmat.dims[1] == gh_expected.ray_repr()
+    assert tmat.dims[1] == gh_expected.rays()
 
     # mapping_matrix(h, gh_expected, mode_mapping) is identity for this construction.
     expected = torch.eye(2, dtype=torch.complex128)
