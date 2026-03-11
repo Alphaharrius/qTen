@@ -832,7 +832,7 @@ def hilbertspace_to_hilbertspace(v: HilbertSpace) -> HilbertSpace:
 
 
 @dispatch(HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
-def same_span(a: HilbertSpace, b: HilbertSpace) -> bool:
+def same_rays(a: HilbertSpace, b: HilbertSpace) -> bool:
     return set(m.unit() for m in a.structure.keys()) == set(
         m.unit() for m in b.structure.keys()
     )
@@ -882,7 +882,7 @@ class U1Operator(Functional, Operable, ABC):
       This invariant is validated by :meth:`apply` using assertions.
     - Closure validation in :meth:`apply` has two branches:
       - for `U1Basis` inputs, closure is span-based
-        (`same_span(input, transformed_value)`).
+        (`same_rays(input, transformed_value)`).
       - for non-`U1Basis` inputs, closure is value-based
         (`input == transformed_value`).
       In either branch, if closure fails, the observable must be `None`.
@@ -924,8 +924,8 @@ class FuncOpr(Generic[_IrrepType], U1Operator):
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
-def same_span(a: U1Basis, b: U1Basis) -> bool:
-    """Check if the unit basis of two `U1Basis` are the same."""
+def same_rays(a: U1Basis, b: U1Basis) -> bool:
+    """Check if two `U1Basis` define the same ray."""
     return a.unit() == b.unit()
 
 
@@ -950,7 +950,7 @@ def _(f: FuncOpr, h: HilbertSpace) -> HilbertSpace:
 
 
 @dispatch(U1Span, U1Span)  # type: ignore[no-redef]
-def same_span(a: U1Span, b: U1Span) -> bool:
+def same_rays(a: U1Span, b: U1Span) -> bool:
     return set(a.unit().span) == set(b.unit().span)
 
 

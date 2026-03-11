@@ -701,7 +701,7 @@ def _(t: AffineTransform, v: U1Span) -> U1Span:
     Apply an affine transform to a span of `U1Basis`s and extract its matrix irrep.
 
     Each basis state in `v.span` is transformed independently. The transformed
-    span is then compared against the original span using `same_span`.
+    span is then compared against the original span using `same_rays`.
     - If the span is not invariant, returns `(None, transformed_span)`.
     - If invariant, returns the Gram/overlap matrix `v.gram(new_v)`, which is the
       representation of the symmetry action in this basis.
@@ -729,7 +729,7 @@ def _(t: AffineTransform, h: HilbertSpace) -> HilbertSpace:
     Apply an affine transform to a `HilbertSpace` basis and compute its action.
 
     The transform is applied elementwise to build a new Hilbert space basis.
-    Invariance is checked by `same_span(h, new_h)`:
+    Invariance is checked by `same_rays(h, new_h)`:
     - If the transformed basis leaves the span, returns `(None, new_h)`.
     - If the span is preserved, returns the basis-action matrix `h.gram(new_h)`.
 
@@ -817,7 +817,7 @@ def bandtransform(
         )  # (B', B)
         # The transformation will distort the unit-cell of the Hilbert space,
         # we will use fractional to return it to the original unit-cell.
-        if not space.same_span(new_space):
+        if not space.same_rays(new_space):
             raise ValueError(
                 f"Hilbert space {space} is not symmetric under the transform {t}!"
             )

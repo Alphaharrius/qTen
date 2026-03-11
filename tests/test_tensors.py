@@ -1767,7 +1767,7 @@ def test_union_dims_prefers_concrete_over_broadcast():
     assert out == (a, b)
 
 
-def test_union_dims_keeps_left_when_same_span():
+def test_union_dims_keeps_left_when_same_rays():
     mode_a = make_mode("a", 2)
     mode_b = make_mode("b", 3)
     space_ab = _space_from_modes(mode_a, mode_b)
