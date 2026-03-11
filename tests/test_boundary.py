@@ -3,7 +3,7 @@ from sympy import ImmutableDenseMatrix
 
 from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.spatials import Lattice, Offset, AffineSpace
-from pyhilbert.affine_transform import AffineGroupElement, pointgroup
+from pyhilbert.affine_transform import AffineTransform, pointgroup
 import sympy as sy
 from pyhilbert.basis_transform import BasisTransform
 
@@ -170,7 +170,7 @@ def test_pointgroup_with_affine_space():
 
 
 def test_affine_group_element_rebase():
-    # Test AffineGroupElement rebasing from AffineSpace to Lattice
+    # Test AffineTransform rebasing from AffineSpace to Lattice
     dim = 2
     affine_basis = sy.ImmutableDenseMatrix.eye(dim)
     affine_space = AffineSpace(basis=affine_basis)
@@ -180,7 +180,7 @@ def test_affine_group_element_rebase():
     axes = (sy.Symbol("x"), sy.Symbol("y"))
     zero_offset = Offset(rep=sy.ImmutableDenseMatrix([0, 0]), space=affine_space)
 
-    op = AffineGroupElement(
+    op = AffineTransform(
         irrep=irrep, axes=axes, offset=zero_offset, basis_function_order=1
     )
 
@@ -388,7 +388,7 @@ def test_affine_transform_boundary_condition_3d():
     )
 
     x, y, z = sy.symbols("x y z")
-    t = AffineGroupElement(
+    t = AffineTransform(
         irrep=ImmutableDenseMatrix([[0, 1, 0], [0, 0, 1], [1, 0, 0]]),
         axes=(x, y, z),
         offset=Offset(rep=ImmutableDenseMatrix([5, -4, 7]), space=lattice),
