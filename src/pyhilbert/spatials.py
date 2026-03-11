@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Tuple, Type, TypeVar, Union, cast
+from typing import Tuple, Type, TypeVar, Union, cast, Mapping, Generic, Sequence
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from multipledispatch import dispatch  # type: ignore[import-untyped]
@@ -10,10 +10,12 @@ import numpy as np
 import torch
 from .precision import get_precision_config
 from sympy import ImmutableDenseMatrix, sympify
+from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 from .utils import FrozenDict
+from .abstracts import Operable, HasDual, HasBase, Plottable, Convertible
+from .boundary import BoundaryCondition, PeriodicBoundary
 from .validations import need_validation
 from .validations.symbolics import check_invertibility, check_numerical
-from .abstracts import Convertible, Operable, HasDual, HasBase, Plottable
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,6 @@ class AffineSpace(Spatial):
 
 @dataclass(frozen=True)
 class AbstractLattice(AffineSpace, HasDual):
-    shape: Tuple[int, ...]
-
     @property
     def affine(self) -> AffineSpace:
         return AffineSpace(basis=self.basis)
@@ -54,104 +54,134 @@ class AbstractLattice(AffineSpace, HasDual):
 
 @dataclass(frozen=True)
 class Lattice(AbstractLattice):
-    unit_cell: FrozenDict = field(
-        default_factory=FrozenDict
-    )  # TODO : Any way to improve the init
+    boundaries: BoundaryCondition
+    _unit_cell_fractional: FrozenDict = field(init=False, repr=False, compare=True)
 
-    def __post_init__(self):
-        unit_cell_source = self.unit_cell
-        if len(unit_cell_source) == 0:
-            unit_cell_source = FrozenDict(
-                {
-                    "r": Offset(
-                        rep=ImmutableDenseMatrix([0] * self.dim), space=self.affine
-                    )
-                }
+    @property
+    @lru_cache
+    def shape(self) -> Tuple[int, ...]:
+        S = smith_normal_form(self.boundaries.basis, domain=sy.ZZ)
+        return tuple(S.diagonal())
+
+    def __init__(
+        self,
+        basis: ImmutableDenseMatrix,
+        boundaries: BoundaryCondition | None = None,
+        unit_cell: Mapping[str, ImmutableDenseMatrix] | None = None,
+        shape: Sequence[int] | None = None,
+    ):
+        object.__setattr__(self, "basis", basis)
+
+        if boundaries is None:
+            if shape is None:
+                raise TypeError(
+                    "Lattice requires either `boundaries` or legacy `shape`."
+                )
+            if len(shape) != self.dim:
+                raise ValueError(
+                    f"shape must have length {self.dim}, got {len(shape)}."
+                )
+            if any(int(n) <= 0 for n in shape):
+                raise ValueError(f"shape entries must be positive, got {tuple(shape)}.")
+            boundaries = PeriodicBoundary(ImmutableDenseMatrix.diag(*map(int, shape)))
+        elif shape is not None and tuple(map(int, shape)) != tuple(
+            int(n) for n in smith_normal_form(boundaries.basis, domain=sy.ZZ).diagonal()
+        ):
+            raise ValueError(
+                "`shape` and `boundaries` are inconsistent; provide only one "
+                "or ensure they represent the same periodic extents."
             )
-        processed_cell = {}
-        for key, value in unit_cell_source.items():
-            if not isinstance(key, str):
-                raise TypeError(f"unit_cell keys must be strings, but got {type(key)}")
-            if isinstance(value, Offset):
-                processed_cell[key] = value
-            else:
-                try:
-                    rep = ImmutableDenseMatrix(value)
-                    if rep.shape != (self.dim, 1):
-                        rep = rep.reshape(self.dim, 1)
-                    processed_cell[key] = Offset(rep=rep, space=self.affine)
-                except Exception as e:
-                    raise TypeError(
-                        f"Could not convert unit_cell value {value} for key '{key}' to an Offset."
-                    ) from e
+        object.__setattr__(self, "boundaries", boundaries)
 
-        object.__setattr__(self, "unit_cell", FrozenDict(processed_cell))
+        if unit_cell is None:
+            unit_cell = {"r": ImmutableDenseMatrix([0] * self.dim)}
+
+        if len(unit_cell) == 0:
+            raise ValueError(
+                "unit_cell is empty; define at least one site in unit_cell."
+            )
+
+        processed_cell: dict[str, ImmutableDenseMatrix] = {}
+        basis_inverse = self.basis.inv()
+        for site, offset in unit_cell.items():
+            if not isinstance(offset, ImmutableDenseMatrix):
+                raise TypeError(
+                    f"unit_cell['{site}'] must be ImmutableDenseMatrix, got {type(offset).__name__}."
+                )
+            if offset.shape != (self.dim, 1):
+                try:
+                    offset = offset.reshape(self.dim, 1)
+                except Exception as e:
+                    raise ValueError(
+                        f"unit_cell['{site}'] has shape {offset.shape}; expected ({self.dim}, 1)."
+                    ) from e
+            fractional_offset = basis_inverse @ offset
+            fractional_offset = ImmutableDenseMatrix(fractional_offset)
+            processed_cell[site] = fractional_offset
+        object.__setattr__(self, "_unit_cell_fractional", FrozenDict(processed_cell))
+
+    @property
+    @lru_cache
+    def unit_cell(self) -> FrozenDict:
+        return FrozenDict(
+            {
+                site: Offset(rep=offset, space=self)
+                for site, offset in self._unit_cell_fractional.items()
+            }
+        )
 
     @property
     @lru_cache
     def dual(self) -> "ReciprocalLattice":
         reciprocal_basis = 2 * sy.pi * self.basis.inv().T
-        return ReciprocalLattice(basis=reciprocal_basis, shape=self.shape, lattice=self)
+        return ReciprocalLattice(basis=reciprocal_basis, lattice=self)
 
     def coords(
         self,
     ) -> torch.Tensor:
         """
         Vectorized calculation of all site coordinates.
-        Avoids running SymPy substitution inside the loop.
         """
         precision = get_precision_config()
-        basis_sym = self.basis
-        try:
-            basis_mat = torch.tensor(
-                np.array(basis_sym.evalf()).astype(precision.np_float),
-                dtype=precision.torch_float,
-            )
-        except Exception as e:
-            raise ValueError(
-                f"Basis matrix contains unresolved symbols: {basis_sym.free_symbols}"
-            ) from e
 
-        lat_offsets = cartes(self)
+        def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
+            return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
 
-        lat_reps = []
-        for off in lat_offsets:
-            lat_reps.append(np.array(off.rep).flatten().astype(precision.np_float))
+        cell_reps = self.boundaries.representatives()
+        if not cell_reps:
+            return torch.empty((0, self.dim), dtype=precision.torch_float)
 
-        if not lat_reps:
-            return torch.empty((0, self.dim))
+        lat_reps = np.stack(
+            [_as_numeric_row(rep) for rep in cell_reps]
+        )  # (N_cells, dim)
 
-        lat_tensor = torch.tensor(
-            np.array(lat_reps), dtype=precision.torch_float
-        )  # (N_cells, Dim)
+        sorted_unit_cell = sorted(self.unit_cell.items(), key=lambda x: str(x[0]))
+        basis_reps = np.stack(
+            [_as_numeric_row(site_offset.rep) for _, site_offset in sorted_unit_cell]
+        )  # (N_basis, dim)
 
-        basis_reps = []
-        if not self.unit_cell:
-            basis_reps.append(np.zeros(self.dim, dtype=precision.np_float))
-        else:
-            sorted_unit_cell = sorted(self.unit_cell.items(), key=lambda x: str(x[0]))
-            for _, site_offset in sorted_unit_cell:
-                site_vec = site_offset.rep
-                basis_reps.append(
-                    np.array(site_vec).flatten().astype(precision.np_float)
-                )
+        total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
+        total_fractional_flat = total_fractional.reshape(-1, self.dim)
 
-        basis_tensor = torch.tensor(
-            np.array(basis_reps), dtype=precision.torch_float
-        )  # (N_basis, Dim)
+        basis_mat = np.array(self.basis.evalf(), dtype=precision.np_float)
 
-        total_crystal = lat_tensor.unsqueeze(1) + basis_tensor.unsqueeze(0)
-
-        total_crystal_flat = total_crystal.view(-1, self.dim)
-
-        coords = total_crystal_flat @ basis_mat
-
-        return coords
+        coords_np = total_fractional_flat @ basis_mat.T
+        return torch.tensor(coords_np, dtype=precision.torch_float)
 
 
 @dataclass(frozen=True)
 class ReciprocalLattice(AbstractLattice):
     lattice: Lattice
+
+    @property
+    @lru_cache
+    def shape(self) -> Tuple[int, ...]:
+        return self.lattice.shape
+
+    @property
+    @lru_cache
+    def size(self) -> int:
+        return int(np.prod(self.shape))
 
     @property
     @lru_cache
@@ -166,14 +196,18 @@ _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
 def _check_offset_matches_space(r: "Offset") -> None:
     if r.rep.shape != (r.space.dim, 1):
         raise ValueError(
-            f"Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
+            f"Invalid Shape: Offset.rep must have shape {(r.space.dim, 1)} to match its affine space, "
             f"got {r.rep.shape}."
         )
 
 
+S = TypeVar("S", bound=AffineSpace)
+"""Generic type for the `AffineSpace`."""
+
+
 @need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)
-class Offset(Spatial, HasBase[AffineSpace]):
+class Offset(Generic[S], Spatial, HasBase[S]):
     """
     Offset vector in an affine basis.
 
@@ -211,7 +245,12 @@ class Offset(Spatial, HasBase[AffineSpace]):
     """
 
     rep: ImmutableDenseMatrix
-    space: AffineSpace
+    space: S
+
+    def __post_init__(self):
+        if isinstance(self.space, Lattice):
+            wrapped = self.space.boundaries.wrap(self.rep)
+            object.__setattr__(self, "rep", ImmutableDenseMatrix(wrapped))
 
     @property
     def dim(self) -> int:
@@ -219,7 +258,7 @@ class Offset(Spatial, HasBase[AffineSpace]):
 
     def fractional(self) -> "Offset":
         """
-        Return the fractional coordinates of this Offset within its lattice space.
+        Return the fractional coordinates of this Offset within its affine space.
         """
         n = sy.Matrix([sy.floor(x) for x in self.rep])
         s = self.rep - n
@@ -227,11 +266,11 @@ class Offset(Spatial, HasBase[AffineSpace]):
 
     fractional = lru_cache(fractional)  # Prevent mypy type checking issues
 
-    def base(self) -> AffineSpace:
+    def base(self) -> S:
         """Get the `AffineSpace` this `Offset` is expressed in."""
         return self.space
 
-    def rebase(self, space: AffineSpace) -> "Offset":
+    def rebase(self, space: S) -> "Offset[S]":
         """
         Re-express this Offset in a different AffineSpace.
 
@@ -303,7 +342,7 @@ def operator_gt(a: Offset, b: Offset) -> bool:
 
 
 @dataclass(frozen=True)
-class Momentum(Offset, HasBase[ReciprocalLattice], Convertible):
+class Momentum(Offset[ReciprocalLattice], Convertible):
     @override
     def fractional(self) -> "Momentum":
         """
@@ -315,7 +354,7 @@ class Momentum(Offset, HasBase[ReciprocalLattice], Convertible):
 
     fractional = lru_cache(fractional)  # Prevent mypy type checking issues
 
-    def base(self) -> ReciprocalLattice:
+    def base(self) -> ReciprocalLattice:  # type: ignore[override]
         """Get the `ReciprocalLattice` this `Momentum` is expressed in."""
         assert isinstance(self.space, ReciprocalLattice), (
             "Momentum.space must be a ReciprocalLattice"
@@ -382,9 +421,7 @@ def operator_sub(a: Momentum, b: Momentum) -> Momentum:
 @lru_cache
 def cartes(lattice: Lattice) -> Tuple[Offset, ...]:
     elements = product(*tuple(range(n) for n in lattice.shape))
-    return tuple(
-        Offset(rep=ImmutableDenseMatrix(el), space=lattice.affine) for el in elements
-    )
+    return tuple(Offset(rep=ImmutableDenseMatrix(el), space=lattice) for el in elements)
 
 
 @dispatch(ReciprocalLattice)  # type: ignore[no-redef]

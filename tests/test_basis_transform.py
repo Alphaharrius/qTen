@@ -15,6 +15,7 @@ from pyhilbert.state_space import brillouin_zone
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.tensors import Tensor
 from pyhilbert.basis_transform import bandfold, BasisTransform
+from pyhilbert.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -30,12 +31,16 @@ def test_bandfold_1d():
     # 1. Setup
     # 1a. Define a 1D lattice with 4 k-points
     basis = ImmutableDenseMatrix([[1]])
-    lattice = Lattice(basis=basis, shape=(4,))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     k_space = brillouin_zone(lattice.dual)
     assert k_space.dim == 4
 
     # 1b. Define a simple 1-dim Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
     h_space = hilbert([_mode(r_offset)])
     assert h_space.dim == 1
 
@@ -82,12 +87,16 @@ def test_bandfold_2d():
     # 1. Setup
     # 1a. Define a 2D lattice with 4 k-points (2x2)
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lattice = Lattice(basis=basis, shape=(2, 2))
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     k_space = brillouin_zone(lattice.dual)
     assert k_space.dim == 4
 
     # 1b. Define a simple Hilbert space
-    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
     h_space = hilbert([_mode(r_offset, "s")])
     assert h_space.dim == 1
 
@@ -149,7 +158,11 @@ def test_basis_transform_rejects_non_invertible_matrix():
 
 def test_lattice_transform():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     M = ImmutableDenseMatrix([[2]])
     t = BasisTransform(M)
 
@@ -172,7 +185,11 @@ def test_lattice_transform():
 
 def test_reciprocal_lattice_transform():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual  # Basis is [2pi]
 
     M = ImmutableDenseMatrix([[2]])
@@ -186,8 +203,12 @@ def test_reciprocal_lattice_transform():
 
 def test_offset_transform():
     basis = ImmutableDenseMatrix([[1]])
-    space = AffineSpace(basis=basis)
-    offset = Offset(rep=ImmutableDenseMatrix([1]), space=space)
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    offset = Offset(rep=ImmutableDenseMatrix([1]), space=lattice)
 
     M = ImmutableDenseMatrix([[2]])
     t = BasisTransform(M)
@@ -200,7 +221,11 @@ def test_offset_transform():
 
 def test_momentum_transform():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
     recip = lat.dual  # Basis [2pi]
     # Momentum at 0.5 (fractional) -> physical pi
     k = Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=recip)

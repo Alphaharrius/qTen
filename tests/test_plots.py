@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 
 from pyhilbert.hilbert_space import U1Basis, hilbert
 from pyhilbert.spatials import Lattice, Offset
+from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.state_space import brillouin_zone
 from pyhilbert.tensors import Tensor
 from pyhilbert.fourier import fourier_transform
@@ -97,11 +98,19 @@ def test_plot_spectrum_hermitian_and_nonhermitian():
 
 def test_plot_structure_2d_and_3d():
     basis_2d = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lattice_2d = Lattice(basis=basis_2d, shape=(3, 3))
+    lattice_2d = Lattice(
+        basis=basis_2d,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
     fig_2d = lattice_2d.plot("structure", show=False)
 
     basis_3d = sy.ImmutableDenseMatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    lattice_3d = Lattice(basis=basis_3d, shape=(2, 2, 2))
+    lattice_3d = Lattice(
+        basis=basis_3d,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0, 0])},
+    )
     fig_3d = lattice_3d.plot("structure", show=False)
 
     assert isinstance(fig_2d, go.Figure)
@@ -115,7 +124,11 @@ def test_bandstructure_plot():
     # Basis: [[a, 0], [0, a]]
     basis = sy.ImmutableDenseMatrix([[1, 0.0], [0.0, 1]])
     # Small shape for test speed
-    lat = Lattice(basis=basis, shape=(4, 4))
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
 
     # 2. Define Unit Cell (Bloch Space)
     # Single s-orbital at origin (0,0)

@@ -7,11 +7,20 @@ from pyhilbert.hilbert_space import U1Basis, U1Span, HilbertSpace, hilbert
 from pyhilbert.state_space import MomentumSpace, brillouin_zone
 from pyhilbert.spatials import Lattice, Offset
 from pyhilbert.utils import FrozenDict
+from pyhilbert.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
 class Orb:
     name: str
+
+
+def _lattice(basis: ImmutableDenseMatrix, shape: tuple[int, ...]) -> Lattice:
+    return Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(*shape)),
+        unit_cell={"r": ImmutableDenseMatrix([0] * basis.rows)},
+    )
 
 
 def _state(r: Offset, orb: str = "s", irrep: sy.Expr = sy.Integer(1)) -> U1Basis:
@@ -20,7 +29,7 @@ def _state(r: Offset, orb: str = "s", irrep: sy.Expr = sy.Integer(1)) -> U1Basis
 
 def test_u1_state_basic_properties_and_overlap():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
 
     psi = _state(r0, "s")
@@ -33,7 +42,7 @@ def test_u1_state_basic_properties_and_overlap():
 
 def test_u1_state_irrep_access_and_replace():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
 
@@ -52,7 +61,7 @@ def test_u1_state_rejects_non_unity_type_multiplicity():
 
 def test_u1_span_addition_and_deduplication():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
 
@@ -69,7 +78,7 @@ def test_u1_span_addition_and_deduplication():
 
 def test_u1_span_is_iterable():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
 
@@ -82,7 +91,7 @@ def test_u1_span_is_iterable():
 
 def test_hilbert_space_creation_and_operations():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(3,))
+    lat = _lattice(basis, (3,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
@@ -119,7 +128,7 @@ def test_hilbert_space_creation_and_operations():
 
 def test_hilbert_space_group_with_kwargs_selector():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = _lattice(basis, (4,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
@@ -143,7 +152,7 @@ def test_hilbert_space_group_with_kwargs_selector():
 
 def test_hilbert_space_group_raises_on_overlap():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     s0 = _state(r0, "s")
@@ -156,7 +165,7 @@ def test_hilbert_space_group_raises_on_overlap():
 
 def test_hilbert_space_group_by_returns_tuple_of_hilbertspace():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(4,))
+    lat = _lattice(basis, (4,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
@@ -180,7 +189,7 @@ def test_hilbert_space_group_by_returns_tuple_of_hilbertspace():
 
 def test_statespace_getitem_variants():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(3,))
+    lat = _lattice(basis, (3,))
     states = [
         _state(Offset(rep=ImmutableDenseMatrix([i]), space=lat.affine), "s")
         for i in range(3)
@@ -207,7 +216,7 @@ def test_statespace_getitem_variants():
 
 def test_hilbert_space_gram_diagonal_for_identical_basis():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     a = _state(
         Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine), "s", sy.Integer(2)
     )
@@ -225,7 +234,7 @@ def test_hilbert_space_gram_diagonal_for_identical_basis():
 
 def test_hilbert_space_gram_unitizes_target_dim():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     a = _state(
         Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine), "s", sy.Integer(2)
     )
@@ -241,7 +250,7 @@ def test_hilbert_space_gram_unitizes_target_dim():
 
 def test_hilbert_space_lookup_exact_query_match():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(3,))
+    lat = _lattice(basis, (3,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
@@ -253,7 +262,7 @@ def test_hilbert_space_lookup_exact_query_match():
 
 def test_hilbert_space_lookup_errors_for_no_or_multiple_matches():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(2,))
+    lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     hs = hilbert([_state(r0, "s"), _state(r1, "s")])
@@ -270,7 +279,7 @@ def test_hilbert_space_lookup_errors_for_no_or_multiple_matches():
 
 def test_momentum_space_brillouin():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    lat = Lattice(basis=basis, shape=(2, 2))
+    lat = _lattice(basis, (2, 2))
     recip = lat.dual
 
     ms = brillouin_zone(recip)
@@ -283,7 +292,7 @@ def test_momentum_space_brillouin():
 
 def test_statespace_type_errors():
     basis = ImmutableDenseMatrix([[1]])
-    lat = Lattice(basis=basis, shape=(1,))
+    lat = _lattice(basis, (1,))
     s = _state(Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine), "s")
     hs = hilbert([s])
     ms = MomentumSpace(structure={})

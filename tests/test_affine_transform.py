@@ -16,6 +16,7 @@ from pyhilbert.state_space import MomentumSpace, brillouin_zone
 from pyhilbert.hilbert_space import HilbertSpace, U1Basis, FuncOpr, hilbert
 from pyhilbert.spatials import AffineSpace, Momentum, Offset
 from pyhilbert.spatials import Lattice
+from pyhilbert.boundary import PeriodicBoundary
 from pyhilbert.tensors import Tensor
 
 
@@ -537,14 +538,18 @@ def test_affine_transform_hilbert_matmul_matches_call_output_state():
 
 def test_affine_transform_momentum_c4_ignores_translation_and_wraps_fractional():
     x, y = sy.symbols("x y")
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(4, 4))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     recip = lattice.dual
 
     # Include non-zero translation; momentum transform should use only linear part.
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([2, -3]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([2, -3]), space=lattice),
         basis_function_order=1,
     )
     k = Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 4), 0]), space=recip)
@@ -558,11 +563,15 @@ def test_affine_transform_momentum_c4_ignores_translation_and_wraps_fractional()
 
 def test_affine_transform_u1state_transforms_supported_irreps_only():
     x, y = sy.symbols("x y")
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
@@ -577,11 +586,15 @@ def test_affine_transform_u1state_transforms_supported_irreps_only():
 
 def test_affine_transform_hilbert_c4_u1state_mapping():
     x, y = sy.symbols("x y")
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     t = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
@@ -657,7 +670,11 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     x, y = sy.symbols("x y")
 
     # Square lattice with a 2x2 momentum grid: (0,0), (0,1/2), (1/2,0), (1/2,1/2).
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     k_space = brillouin_zone(lattice.dual)
 
     # Single-orbital Hilbert space in a square unit cell.
@@ -687,7 +704,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     c4 = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
@@ -700,7 +717,11 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
 def test_bandtransform_both_matches_explicit_k_aligned_reference():
     x, y = sy.symbols("x y")
 
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     k_space = brillouin_zone(lattice.dual)
 
     # Two orbitals exchanged by C4 around origin.
@@ -726,7 +747,7 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     c4 = AffineGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
@@ -763,7 +784,11 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
 
 def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
     x, y = sy.symbols("x y")
-    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(2, 2))
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
     k_space = brillouin_zone(lattice.dual)
 
     r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)
