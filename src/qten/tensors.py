@@ -23,7 +23,8 @@ from types import EllipsisType
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 import torch
 
-from .abstracts import Convertible, Operable, Plottable
+from .abstracts import Convertible, Operable
+from .plottings.base import Plottable
 from .precision import get_precision_config
 from .utils.devices import Device, DeviceBounded
 from .validations import need_validation

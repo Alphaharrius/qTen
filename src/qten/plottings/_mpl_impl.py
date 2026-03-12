@@ -2,11 +2,13 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, Any, cast, Tuple
-from .geometries.spatials import Lattice
-from .tensors import Tensor
-from .plots import compute_bonds
-from .symbolics.state_space import MomentumSpace, same_rays
-from .symbolics.hilbert_space import HilbertSpace
+from ..geometries.spatials import Lattice
+from ..tensors import Tensor
+from ..symbolics.state_space import MomentumSpace, same_rays
+from ..symbolics.hilbert_space import HilbertSpace
+from ._utils import compute_bonds
+
+
 # --- Registered Plot Methods (Matplotlib Backend) ---
 
 
