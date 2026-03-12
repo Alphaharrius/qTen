@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, Any, cast, Tuple
-from .spatials import Lattice
+from .geometries.spatials import Lattice
 from .tensors import Tensor
 from .plots import compute_bonds
 from .state_space import MomentumSpace, same_rays

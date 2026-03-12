@@ -10,7 +10,7 @@ from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from .abstracts import Convertible, Span
 from .validations import need_validation
-from .spatials import (
+from .geometries.spatials import (
     Spatial,
     ReciprocalLattice,
     Momentum,

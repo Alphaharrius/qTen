@@ -8,11 +8,11 @@ import torch
 import plotly.graph_objects as go
 
 from qten.hilbert_space import U1Basis, hilbert
-from qten.spatials import Lattice, Offset
-from qten.boundary import PeriodicBoundary
+from qten.geometries.spatials import Lattice, Offset
+from qten.geometries.boundary import PeriodicBoundary
 from qten.state_space import brillouin_zone
 from qten.tensors import Tensor
-from qten.fourier import fourier_transform
+from qten.geometries.fourier import fourier_transform
 
 
 @dataclass(frozen=True)

@@ -5,14 +5,14 @@ from multipledispatch import dispatch
 
 import numpy as np
 import torch
-from .precision import get_precision_config
+from ..precision import get_precision_config
 
 from .spatials import Momentum, Offset
-from .state_space import MomentumSpace
-from .hilbert_space import HilbertSpace, U1Basis
-from .tensors import Tensor
-from .tensors import mapping_matrix
-from .utils.collections_ext import matchby
+from ..state_space import MomentumSpace
+from ..hilbert_space import HilbertSpace, U1Basis
+from ..tensors import Tensor
+from ..tensors import mapping_matrix
+from ..utils.collections_ext import matchby
 
 
 @dispatch(tuple, tuple)

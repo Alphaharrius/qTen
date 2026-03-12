@@ -5,9 +5,9 @@ from sympy import ImmutableDenseMatrix
 
 from qten.hilbert_space import U1Basis, U1Span, HilbertSpace, hilbert
 from qten.state_space import MomentumSpace, brillouin_zone
-from qten.spatials import Lattice, Offset
+from qten.geometries.spatials import Lattice, Offset
 from qten.utils.collections_ext import FrozenDict
-from qten.boundary import PeriodicBoundary
+from qten.geometries.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)

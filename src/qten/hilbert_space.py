@@ -33,7 +33,7 @@ from .abstracts import (
     Span,
     HasRays,
 )
-from .spatials import Spatial
+from .geometries.spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .tensors import Tensor
 from .precision import get_precision_config

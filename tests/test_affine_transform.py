@@ -11,12 +11,12 @@ from qten.affine_transform import (
     pointgroup,
     bandtransform,
 )
-from qten.fourier import fourier_transform
+from qten.geometries.fourier import fourier_transform
 from qten.state_space import MomentumSpace, brillouin_zone
 from qten.hilbert_space import HilbertSpace, U1Basis, FuncOpr, hilbert
-from qten.spatials import AffineSpace, Momentum, Offset
-from qten.spatials import Lattice
-from qten.boundary import PeriodicBoundary
+from qten.geometries.spatials import AffineSpace, Momentum, Offset
+from qten.geometries.spatials import Lattice
+from qten.geometries.boundary import PeriodicBoundary
 from qten.tensors import Tensor
 from qten.symbolics import Multiple
 

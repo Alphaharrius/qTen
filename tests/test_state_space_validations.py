@@ -4,7 +4,7 @@ import pytest
 from sympy import ImmutableDenseMatrix
 
 from qten.hilbert_space import U1Basis, HilbertSpace
-from qten.spatials import AffineSpace, Momentum
+from qten.geometries.spatials import AffineSpace, Momentum
 from qten.state_space import IndexSpace, MomentumSpace
 
 

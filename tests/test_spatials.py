@@ -2,7 +2,7 @@ import pytest
 import sympy as sy
 import torch
 from sympy import ImmutableDenseMatrix
-from qten.spatials import (
+from qten.geometries.spatials import (
     Lattice,
     ReciprocalLattice,
     Offset,
@@ -10,7 +10,7 @@ from qten.spatials import (
     AffineSpace,
     AbstractLattice,
 )
-from qten.boundary import PeriodicBoundary
+from qten.geometries.boundary import PeriodicBoundary
 from qten.utils.collections_ext import FrozenDict
 
 

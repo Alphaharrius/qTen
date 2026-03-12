@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 import pytest
 
-from qten.spatials import (
+from qten.geometries.spatials import (
     Lattice,
     Offset,
     AffineSpace,
@@ -14,8 +14,8 @@ from qten.spatials import (
 from qten.state_space import brillouin_zone
 from qten.hilbert_space import U1Basis, hilbert
 from qten.tensors import Tensor
-from qten.basis_transform import bandfold, BasisTransform
-from qten.boundary import PeriodicBoundary
+from qten.geometries.basis_transform import bandfold, BasisTransform
+from qten.geometries.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)

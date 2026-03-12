@@ -9,7 +9,7 @@ from multipledispatch import dispatch  # type: ignore[import-untyped]
 import sympy as sy
 
 from .abstracts import HasBase
-from .spatials import AffineSpace, Spatial, Offset, Momentum
+from .geometries.spatials import AffineSpace, Spatial, Offset, Momentum
 from .state_space import MomentumSpace
 from .hilbert_space import (
     U1Operator,
@@ -20,7 +20,7 @@ from .hilbert_space import (
     hilbert,
 )
 from .tensors import Tensor
-from .fourier import fourier_transform
+from .geometries.fourier import fourier_transform
 from .validations import need_validation
 from .validations.symbolics import check_invertibility, check_numerical
 from .utils.collections_ext import FrozenDict

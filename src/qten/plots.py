@@ -6,7 +6,7 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from .spatials import Lattice
+from .geometries.spatials import Lattice
 from .tensors import Tensor
 
 

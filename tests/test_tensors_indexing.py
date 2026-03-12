@@ -13,8 +13,8 @@ from qten.state_space import (
     brillouin_zone,
 )
 from qten.hilbert_space import U1Basis, hilbert
-from qten.spatials import Lattice
-from qten.boundary import PeriodicBoundary
+from qten.geometries.spatials import Lattice
+from qten.geometries.boundary import PeriodicBoundary
 
 
 class TestTensorGetitem:

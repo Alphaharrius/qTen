@@ -26,7 +26,7 @@ from .abstracts import (
     Operable,
     Span,
 )
-from .spatials import Spatial
+from .geometries.spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from .symbolics import Multiple
 from .tensors import Tensor
