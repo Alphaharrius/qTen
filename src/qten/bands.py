@@ -1,7 +1,6 @@
 from typing import Literal, cast
 
 import numpy as np
-from sympy import ImmutableDenseMatrix
 
 from .geometries.spatials import Offset, Momentum
 from .symbolics.state_space import MomentumSpace, brillouin_zone
@@ -117,14 +116,52 @@ def bandaffine(
 
 
 def bandfold(
-    M: ImmutableDenseMatrix,
+    transform: BasisTransform,
     tensor: Tensor,
     opt: Literal["both", "left", "right"] = "both",
 ) -> Tensor:
     """
-    make Tensor with (Momentum, Hilbert, Hilbert) to (scaled Momentum, Hilbert, Hilbert)
+    Fold a momentum-resolved band tensor into the Brillouin zone of a
+    transformed lattice basis.
+
+    The input tensor is expected to have dimensions
+    `(MomentumSpace, HilbertSpace, HilbertSpace)`. The basis transformation is
+    applied to the direct lattice underlying the momentum axis, which produces
+    a new Brillouin zone and a corresponding momentum remapping. One Hilbert
+    space leg is enlarged to match the transformed unit cell, a Fourier-space
+    change of basis is applied, and the momentum sectors are then gathered into
+    the new momentum grid.
+
+    `opt` selects which Hilbert-space leg defines the enlarged basis:
+    - `"left"` uses `tensor.dims[1]`
+    - `"right"` and `"both"` use `tensor.dims[2]`
+
     Parameters
     ----------
+    transform : BasisTransform
+        Basis change applied to the direct lattice associated with the momentum
+        axis.
+    tensor : Tensor
+        Rank-3 tensor with dimensions
+        `(MomentumSpace, HilbertSpace, HilbertSpace)`.
+    opt : Literal["both", "left", "right"], default "both"
+        Selects which Hilbert-space leg is rebuilt in the transformed unit
+        cell. `"both"` currently follows the right-leg branch.
+
+    Returns
+    -------
+    Tensor
+        Folded tensor on the transformed momentum grid.
+
+    Raises
+    ------
+    ValueError
+        If the tensor is not rank-3, if the momentum space is empty, or if the
+        momentum axis does not belong to a single Brillouin zone.
+    TypeError
+        If the momentum axis is not a `MomentumSpace`, if its underlying space
+        is not a `ReciprocalLattice`, or if the selected Hilbert-space leg is
+        not a `HilbertSpace`.
     """
     # 1. Parse inputs
     if not tensor.rank() == 3:
@@ -151,7 +188,6 @@ def bandfold(
     lattice = reciprocal_lattice.dual
 
     # 2. Apply the transformation
-    transform = BasisTransform(M)
     scaled_lattice = transform(lattice)
 
     # 3. Create new transformed spaces

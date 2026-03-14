@@ -52,9 +52,10 @@ def test_bandfold_1d():
 
     # 1d. Define scaling matrix (double the unit cell)
     M = ImmutableDenseMatrix([[2]])
+    transform = BasisTransform(M)
 
     # 2. Execute
-    tensor_out = bandfold(M, tensor_in)
+    tensor_out = bandfold(transform, tensor_in)
 
     # 3. Assert
     # 3a. Check new dimensions
@@ -108,9 +109,10 @@ def test_bandfold_2d():
 
     # 1d. Define scaling matrix (double in both directions)
     M = ImmutableDenseMatrix([[2, 0], [0, 2]])
+    transform = BasisTransform(M)
 
     # 2. Execute
-    tensor_out = bandfold(M, tensor_in)
+    tensor_out = bandfold(transform, tensor_in)
 
     # 3. Assert
     # 3a. Check dimensions
