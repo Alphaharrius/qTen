@@ -5,7 +5,7 @@ from typing import Optional, Union, Any, cast, Tuple
 from .spatials import Lattice
 from .tensors import Tensor
 from .utils import compute_bonds
-from .state_space import MomentumSpace, same_span
+from .state_space import MomentumSpace, same_rays
 from .hilbert_space import HilbertSpace
 # --- Registered Plot Methods (Matplotlib Backend) ---
 
@@ -449,7 +449,7 @@ def plot_bandstructure_mpl(
     ):
         raise ValueError("Last two dimensions must be HilbertSpace")
 
-    if not same_span(obj.dims[1], obj.dims[2]):
+    if not same_rays(obj.dims[1], obj.dims[2]):
         raise ValueError("Last two dimensions must span the same Hilbert space")
 
     k_points = list(k_space)

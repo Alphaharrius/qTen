@@ -8,7 +8,7 @@ from pyhilbert.tensors import Tensor
 
 
 def _space(name: str, n: int):
-    return hilbert(U1Basis(u1=sy.Integer(1), rep=((name, i),)) for i in range(n))
+    return hilbert(U1Basis(coef=sy.Integer(1), base=((name, i),)) for i in range(n))
 
 
 def test_eigh_reconstructs_hermitian_matrix():

@@ -26,8 +26,8 @@ def test_hilbert_space_rejects_non_contiguous_structure_values():
     space = AffineSpace(basis=ImmutableDenseMatrix([[1]]))
     r0 = Momentum(rep=ImmutableDenseMatrix([0]), space=space)
     r1 = Momentum(rep=ImmutableDenseMatrix([1]), space=space)
-    psi0 = U1Basis(u1=1, rep=(r0,))
-    psi1 = U1Basis(u1=1, rep=(r1,))
+    psi0 = U1Basis(coef=1, base=(r0,))
+    psi1 = U1Basis(coef=1, base=(r1,))
 
     with pytest.raises(ValueError, match="contiguous indices 0..n-1"):
         HilbertSpace(structure=OrderedDict(((psi0, 0), (psi1, 2))))

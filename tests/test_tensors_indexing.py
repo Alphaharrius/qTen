@@ -223,8 +223,8 @@ class TestTensorGetitem:
             _ = tensor[non_singleton]
 
     def test_getitem_with_u1basis_index(self):
-        b0 = U1Basis(u1=sy.Integer(0), rep=(sy.Integer(0),))
-        b1 = U1Basis(u1=sy.Integer(1), rep=(sy.Integer(1),))
+        b0 = U1Basis(coef=sy.Integer(0), base=(sy.Integer(0),))
+        b1 = U1Basis(coef=sy.Integer(1), base=(sy.Integer(1),))
         space = hilbert((b0, b1))
         data = torch.arange(8, dtype=torch.float64).reshape(2, 2, 2)
         tensor = Tensor(data=data, dims=(space, space, space))

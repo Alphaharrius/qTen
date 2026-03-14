@@ -36,7 +36,7 @@ class MockMode:
     attr: FrozenDict
     size: int
 
-    def unit(self):
+    def rays(self):
         return self
 
 
@@ -53,7 +53,7 @@ class MockModeElement:
     def dim(self) -> int:
         return 1
 
-    def unit(self):
+    def rays(self):
         return self
 
 
@@ -1159,7 +1159,9 @@ def _simple_hilbert(tag: str, size: int, make_irrep=None) -> HilbertSpace:
         def make_irrep(n):
             return (tag, n)
 
-    basis = tuple(U1Basis(u1=sy.Integer(1), rep=(make_irrep(n),)) for n in range(size))
+    basis = tuple(
+        U1Basis(coef=sy.Integer(1), base=(make_irrep(n),)) for n in range(size)
+    )
     return hilbert(basis)
 
 
@@ -1168,7 +1170,9 @@ def test_factorize_dim_then_product_dims_roundtrip_hilbert():
     right = _simple_hilbert("right", 3)
 
     factorizable = hilbert(
-        U1Basis(u1=sy.Integer(1), rep=(i, j)) for i in (0, 1) for j in ("a", "b", "c")
+        U1Basis(coef=sy.Integer(1), base=(i, j))
+        for i in (0, 1)
+        for j in ("a", "b", "c")
     )
 
     data = torch.arange(
@@ -1763,7 +1767,7 @@ def test_union_dims_prefers_concrete_over_broadcast():
     assert out == (a, b)
 
 
-def test_union_dims_keeps_left_when_same_span():
+def test_union_dims_keeps_left_when_same_rays():
     mode_a = make_mode("a", 2)
     mode_b = make_mode("b", 3)
     space_ab = _space_from_modes(mode_a, mode_b)

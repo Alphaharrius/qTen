@@ -130,9 +130,9 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
             f"StateSpace indices must be int, slice, or range, not {type(v)}"
         )
 
-    def same_span(self, other: "StateSpace") -> bool:
+    def same_rays(self, other: "StateSpace") -> bool:
         """
-        Check if this state space has the same span as another, i.e., they have the same set of spatial keys regardless of order.
+        Check if this state space has the same rays as another, i.e., they have the same set of spatial keys regardless of order.
 
         Parameters
         ----------
@@ -142,9 +142,9 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         Returns
         -------
         `bool`
-            `True` if both state spaces have the same span, `False` otherwise.
+            `True` if both state spaces have the same rays, `False` otherwise.
         """
-        return same_span(self, other)
+        return same_rays(self, other)
 
     def map(self, func: Callable[[T], T]) -> "StateSpace[T]":
         """
@@ -280,7 +280,7 @@ def embedding_order(sub: StateSpace, sup: StateSpace) -> Tuple[int, ...]:
 
 # TODO: We can put @lru_cache if the hashing of StateSpace is well defined
 @dispatch(StateSpace, StateSpace)
-def same_span(a: StateSpace, b: StateSpace) -> bool:
+def same_rays(a: StateSpace, b: StateSpace) -> bool:
     return set(a.structure.keys()) == set(b.structure.keys())
 
 
@@ -409,7 +409,7 @@ class BroadcastSpace(StateSpace[_BAxis]):
     Compatibility rules
     -------------------
     Multipledispatch rules in this module treat `BroadcastSpace` as compatible
-    with any `StateSpace` in `same_span(...)`, and as neutral in
+    with any `StateSpace` in `same_rays(...)`, and as neutral in
     `operator_add(...)`:
     - `BroadcastSpace + X -> X`
     - `X + BroadcastSpace -> X`
@@ -435,17 +435,17 @@ class BroadcastSpace(StateSpace[_BAxis]):
 
 
 @dispatch(BroadcastSpace, BroadcastSpace)  # type: ignore[no-redef]
-def same_span(a: BroadcastSpace, b: BroadcastSpace) -> bool:
+def same_rays(a: BroadcastSpace, b: BroadcastSpace) -> bool:
     return True
 
 
 @dispatch(StateSpace, BroadcastSpace)  # type: ignore[no-redef]
-def same_span(a: StateSpace, b: BroadcastSpace) -> bool:
+def same_rays(a: StateSpace, b: BroadcastSpace) -> bool:
     return True
 
 
 @dispatch(BroadcastSpace, StateSpace)  # type: ignore[no-redef]
-def same_span(a: BroadcastSpace, b: StateSpace) -> bool:
+def same_rays(a: BroadcastSpace, b: StateSpace) -> bool:
     return True
 
 

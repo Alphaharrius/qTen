@@ -3,7 +3,7 @@ from collections import namedtuple
 
 import torch
 
-from .state_space import IndexSpace, same_span
+from .state_space import IndexSpace, same_rays
 from .tensors import Tensor
 
 
@@ -17,7 +17,7 @@ def _assert_eig_dims(tensor: Tensor) -> None:
         )
 
     dim0, dim1 = tensor.dims[-2], tensor.dims[-1]
-    if not same_span(dim0, dim1):
+    if not same_rays(dim0, dim1):
         raise ValueError(
             "The last two dimensions of the tensor must span the same Hilbert space."
         )

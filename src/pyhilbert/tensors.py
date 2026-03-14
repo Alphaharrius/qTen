@@ -34,7 +34,7 @@ from .state_space import (
     StateSpaceFactorization,
     embedding_order,
     permutation_order,
-    same_span,
+    same_rays,
 )
 
 
@@ -1385,7 +1385,7 @@ def align(tensor: TensorType, dim: int, target_dim: StateSpace) -> TensorType:
             f"current={type(current_dim).__name__}:{current_dim.dim} vs "
             f"target={type(target_dim).__name__}:{target_dim.dim}"
         )
-    if not same_span(current_dim, target_dim):
+    if not same_rays(current_dim, target_dim):
         raise ValueError(
             f"StateSpace at axis {dim} cannot be aligned to target StateSpace: "
             f"current={type(current_dim).__name__}:{current_dim.dim}, "
@@ -1807,7 +1807,7 @@ def union_dims(
     - `BroadcastSpace` + concrete `StateSpace` -> concrete `StateSpace`
     - `BroadcastSpace` + `BroadcastSpace` -> `BroadcastSpace`
     - concrete + concrete:
-      - if `same_span(...)` is `True`, keeps the first (left-most) one
+      - if `same_rays(...)` is `True`, keeps the first (left-most) one
       - otherwise raises `ValueError`
 
     Merge rule per axis (`allow_merge=True`)
@@ -1853,7 +1853,7 @@ def union_dims(
                     continue
                 if isinstance(right_dim, BroadcastSpace):
                     continue
-                if same_span(left_dim, right_dim):
+                if same_rays(left_dim, right_dim):
                     continue
                 raise ValueError(
                     f"union_dims incompatible at axis {axis}: "
@@ -2612,7 +2612,7 @@ class TensorIndexing:
 
         if dim == v:
             return idx + 1, (dim,), slice(None)
-        if same_span(dim, v):
+        if same_rays(dim, v):
             return idx + 1, (v,), permutation_order(dim, v)
         if dim.contains(v):
             return idx + 1, (v,), embedding_order(v, dim)
