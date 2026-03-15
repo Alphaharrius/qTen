@@ -5,16 +5,16 @@ from collections import OrderedDict
 import sympy as sy
 from sympy import ImmutableDenseMatrix
 
-from pyhilbert.tensors import Tensor, where
-from pyhilbert.state_space import (
+from qten.linalg.tensors import Tensor, where
+from qten.symbolics.state_space import (
     BroadcastSpace,
     IndexSpace,
     MomentumSpace,
     brillouin_zone,
 )
-from pyhilbert.hilbert_space import U1Basis, hilbert
-from pyhilbert.spatials import Lattice
-from pyhilbert.boundary import PeriodicBoundary
+from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
+from qten.geometries.spatials import Lattice
+from qten.geometries.boundary import PeriodicBoundary
 
 
 class TestTensorGetitem:
@@ -225,13 +225,13 @@ class TestTensorGetitem:
     def test_getitem_with_u1basis_index(self):
         b0 = U1Basis(coef=sy.Integer(0), base=(sy.Integer(0),))
         b1 = U1Basis(coef=sy.Integer(1), base=(sy.Integer(1),))
-        space = hilbert((b0, b1))
+        space = HilbertSpace.new((b0, b1))
         data = torch.arange(8, dtype=torch.float64).reshape(2, 2, 2)
         tensor = Tensor(data=data, dims=(space, space, space))
 
         out = tensor[:, :, b1]
         assert isinstance(out, Tensor)
-        assert out.dims == (space, space, hilbert((b1,)))
+        assert out.dims == (space, space, HilbertSpace.new((b1,)))
         assert torch.equal(out.data, data[:, :, 1:2])
 
     def test_getitem_with_momentum_index(self):

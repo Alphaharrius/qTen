@@ -1,4 +1,4 @@
-"""Lightweight symbolic container types used across :mod:`pyhilbert`.
+"""Lightweight symbolic container types used across :mod:`qten`.
 
 Globals
 -------
@@ -17,7 +17,7 @@ import sympy as sy
 BaseType = TypeVar("BaseType")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Multiple(Generic[BaseType]):
     """Represent a scalar coefficient multiplied by an arbitrary base object.
 

@@ -5,20 +5,20 @@ from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 from typing import cast
 
-from pyhilbert.affine_transform import (
+from qten.pointgroups import pointgroup
+from qten.pointgroups.abelian import (
     AbelianBasis,
     AffineTransform,
-    pointgroup,
-    bandtransform,
 )
-from pyhilbert.fourier import fourier_transform
-from pyhilbert.state_space import MomentumSpace, brillouin_zone
-from pyhilbert.hilbert_space import HilbertSpace, U1Basis, FuncOpr, hilbert
-from pyhilbert.spatials import AffineSpace, Momentum, Offset
-from pyhilbert.spatials import Lattice
-from pyhilbert.boundary import PeriodicBoundary
-from pyhilbert.tensors import Tensor
-from pyhilbert.symbolics import Multiple
+from qten.bands import bandaffine
+from qten.geometries.fourier import fourier_transform
+from qten.symbolics.state_space import MomentumSpace, brillouin_zone
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis, FuncOpr
+from qten.geometries.spatials import AffineSpace, Momentum, Offset
+from qten.geometries.spatials import Lattice
+from qten.geometries.boundary import PeriodicBoundary
+from qten.linalg.tensors import Tensor
+from qten.symbolics import Multiple
 
 
 @dataclass(frozen=True)
@@ -507,7 +507,7 @@ def test_affine_transform_hilbert_matmul_matches_call_output_state():
         offset=Offset(rep=ImmutableDenseMatrix([0]), space=space),
         basis_function_order=1,
     )
-    h = hilbert(
+    h = HilbertSpace.new(
         [
             _state(Offset(rep=ImmutableDenseMatrix([0]), space=space), Orb("a")),
             _state(Offset(rep=ImmutableDenseMatrix([1]), space=space), Orb("b")),
@@ -582,9 +582,9 @@ def test_affine_transform_hilbert_c4_u1state_mapping():
     r_y = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
     m_x = _state(r_x, Orb("p"))
     m_y = _state(r_y, Orb("d"))
-    h = hilbert([m_x, m_y])
+    h = HilbertSpace.new([m_x, m_y])
 
-    gh_expected = hilbert(cast(U1Basis, _transformed(t, m)) for m in h)
+    gh_expected = HilbertSpace.new(cast(U1Basis, _transformed(t, m)) for m in h)
     gh = t(h)
     assert gh == gh_expected
 
@@ -614,7 +614,7 @@ def test_affine_transform_hilbert_applies_nontrivial_u1state_gauge_phase():
         rep=ImmutableDenseMatrix([1]),
     )
     m = _state(gauge_basis)
-    h = hilbert([m])
+    h = HilbertSpace.new([m])
 
     tmat = h.cross_gram(t @ h)
     expected = torch.tensor([[-1.0 + 0.0j]], dtype=tmat.data.dtype)
@@ -634,7 +634,7 @@ def test_affine_transform_hilbert_applies_matrix_gauge_block():
     fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
     fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
 
-    h = hilbert([_state(fx), _state(fy)])
+    h = HilbertSpace.new([_state(fx), _state(fy)])
     tmat = h.cross_gram(t @ h)
 
     expected = torch.diag(
@@ -644,7 +644,7 @@ def test_affine_transform_hilbert_applies_matrix_gauge_block():
     assert torch.allclose(tmat.data, expected)
 
 
-def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignment():
+def test_bandaffine_both_preserves_c4_symmetric_momentum_tensor_up_to_alignment():
     x, y = sy.symbols("x y")
 
     # Square lattice with a 2x2 momentum grid: (0,0), (0,1/2), (1/2,0), (1/2,1/2).
@@ -666,7 +666,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
             rep=ImmutableDenseMatrix([1, -sy.I]),
         ),
     )
-    h_space = hilbert([mode])
+    h_space = HilbertSpace.new([mode])
 
     # C4-symmetric dispersion: e(k) = cos(2*pi*kx) + cos(2*pi*ky).
     energies = []
@@ -686,13 +686,13 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
         basis_function_order=1,
     )
 
-    tensor_out = bandtransform(c4, tensor_in, opt="both")
+    tensor_out = bandaffine(c4, tensor_in, opt="both")
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
 
     assert torch.allclose(tensor_out.data, tensor_in.data)
 
 
-def test_bandtransform_both_matches_explicit_k_aligned_reference():
+def test_bandaffine_both_matches_explicit_k_aligned_reference():
     x, y = sy.symbols("x y")
 
     lattice = Lattice(
@@ -707,7 +707,7 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice.affine)
     m_x = _state(r_x, Orb("p"))
     m_y = _state(r_y, Orb("p"))
-    h_space = hilbert([m_x, m_y])
+    h_space = HilbertSpace.new([m_x, m_y])
 
     # k-dependent nontrivial 2x2 tensor so wrong k-block matching is visible.
     data = torch.zeros((k_space.dim, 2, 2), dtype=torch.complex128)
@@ -753,14 +753,14 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     )
     tensor_ref = cast(Tensor, (left_ref @ tensor_in @ right_ref.h(-2, -1)))
 
-    tensor_out = bandtransform(c4, tensor_in, opt="both")
+    tensor_out = bandaffine(c4, tensor_in, opt="both")
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
     tensor_ref = tensor_ref.align(0, k_space).align(1, h_space).align(2, h_space)
 
     assert torch.allclose(tensor_out.data, tensor_ref.data)
 
 
-def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
+def test_bandaffine_both_c4_fourfold_roundtrip_complex_tensor():
     x, y = sy.symbols("x y")
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(2),
@@ -777,7 +777,7 @@ def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
         order=1,
         rep=ImmutableDenseMatrix([1, -sy.I]),
     )
-    h_space = hilbert([_state(r_x, p_minus), _state(r_y, p_minus)])
+    h_space = HilbertSpace.new([_state(r_x, p_minus), _state(r_y, p_minus)])
 
     c4 = AffineTransform(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
@@ -801,7 +801,7 @@ def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
 
     out = tensor_in
     for _ in range(4):
-        out = bandtransform(c4, out, opt="both")
+        out = bandaffine(c4, out, opt="both")
 
     out = out.align(0, k_space).align(1, h_space).align(2, h_space)
     assert torch.allclose(out.data, tensor_in.data)

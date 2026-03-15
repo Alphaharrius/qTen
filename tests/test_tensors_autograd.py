@@ -1,8 +1,8 @@
 import torch
 import sympy as sy
-from pyhilbert.tensors import Tensor
-from pyhilbert.hilbert_space import U1Basis, hilbert
-from pyhilbert.state_space import IndexSpace
+from qten.linalg.tensors import Tensor
+from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
+from qten.symbolics.state_space import IndexSpace
 
 
 def _state(tag: str, idx: int) -> U1Basis:
@@ -73,7 +73,7 @@ class TestTensorAutograd:
         gradient calculation, and detachment.
         """
         # 1. Simulate inputs and weights
-        space = hilbert(_state("batch", i) for i in range(3))
+        space = HilbertSpace.new(_state("batch", i) for i in range(3))
         dims = (space,)
 
         x_data = torch.tensor([1.0, 2.0, 3.0])
@@ -154,9 +154,9 @@ class TestTensorAutograd:
         assert x.grad.equal(Tensor(data=torch.tensor([2.0]), dims=dims))
 
     def test_backward_aligns_gradient_with_permuted_dimension_elements(self):
-        left = hilbert(_state("left", i) for i in range(2))
-        right = hilbert(_state("right", i) for i in range(3))
-        right_permuted = hilbert(_state("right", i) for i in (2, 0, 1))
+        left = HilbertSpace.new(_state("left", i) for i in range(2))
+        right = HilbertSpace.new(_state("right", i) for i in range(3))
+        right_permuted = HilbertSpace.new(_state("right", i) for i in (2, 0, 1))
 
         x = Tensor(
             data=torch.arange(6.0, dtype=torch.float32).reshape(2, 3),

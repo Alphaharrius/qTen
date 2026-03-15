@@ -2,16 +2,15 @@ import pytest
 import sympy as sy
 import torch
 from sympy import ImmutableDenseMatrix
-from pyhilbert.spatials import (
+from qten.geometries.spatials import (
     Lattice,
     ReciprocalLattice,
     Offset,
-    cartes,
     AffineSpace,
     AbstractLattice,
 )
-from pyhilbert.boundary import PeriodicBoundary
-from pyhilbert.utils import FrozenDict
+from qten.geometries.boundary import PeriodicBoundary
+from qten.utils.collections_ext import FrozenDict
 
 
 def test_lattice_creation_and_dual():
@@ -78,7 +77,7 @@ def test_cartes_lattice():
     )
 
     # cartes should return offsets for (0,0), (0,1), (1,0), (1,1)
-    points = cartes(lattice)
+    points = lattice.cartes()
     assert len(points) == 4
     assert isinstance(points[0], Offset)
 
@@ -103,7 +102,7 @@ def test_cartes_reciprocal_lattice():
     )
     reciprocal = lattice.dual
 
-    points = cartes(reciprocal)
+    points = reciprocal.cartes()
     assert len(points) == 4
 
     coords = set()

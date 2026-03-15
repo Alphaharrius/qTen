@@ -23,11 +23,12 @@ from types import EllipsisType
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 import torch
 
-from .abstracts import Convertible, Operable, Plottable
-from .precision import get_precision_config
-from .utils import Device, DeviceBounded
-from .validations import need_validation
-from .state_space import (
+from ..abstracts import Convertible, Operable
+from ..plottings.base import Plottable
+from ..precision import get_precision_config
+from ..utils.devices import Device, DeviceBounded
+from ..validations import need_validation
+from ..symbolics.state_space import (
     StateSpace,
     BroadcastSpace,
     IndexSpace,
@@ -526,7 +527,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     @property
     def grad(self) -> Optional[Self]:
         """
-        Return the accumulated gradient wrapped as a PyHilbert tensor.
+        Return the accumulated gradient wrapped as a QTen tensor.
 
         Returns
         -------
@@ -2409,7 +2410,7 @@ TensorIndexType: TypeAlias = Union[
 """
 Public key token types accepted by `TensorIndexing` input keys.
 
-This includes pyhilbert-level index forms (`StateSpace`, `Convertible`,
+This includes qten-level index forms (`StateSpace`, `Convertible`,
 `Tensor`) and Python indexing tokens (`int`, `slice`, `None`, `...`).
 """
 
@@ -2445,7 +2446,7 @@ class TensorIndexing:
     - `Ellipsis`
     - `StateSpace`
     - `Convertible` (converted to `StateSpace`)
-    - `Tensor` (pyhilbert tensor index)
+    - `Tensor` (qten tensor index)
 
     Normalization rules
     -------------------

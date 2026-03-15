@@ -4,9 +4,10 @@ from typing_extensions import override
 
 import torch.nn as nn
 
-from .utils import Device, DeviceBounded, FrozenDict
+from .utils.devices import Device, DeviceBounded
+from .utils.collections_ext import FrozenDict
 from .abstracts import Functional
-from .tensors import Tensor
+from .linalg.tensors import Tensor
 
 
 ModuleType = TypeVar("ModuleType", bound=type["Module"])
@@ -25,7 +26,7 @@ def nograd_tensors(*names: str) -> Callable[[ModuleType], ModuleType]:
 
     The decorator stores the provided attribute names on the target class in the
     ``__nograd_tensors__`` class attribute. When an instance later assigns a
-    :class:`~pyhilbert.tensors.Tensor` to one of those names, :meth:`Module.__setattr__`
+    :class:`~qten.tensors.Tensor` to one of those names, :meth:`Module.__setattr__`
     copies detached data into module-owned buffer storage rather than
     registering it as a PyTorch parameter.
 
@@ -66,7 +67,7 @@ TENSOR_PARAM_PREFIX = "tensor:"
 Prefix used for the hidden ``nn.Parameter`` names registered for wrapped tensors.
 
 When a public module attribute such as ``self.weight`` is assigned a
-:class:`~pyhilbert.tensors.Tensor`, the wrapper object remains accessible under
+:class:`~qten.tensors.Tensor`, the wrapper object remains accessible under
 the original attribute name while the actual PyTorch parameter is registered
 under ``f"{TENSOR_PARAM_PREFIX}{name}"``. This keeps the wrapper and the
 registered parameter distinct.
@@ -77,32 +78,32 @@ TENSOR_BUFFER_PREFIX = "buffer:"
 Prefix used for the hidden buffers registered for no-grad wrapped tensors.
 
 When a public module attribute such as ``self.basis`` is assigned a
-:class:`~pyhilbert.tensors.Tensor` and its name is listed in
+:class:`~qten.tensors.Tensor` and its name is listed in
 ``__nograd_tensors__``, the underlying ``torch.Tensor`` is registered under
 ``f"{TENSOR_BUFFER_PREFIX}{name}"`` while the public attribute remains a
-PyHilbert ``Tensor`` wrapper.
+QTen ``Tensor`` wrapper.
 """
 
 
 class Module(Functional, nn.Module, DeviceBounded):
     """
-    PyHilbert base module combining multiple dispatch, device tracking, and tensor wrapping.
+    QTen base module combining multiple dispatch, device tracking, and tensor wrapping.
 
-    This class extends :class:`torch.nn.Module` with two PyHilbert-specific
+    This class extends :class:`torch.nn.Module` with two QTen-specific
     behaviors:
 
-    1. Public attributes may be assigned :class:`~pyhilbert.tensors.Tensor`
+    1. Public attributes may be assigned :class:`~qten.tensors.Tensor`
        objects directly. The underlying ``torch.Tensor`` data is automatically
        copied into module-owned storage. Trainable tensor attributes are
        registered as ``nn.Parameter`` values, while names listed in
        ``__nograd_tensors__`` are registered as buffers. In both cases the
-       public attribute remains a PyHilbert ``Tensor`` wrapper.
-    2. The module is also a :class:`~pyhilbert.abstracts.Functional`, so calling
-       the module dispatches through PyHilbert's multiple-dispatch mechanism
+       public attribute remains a QTen ``Tensor`` wrapper.
+    2. The module is also a :class:`~qten.abstracts.Functional`, so calling
+       the module dispatches through QTen's multiple-dispatch mechanism
        rather than PyTorch's usual ``forward`` path.
 
-    The module additionally tracks its logical :class:`~pyhilbert.utils.Device`
-    and automatically moves assigned :class:`~pyhilbert.utils.DeviceBounded`
+    The module additionally tracks its logical :class:`~qten.utils.Device`
+    and automatically moves assigned :class:`~qten.utils.DeviceBounded`
     values onto the same device.
 
     This class is also useful as a structured container for optimizable tensors,
@@ -110,17 +111,17 @@ class Module(Functional, nn.Module, DeviceBounded):
     forward pass. In that usage, assign the tensors you want PyTorch to manage
     as public attributes, optimize them through the module's parameter
     interface, and call :meth:`export` when you need an independent
-    non-differentiable :class:`~pyhilbert.tensors.Tensor` snapshot for
+    non-differentiable :class:`~qten.tensors.Tensor` snapshot for
     downstream use outside the module.
 
     Ownership semantics are important:
-    - Before assignment, a :class:`~pyhilbert.tensors.Tensor` is functionally
+    - Before assignment, a :class:`~qten.tensors.Tensor` is functionally
       defined by its own wrapper value.
     - After assignment to a ``Module`` attribute, the wrapper becomes
       module-bound: its ``data`` points at module-owned storage, either a
       registered ``nn.Parameter`` or registered buffer depending on
       whether the name is marked in ``__nograd_tensors__``.
-    - Reading ``self.weight`` still returns a PyHilbert ``Tensor`` wrapper, but
+    - Reading ``self.weight`` still returns a QTen ``Tensor`` wrapper, but
       its mutable/autograd state is now governed by the containing module and
       PyTorch parameter machinery.
     - No-grad tensor attributes remain part of the module's buffer state, so
@@ -332,19 +333,19 @@ class Module(Functional, nn.Module, DeviceBounded):
 
     def __setattr__(self, name: str, value) -> None:
         """
-        Assign an attribute, wrapping :class:`pyhilbert.tensors.Tensor` as module-owned state.
+        Assign an attribute, wrapping :class:`qten.tensors.Tensor` as module-owned state.
 
         Behavior
         --------
-        - Any assigned :class:`~pyhilbert.utils.DeviceBounded` value is moved to
+        - Any assigned :class:`~qten.utils.DeviceBounded` value is moved to
           ``self.device`` first.
-        - Any assigned :class:`~pyhilbert.tensors.Tensor` is copied into
+        - Any assigned :class:`~qten.tensors.Tensor` is copied into
           module-owned storage.
         - For names listed in ``__nograd_tensors__``, the copied tensor is
           registered as a hidden buffer.
         - Otherwise the copied tensor is registered as a hidden
           :class:`torch.nn.Parameter`.
-        - The public attribute itself remains a PyHilbert ``Tensor`` wrapper
+        - The public attribute itself remains a QTen ``Tensor`` wrapper
           whose ``data`` points at the owned buffer or registered
           parameter.
         - If a non-``Tensor`` value replaces a previously wrapped tensor
@@ -356,7 +357,7 @@ class Module(Functional, nn.Module, DeviceBounded):
 
         In other words, assigning a ``Tensor`` transfers ownership of its
         mutable/autograd state to the module. The attribute remains convenient
-        to use as a PyHilbert wrapper, but it should now be treated as
+        to use as a QTen wrapper, but it should now be treated as
         module-bound state rather than an isolated functional value.
 
         Parameters

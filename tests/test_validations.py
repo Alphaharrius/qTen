@@ -3,7 +3,7 @@ from threading import Event, Thread
 
 import pytest
 
-from pyhilbert.validations import need_validation, no_validate
+from qten.validations import need_validation, no_validate
 
 
 def test_need_validation_rejects_non_dataclass_targets():

@@ -3,7 +3,7 @@ import pickle
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Union
 
-from .logging import get_logger
+from .loggings import get_logger
 
 
 _logger = get_logger(__name__, show_datetime=True)

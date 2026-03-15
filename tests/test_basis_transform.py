@@ -4,18 +4,19 @@ from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 import pytest
 
-from pyhilbert.spatials import (
+from qten.geometries.spatials import (
     Lattice,
     Offset,
     AffineSpace,
     ReciprocalLattice,
     Momentum,
 )
-from pyhilbert.state_space import brillouin_zone
-from pyhilbert.hilbert_space import U1Basis, hilbert
-from pyhilbert.tensors import Tensor
-from pyhilbert.basis_transform import bandfold, BasisTransform
-from pyhilbert.boundary import PeriodicBoundary
+from qten.symbolics.state_space import brillouin_zone
+from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
+from qten.linalg.tensors import Tensor
+from qten.geometries.basis_transform import BasisTransform
+from qten.bands import bandfold
+from qten.geometries.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ def test_bandfold_1d():
 
     # 1b. Define a simple 1-dim Hilbert space
     r_offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
-    h_space = hilbert([_mode(r_offset)])
+    h_space = HilbertSpace.new([_mode(r_offset)])
     assert h_space.dim == 1
 
     # 1c. Create an input tensor (4, 1, 1)
@@ -51,9 +52,10 @@ def test_bandfold_1d():
 
     # 1d. Define scaling matrix (double the unit cell)
     M = ImmutableDenseMatrix([[2]])
+    transform = BasisTransform(M)
 
     # 2. Execute
-    tensor_out = bandfold(M, tensor_in)
+    tensor_out = bandfold(transform, tensor_in)
 
     # 3. Assert
     # 3a. Check new dimensions
@@ -97,7 +99,7 @@ def test_bandfold_2d():
 
     # 1b. Define a simple Hilbert space
     r_offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
-    h_space = hilbert([_mode(r_offset, "s")])
+    h_space = HilbertSpace.new([_mode(r_offset, "s")])
     assert h_space.dim == 1
 
     # 1c. Create input tensor (4, 1, 1)
@@ -107,9 +109,10 @@ def test_bandfold_2d():
 
     # 1d. Define scaling matrix (double in both directions)
     M = ImmutableDenseMatrix([[2, 0], [0, 2]])
+    transform = BasisTransform(M)
 
     # 2. Execute
-    tensor_out = bandfold(M, tensor_in)
+    tensor_out = bandfold(transform, tensor_in)
 
     # 3. Assert
     # 3a. Check dimensions

@@ -3,11 +3,11 @@ import numpy as np
 import sympy as sy
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
-from pyhilbert.spatials import Lattice, Offset, Momentum
-from pyhilbert.state_space import brillouin_zone
-from pyhilbert.hilbert_space import U1Basis, hilbert
-from pyhilbert.fourier import fourier_transform
-from pyhilbert.boundary import PeriodicBoundary
+from qten.geometries.spatials import Lattice, Offset, Momentum
+from qten.symbolics.state_space import brillouin_zone
+from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
+from qten.geometries.fourier import fourier_transform
+from qten.geometries.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -77,11 +77,11 @@ def test_fourier_tensor_construction():
 
     m0 = _mode(r0, "s")
     m1 = _mode(r1, "s")
-    region_space = hilbert([m0, m1])
+    region_space = HilbertSpace.new([m0, m1])
 
     # Bloch space: 1 site at 0 (unit cell)
     b0 = _mode(r0, "s")
-    bloch_space = hilbert([b0])
+    bloch_space = HilbertSpace.new([b0])
 
     # Compute FT Tensor
     ft_tensor = fourier_transform(k_space, bloch_space, region_space)
@@ -125,13 +125,13 @@ def test_fourier_tensor_unitarity():
         r = Offset(rep=ImmutableDenseMatrix([i]), space=lat.affine)
         m = _mode(r, "s")
         region_modes.append(m)
-    region_space = hilbert(region_modes)
+    region_space = HilbertSpace.new(region_modes)
     assert region_space.dim == n_cells
 
     # Bloch space: 1 site at 0 (defines the unit cell for Bloch states)
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     b0 = _mode(r0, "s")
-    bloch_space = hilbert([b0])
+    bloch_space = HilbertSpace.new([b0])
     assert bloch_space.dim == 1
 
     # Compute FT Tensor

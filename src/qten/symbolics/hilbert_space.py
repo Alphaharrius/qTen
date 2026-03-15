@@ -22,9 +22,10 @@ import torch
 import sympy as sy
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 
-from .utils import FrozenDict, full_typename
-from .validations import need_validation
-from .abstracts import (
+from ..utils.collections_ext import FrozenDict
+from ..utils.types_ext import full_typename
+from ..validations import need_validation
+from ..abstracts import (
     AbstractKet,
     Convertible,
     Operable,
@@ -32,11 +33,11 @@ from .abstracts import (
     Span,
     HasRays,
 )
-from .spatials import Spatial
+from ..geometries.spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
-from .tensors import Tensor
-from .precision import get_precision_config
-from .symbolics import Multiple
+from ..linalg.tensors import Tensor
+from ..precision import get_precision_config
+from . import Multiple
 
 
 _IrrepType = TypeVar("_IrrepType")
@@ -376,7 +377,7 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
 
 
 @U1Basis.add_conversion(U1Span)
-def u1basis_to_u1span(basis: U1Basis) -> U1Span:
+def _(basis: U1Basis) -> U1Span:
     """Convert a `U1Basis` to a `U1Span` containing just that basis state."""
     return U1Span((basis,))
 
@@ -420,6 +421,34 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
     """
 
     __hash__ = StateSpace.__hash__
+
+    @staticmethod
+    def new(itr: Iterable[U1Basis]) -> "HilbertSpace":
+        """
+        Build a `HilbertSpace` from an ordered basis iterable.
+
+        Parameters
+        ----------
+        `itr` : `Iterable[U1Basis]`
+            Basis elements to insert into the space in iteration order. Each
+            element is assigned its zero-based sector index according to its
+            position in `itr`.
+
+        Returns
+        -------
+        `HilbertSpace`
+            A new space whose `structure` maps each basis element from `itr` to
+            its enumerated sector index.
+
+        Notes
+        -----
+        Later duplicate keys in `itr` overwrite earlier entries in the backing
+        `OrderedDict`, while preserving insertion order for the surviving key.
+        """
+        structure: OrderedDict[U1Basis, int] = OrderedDict()
+        for i, el in enumerate(itr):
+            structure[el] = i
+        return HilbertSpace(structure=structure)
 
     def __str__(self) -> str:
         return f"HilbertSpace(dim={self.dim}, sectors={len(self.structure)})"
@@ -529,7 +558,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
                 )
 
             grouped_union.update(grouped_elements)
-            grouped_by_label[label] = hilbert(grouped_elements)
+            grouped_by_label[label] = HilbertSpace.new(grouped_elements)
 
         return FrozenDict(grouped_by_label)
 
@@ -557,11 +586,15 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         for el in self.elements():
             keys[tuple(el.irrep_of(t) for t in T)] = None
 
+        def make_selector(key: Tuple[Any, ...]) -> Callable[[U1Basis], bool]:
+            def selector(el: U1Basis) -> bool:
+                return all(el.irrep_of(t) == target for t, target in zip(T, key))
+
+            return selector
+
         selectors: OrderedDict[str, Callable[[U1Basis], bool]] = OrderedDict()
         for i, key in enumerate(keys):
-            selectors[f"_{i}"] = lambda el, key=key: all(
-                el.irrep_of(t) == target for t, target in zip(T, key)
-            )
+            selectors[f"_{i}"] = make_selector(key)
 
         result = self.group(**selectors)
         return tuple(result[label] for label in selectors)
@@ -745,7 +778,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
                 U1Basis(coef, tuple(key)) for key, coef in keys.items()
             )
             factor_keys.append(tuple(keys.keys()))
-            factorized.append(hilbert(grouped_basis))
+            factorized.append(HilbertSpace.new(grouped_basis))
 
         # Map each basis state to its grouped-irrep key tuple.
         combo_to_element: OrderedDict[Tuple[Tuple[Any, ...], ...], U1Basis] = (
@@ -756,8 +789,8 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
             combo_to_element[combo] = el
 
         expected_size = 1
-        for keys in factor_keys:
-            expected_size *= len(keys)
+        for group_keys in factor_keys:
+            expected_size *= len(group_keys)
         if expected_size != len(combo_to_element):
             raise ValueError(
                 "Requested factorization is not valid: basis is not a complete Cartesian product."
@@ -774,7 +807,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
 
         return StateSpaceFactorization(
             factorized=tuple(factorized),
-            align_dim=hilbert(align_elements),
+            align_dim=HilbertSpace.new(align_elements),
         )
 
     @override
@@ -804,14 +837,13 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         elements = []
         for a, b in product(self.elements(), other.elements()):
             elements.append(a @ b)
-        return hilbert(elements)
+        return HilbertSpace.new(elements)
 
     @override
     def rays(self) -> "HilbertSpace":
         """Return the Hilbert space obtained by replacing each basis state by its ray representative."""
-        return hilbert(el.rays() for el in self)
+        return HilbertSpace.new(el.rays() for el in self)
 
-    @override
     def cross_gram(self, another: "HilbertSpace") -> Tensor:
         """
         Build the cross-Gram overlap matrix between this basis and another basis.
@@ -841,32 +873,31 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         return Tensor(data=data, dims=(self, another.rays()))
 
 
-def hilbert(itr: Iterable[U1Basis]) -> HilbertSpace:
-    structure: OrderedDict[U1Basis, int] = OrderedDict()
-    for i, el in enumerate(itr):
-        structure[el] = i
-    return HilbertSpace(structure=structure)
-
-
 @U1Basis.add_conversion(StateSpace)
-def u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace:
+def _u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace:
     """Convert a `U1Basis` to a `HilbertSpace` containing only that basis state."""
-    return hilbert((basis,))
+    return HilbertSpace.new((basis,))
 
 
 # Support conversion to HilbertSpace using `basis.convert(HilbertSpace)`.
-U1Basis.add_conversion(HilbertSpace)(u1basis_to_hilbertspace)
+U1Basis.add_conversion(HilbertSpace)(
+    cast(Callable[[U1Basis], HilbertSpace], _u1basis_to_hilbertspace)
+)
 
 
 @U1Span.add_conversion(StateSpace)
-def u1span_to_hilbertspace(span: U1Span) -> StateSpace:
+def _u1span_to_hilbertspace(span: U1Span) -> StateSpace:
     """Convert a `U1Span` to a `HilbertSpace` containing the span's basis states."""
-    return hilbert(span.span)
+    return HilbertSpace.new(span.span)
 
 
-@U1Span.add_conversion(HilbertSpace)
+U1Span.add_conversion(HilbertSpace)(
+    cast(Callable[[U1Span], HilbertSpace], _u1span_to_hilbertspace)
+)
+
+
 @HilbertSpace.add_conversion(HilbertSpace)
-def hilbertspace_to_hilbertspace(v: HilbertSpace) -> HilbertSpace:
+def _(v: HilbertSpace) -> HilbertSpace:
     """Identity conversion for `HilbertSpace`."""
     return v
 
@@ -881,7 +912,7 @@ def same_rays(a: HilbertSpace, b: HilbertSpace) -> bool:
 _T = TypeVar("_T")
 
 
-class U1Operator(Functional, Operable, ABC):
+class Opr(Functional, Operable, ABC):
     """
     A composable operator that acts on observable-compatible objects.
 
@@ -952,13 +983,13 @@ class U1Operator(Functional, Operable, ABC):
         return result
 
 
-@dispatch(U1Operator, Operable)
-def operator_matmul(o: U1Operator, v: Operable):
+@dispatch(Opr, Operable)
+def operator_matmul(o: Opr, v: Operable):
     return o(v)
 
 
 @dataclass(frozen=True)
-class FuncOpr(Generic[_IrrepType], U1Operator):
+class FuncOpr(Generic[_IrrepType], Opr):
     T: Type[_IrrepType]
     func: Callable
 
@@ -985,7 +1016,7 @@ def _(f: FuncOpr, s: U1Span) -> U1Span:
 
 @FuncOpr.register(HilbertSpace)
 def _(f: FuncOpr, h: HilbertSpace) -> HilbertSpace:
-    new_h = hilbert(f @ el for el in h)
+    new_h = HilbertSpace.new(f @ el for el in h)
     return new_h
 
 
@@ -1054,11 +1085,11 @@ def operator_and(a: U1Span, b: U1Span) -> U1Span:
 def operator_or(space: HilbertSpace, state: U1Basis) -> HilbertSpace:
     if state in space.structure:
         return space
-    return hilbert((*space.elements(), state))
+    return HilbertSpace.new((*space.elements(), state))
 
 
 @dispatch(U1Basis, HilbertSpace)  # type: ignore[no-redef]
 def operator_or(state: U1Basis, space: HilbertSpace) -> HilbertSpace:
     if state in space.structure:
         return space
-    return hilbert((state, *space.elements()))
+    return HilbertSpace.new((state, *space.elements()))

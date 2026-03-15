@@ -4,8 +4,8 @@ import torch
 import sympy as sy
 from dataclasses import dataclass
 from collections import OrderedDict
-from pyhilbert import state_space
-from pyhilbert.tensors import (
+from qten.symbolics import state_space
+from qten.linalg.tensors import (
     Tensor,
     all as tensor_all,
     align_all,
@@ -21,14 +21,14 @@ from pyhilbert.tensors import (
     where,
     zeros,
 )
-from pyhilbert.hilbert_space import HilbertSpace, U1Basis, hilbert
-from pyhilbert.state_space import (
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
+from qten.symbolics.state_space import (
     BroadcastSpace,
     IndexSpace,
     MomentumSpace,
 )
-from pyhilbert.utils import FrozenDict
-from pyhilbert.tensors import unsqueeze
+from qten.utils.collections_ext import FrozenDict
+from qten.linalg.tensors import unsqueeze
 
 
 @dataclass(frozen=True)
@@ -308,7 +308,7 @@ class TestMatmul:
         # dim 0: 1 vs B -> expand to B. -> (B, 1, K).
         # dim 1: 1 vs K -> expand to K. -> (B, K, K).
 
-        # This seems to imply PyHilbert's matmul might behave differently than torch.matmul if broadcasting aligns batch dims aggressively.
+        # This seems to imply QTen's matmul might behave differently than torch.matmul if broadcasting aligns batch dims aggressively.
         # Or maybe I should not align dim 1 if it is the contraction dim for right?
         # `_align_dims_for_matopt` loops `left.dims[:-2]`.
         # So for left (B, B, K) it only aligns dim 0.
@@ -361,7 +361,7 @@ class TestMatmul:
 
         # If BroadcastSpace size is 0, we can't create a tensor with dim size 0 and expect it to broadcast to N?
         # Usually broadcasting dim has size 1.
-        # But BroadcastSpace in PyHilbert seems to handle "unsqueezed" dims.
+        # But BroadcastSpace in QTen seems to handle "unsqueezed" dims.
         # unsqueeze() creates data with dim size 1.
 
         # Let's use unsqueeze to create the tensor with BroadcastSpace
@@ -1162,14 +1162,14 @@ def _simple_hilbert(tag: str, size: int, make_irrep=None) -> HilbertSpace:
     basis = tuple(
         U1Basis(coef=sy.Integer(1), base=(make_irrep(n),)) for n in range(size)
     )
-    return hilbert(basis)
+    return HilbertSpace.new(basis)
 
 
 def test_factorize_dim_then_product_dims_roundtrip_hilbert():
     left = _simple_hilbert("left", 2)
     right = _simple_hilbert("right", 3)
 
-    factorizable = hilbert(
+    factorizable = HilbertSpace.new(
         U1Basis(coef=sy.Integer(1), base=(i, j))
         for i in (0, 1)
         for j in ("a", "b", "c")

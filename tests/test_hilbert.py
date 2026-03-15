@@ -3,11 +3,11 @@ import sympy as sy
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 
-from pyhilbert.hilbert_space import U1Basis, U1Span, HilbertSpace, hilbert
-from pyhilbert.state_space import MomentumSpace, brillouin_zone
-from pyhilbert.spatials import Lattice, Offset
-from pyhilbert.utils import FrozenDict
-from pyhilbert.boundary import PeriodicBoundary
+from qten.symbolics.hilbert_space import U1Basis, U1Span, HilbertSpace
+from qten.symbolics.state_space import MomentumSpace, brillouin_zone
+from qten.geometries.spatials import Lattice, Offset
+from qten.utils.collections_ext import FrozenDict
+from qten.geometries.boundary import PeriodicBoundary
 
 
 @dataclass(frozen=True)
@@ -100,8 +100,8 @@ def test_hilbert_space_creation_and_operations():
     s1 = _state(r1, "s")
     s2 = _state(r2, "s")
 
-    hs1 = hilbert([s0, s1])
-    hs2 = hilbert([s1, s2])
+    hs1 = HilbertSpace.new([s0, s1])
+    hs2 = HilbertSpace.new([s1, s2])
 
     assert isinstance(hs1, HilbertSpace)
     assert hs1.dim == 2
@@ -138,7 +138,7 @@ def test_hilbert_space_group_with_kwargs_selector():
     p1 = _state(r1, "p")
     s2 = _state(r2, "s")
     d3 = _state(r3, "d")
-    hs = hilbert([s0, p1, s2, d3])
+    hs = HilbertSpace.new([s0, p1, s2, d3])
 
     grouped = hs.group(
         s_band=lambda el: el.irrep_of(Orb) == Orb("s"),
@@ -157,7 +157,7 @@ def test_hilbert_space_group_raises_on_overlap():
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     s0 = _state(r0, "s")
     s1 = _state(r1, "s")
-    hs = hilbert([s0, s1])
+    hs = HilbertSpace.new([s0, s1])
 
     with pytest.raises(ValueError, match="overlap"):
         hs.group(all_s=Orb("s"), first_only=lambda el: el.irrep_of(Offset) == r0)
@@ -175,7 +175,7 @@ def test_hilbert_space_group_by_returns_tuple_of_hilbertspace():
     p1 = _state(r1, "p")
     s2 = _state(r2, "s")
     d3 = _state(r3, "d")
-    hs = hilbert([s0, p1, s2, d3])
+    hs = HilbertSpace.new([s0, p1, s2, d3])
 
     groups = hs.group_by(Orb)
 
@@ -194,7 +194,7 @@ def test_statespace_getitem_variants():
         _state(Offset(rep=ImmutableDenseMatrix([i]), space=lat.affine), "s")
         for i in range(3)
     ]
-    hs = hilbert(states)
+    hs = HilbertSpace.new(states)
 
     assert hs[0] == states[0]
     assert hs[-1] == states[-1]
@@ -223,7 +223,7 @@ def test_hilbert_space_gram_diagonal_for_identical_basis():
     b = _state(
         Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine), "s", sy.Integer(3)
     )
-    hs = hilbert([a, b])
+    hs = HilbertSpace.new([a, b])
 
     gram = hs.cross_gram(hs)
     assert gram.data.shape == (2, 2)
@@ -241,7 +241,7 @@ def test_hilbert_space_gram_unitizes_target_dim():
     b = _state(
         Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine), "s", sy.Integer(3)
     )
-    hs = hilbert([a, b])
+    hs = HilbertSpace.new([a, b])
 
     gram = hs.cross_gram(hs)
     assert gram.dims[0] == hs
@@ -255,7 +255,7 @@ def test_hilbert_space_lookup_exact_query_match():
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
     r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
 
-    hs = hilbert([_state(r0, "s"), _state(r1, "p"), _state(r2, "s")])
+    hs = HilbertSpace.new([_state(r0, "s"), _state(r1, "p"), _state(r2, "s")])
     found = hs.lookup({Offset: r1, Orb: Orb("p")})
     assert found == _state(r1, "p")
 
@@ -265,7 +265,7 @@ def test_hilbert_space_lookup_errors_for_no_or_multiple_matches():
     lat = _lattice(basis, (2,))
     r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
     r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
-    hs = hilbert([_state(r0, "s"), _state(r1, "s")])
+    hs = HilbertSpace.new([_state(r0, "s"), _state(r1, "s")])
 
     with pytest.raises(ValueError, match="No state found"):
         hs.lookup({Offset: Offset(rep=ImmutableDenseMatrix([3]), space=lat.affine)})
@@ -294,7 +294,7 @@ def test_statespace_type_errors():
     basis = ImmutableDenseMatrix([[1]])
     lat = _lattice(basis, (1,))
     s = _state(Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine), "s")
-    hs = hilbert([s])
+    hs = HilbertSpace.new([s])
     ms = MomentumSpace(structure={})
 
     with pytest.raises(ValueError, match="different types"):
@@ -308,13 +308,13 @@ def test_statespace_type_errors():
 
 
 def test_hilbert_space_tensor_product_order_and_content():
-    left = hilbert(
+    left = HilbertSpace.new(
         (
             U1Basis(coef=sy.Integer(1), base=(0,)),
             U1Basis(coef=sy.Integer(1), base=(1,)),
         )
     )
-    right = hilbert(
+    right = HilbertSpace.new(
         (
             U1Basis(coef=sy.Integer(1), base=(Orb("a"),)),
             U1Basis(coef=sy.Integer(1), base=(Orb("b"),)),
@@ -330,7 +330,7 @@ def test_hilbert_space_tensor_product_order_and_content():
 
 
 def test_hilbert_space_factorize_success_two_groups():
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(1), base=(i, j))
         for i in (0, 1)
         for j in ("a", "b", "c")
@@ -352,7 +352,7 @@ def test_hilbert_space_factorize_success_two_groups():
 
 
 def test_hilbert_space_factorize_defaults_coef_to_leftmost_factor():
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(i + 2), base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
 
@@ -371,7 +371,7 @@ def test_hilbert_space_factorize_defaults_coef_to_leftmost_factor():
 
 def test_hilbert_space_factorize_places_coef_on_requested_factor():
     coef_by_orb = {"a": sy.Integer(5), "b": sy.Integer(7)}
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=coef_by_orb[j], base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
 
@@ -390,7 +390,7 @@ def test_hilbert_space_factorize_places_coef_on_requested_factor():
 
 def test_hilbert_space_factorize_accepts_negative_coef_index():
     coef_by_orb = {"a": sy.Integer(11), "b": sy.Integer(13)}
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=coef_by_orb[j], base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
 
@@ -401,7 +401,7 @@ def test_hilbert_space_factorize_accepts_negative_coef_index():
 
 
 def test_hilbert_space_factorize_rejects_missing_type():
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(1), base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
     with pytest.raises(ValueError, match="does not match space irrep types"):
@@ -409,7 +409,7 @@ def test_hilbert_space_factorize_rejects_missing_type():
 
 
 def test_hilbert_space_factorize_rejects_duplicate_type_request():
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(1), base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
     with pytest.raises(ValueError, match="must appear exactly once"):
@@ -417,7 +417,7 @@ def test_hilbert_space_factorize_rejects_duplicate_type_request():
 
 
 def test_hilbert_space_factorize_rejects_incomplete_cartesian_product():
-    h = hilbert(
+    h = HilbertSpace.new(
         (
             U1Basis(coef=sy.Integer(1), base=(1, "a")),
             U1Basis(coef=sy.Integer(1), base=(1, "b")),
@@ -429,7 +429,7 @@ def test_hilbert_space_factorize_rejects_incomplete_cartesian_product():
 
 
 def test_hilbert_space_factorize_rejects_out_of_range_coef_index():
-    h = hilbert(
+    h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(1), base=(i, j)) for i in (0, 1) for j in ("a", "b")
     )
     with pytest.raises(ValueError, match="`coef_on` index 2 is out of range"):
@@ -437,7 +437,7 @@ def test_hilbert_space_factorize_rejects_out_of_range_coef_index():
 
 
 def test_hilbert_space_factorize_rejects_ambiguous_coef_assignment():
-    h = hilbert(
+    h = HilbertSpace.new(
         (
             U1Basis(coef=sy.Integer(2), base=(0, "a")),
             U1Basis(coef=sy.Integer(3), base=(0, "b")),

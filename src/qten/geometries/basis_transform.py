@@ -4,18 +4,19 @@ import sympy as sy
 from sympy.matrices.normalforms import smith_normal_decomp  # type: ignore[import-untyped]
 from functools import lru_cache
 from itertools import product
-from typing import List, Tuple, cast, Literal
-import numpy as np
+from typing import List, Tuple, cast
 
-from .abstracts import Functional
-from .utils import FrozenDict, matchby
-from .validations import need_validation
-from .validations.symbolics import check_proper_transformation, check_numerical
-from .spatials import Lattice, ReciprocalLattice, Offset, Momentum, AffineSpace
-from .state_space import MomentumSpace, brillouin_zone
-from .hilbert_space import HilbertSpace, U1Basis, hilbert
-from .tensors import Tensor, mapping_matrix
-from .fourier import fourier_transform
+from ..abstracts import Functional
+from ..utils.collections_ext import FrozenDict
+from ..validations import need_validation
+from ..validations.symbolics import check_proper_transformation, check_numerical
+from .spatials import (
+    Lattice,
+    ReciprocalLattice,
+    Offset,
+    Momentum,
+    AffineSpace,
+)
 from .boundary import PeriodicBoundary
 
 
@@ -135,84 +136,3 @@ def momentum_transform(t: BasisTransform, momentum: Momentum) -> Momentum:
     """
     new_space = t(momentum.space)
     return momentum.rebase(new_space)
-
-
-def bandfold(
-    M: ImmutableDenseMatrix,
-    tensor: Tensor,
-    opt: Literal["both", "left", "right"] = "both",
-) -> Tensor:
-    """
-    make Tensor with (Momentum, Hilbert, Hilbert) to (scaled Momentum, Hilbert, Hilbert)
-    Parameters
-    ----------
-    """
-    # 1. Parse inputs
-    if not tensor.rank() == 3:
-        raise ValueError(
-            f"Input tensor must be of rank 3, but has rank {tensor.rank()}"
-        )
-    if not isinstance(tensor.dims[0], MomentumSpace):
-        raise TypeError(
-            "The first dimension of the tensor must be a MomentumSpace, "
-            f"but is of type {type(tensor.dims[0])}"
-        )
-    k_space = cast(MomentumSpace, tensor.dims[0])
-    if not k_space.elements():
-        raise ValueError("MomentumSpace is empty")
-    lattice_set = set(map(lambda k: k.space, k_space))
-    if len(lattice_set) != 1:
-        raise ValueError("Invalid BZ")
-    reciprocal_lattice = lattice_set.pop()
-    if not isinstance(reciprocal_lattice, ReciprocalLattice):
-        raise TypeError(
-            f"Space of momentum should be ReciprocalLattice, but got {type(reciprocal_lattice)}"
-        )
-    reciprocal_lattice = cast(ReciprocalLattice, reciprocal_lattice)
-    lattice = reciprocal_lattice.dual
-
-    # 2. Apply the transformation
-    transform = BasisTransform(M)
-    scaled_lattice = transform(lattice)
-
-    # 3. Create new transformed spaces
-    scaled_reciprocal_lattice = scaled_lattice.dual
-    scaled_offsets = sorted(
-        scaled_lattice.unit_cell.values(), key=lambda x: tuple(x.rep)
-    )
-    enlarge_unit_cell = tuple(r.rebase(lattice) for r in scaled_offsets)
-
-    # Transform based on opt
-    switch_index = -2 if opt == "left" else -1
-    target_space = tensor.dims[switch_index]
-    if not isinstance(target_space, HilbertSpace):
-        raise TypeError(
-            f"Dimension at index {switch_index} must be a HilbertSpace, "
-            f"but got {type(target_space)}"
-        )
-    rebased_hilbert = hilbert(
-        cast(U1Basis, target_space.lookup({Offset: r.fractional()})).replace(r)
-        for r in enlarge_unit_cell
-    )
-    # # Transform both sides
-    f = fourier_transform(k_space, tensor.dims[switch_index], rebased_hilbert)
-    vratio = np.sqrt(len(enlarge_unit_cell) / len(lattice.unit_cell))
-    f = f / vratio
-    fh = f.h(-2, -1)  # (K, B', B)
-    transformed = fh @ tensor @ f  # (K, B', B')
-    transformed = transformed.permute(1, 2, 0).unsqueeze(-1)  # (B', B', K, 1)
-
-    # k-mapping
-    new_k_space = brillouin_zone(scaled_reciprocal_lattice)
-    mapping = matchby(
-        k_space,
-        new_k_space,
-        base_func=lambda k: transform(k).fractional()
-        if k.space == reciprocal_lattice
-        else k.fractional(),
-    )
-    k_map = mapping_matrix(k_space, new_k_space, mapping).transpose(0, 1)
-    return (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
-
-
-# TODO: add bandunfold function

@@ -1,6 +1,6 @@
 import pytest
 from dataclasses import dataclass
-from pyhilbert.abstracts import Functional, Operable, Updatable, operator_eq
+from qten.abstracts import Functional, Operable, Updatable, operator_eq
 
 
 @dataclass(frozen=True)

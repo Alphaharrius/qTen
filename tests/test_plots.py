@@ -7,12 +7,12 @@ import torch
 
 import plotly.graph_objects as go
 
-from pyhilbert.hilbert_space import U1Basis, hilbert
-from pyhilbert.spatials import Lattice, Offset
-from pyhilbert.boundary import PeriodicBoundary
-from pyhilbert.state_space import brillouin_zone
-from pyhilbert.tensors import Tensor
-from pyhilbert.fourier import fourier_transform
+from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
+from qten.geometries.spatials import Lattice, Offset
+from qten.geometries.boundary import PeriodicBoundary
+from qten.symbolics.state_space import brillouin_zone
+from qten.linalg.tensors import Tensor
+from qten.geometries.fourier import fourier_transform
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ def _basis_state(name: str) -> U1Basis:
 
 
 def _space(size: int, prefix: str):
-    return hilbert(_basis_state(f"{prefix}{i}") for i in range(size))
+    return HilbertSpace.new(_basis_state(f"{prefix}{i}") for i in range(size))
 
 
 def create_dummy_tensor(data_like):
@@ -134,7 +134,7 @@ def test_bandstructure_plot():
     # Single s-orbital at origin (0,0)
     r_0 = Offset(rep=sy.ImmutableDenseMatrix([[0.0], [0.0]]), space=lat.affine)
     basis_s = U1Basis.new(r_0, "s")
-    bloch_space = hilbert([basis_s])
+    bloch_space = HilbertSpace.new([basis_s])
 
     # 3. Define Region Space (Real Space Neighbors)
     neighbor_offsets = [
@@ -156,7 +156,7 @@ def test_bandstructure_plot():
         region_modes.append(m)
         offset_to_idx[(dx, dy)] = i
 
-    region_space = hilbert(region_modes)
+    region_space = HilbertSpace.new(region_modes)
 
     # 4. Construct Hamiltonian H_real
     t_n = -1.0 + 0j
