@@ -21,6 +21,7 @@ def plot_structure_mpl(
     azim: float = -60,
     save_path: Optional[str] = None,
     ax: Optional[Any] = None,
+    color_by: str = "basis",
     **kwargs,
 ) -> plt.Figure:
     """
@@ -43,6 +44,8 @@ def plot_structure_mpl(
         If provided, saves the figure to this path. File format is inferred from the extension.
     ax : matplotlib.axes.Axes, optional
         Existing axes to plot on.
+    color_by : {'basis', 'unit_cell'}, default 'basis'
+        How to color the sites.
     **kwargs
         Additional keyword arguments passed to `plt.figure` (e.g., `figsize`).
 
@@ -54,6 +57,10 @@ def plot_structure_mpl(
     valid_types = ["edge-and-node", "scatter"]
     if plot_type not in valid_types:
         raise ValueError(f"Invalid plot_type '{plot_type}'. Options: {valid_types}")
+
+    valid_color_by = ["basis", "unit_cell"]
+    if color_by not in valid_color_by:
+        raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
     coords = obj.coords()
     coords_np = coords.numpy()
@@ -98,11 +105,28 @@ def plot_structure_mpl(
     num_cells = coords.shape[0] // num_basis
 
     # Basis colors
-    basis_colors = ["blue", "red", "green", "orange", "purple"]
+    basis_colors = [
+        "blue",
+        "red",
+        "green",
+        "orange",
+        "purple",
+        "cyan",
+        "magenta",
+        "yellow",
+        "brown",
+        "pink",
+    ]
     colors = []
-    for _ in range(num_cells):
-        for b in range(num_basis):
-            colors.append(basis_colors[b % len(basis_colors)])
+    if color_by == "basis":
+        for _ in range(num_cells):
+            for b in range(num_basis):
+                colors.append(basis_colors[b % len(basis_colors)])
+    else:  # color_by == "unit_cell"
+        for c in range(num_cells):
+            color = basis_colors[c % len(basis_colors)]
+            for _ in range(num_basis):
+                colors.append(color)
 
     if is_3d:
         cast(Any, ax).scatter(x, y, z, c=colors, s=20, label="Sites")

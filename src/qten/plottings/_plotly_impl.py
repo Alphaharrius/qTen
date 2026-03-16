@@ -21,6 +21,7 @@ def plot_structure(
     plot_type: str = "edge-and-node",
     show: bool = True,
     fig: Optional[go.Figure] = None,
+    color_by: str = "basis",
     **kwargs,
 ) -> go.Figure:
     """
@@ -41,6 +42,8 @@ def plot_structure(
         If True, calls `fig.show()` to display the plot immediately.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
+    color_by : {'basis', 'unit_cell'}, default 'basis'
+        How to color the sites.
     **kwargs
         Additional keyword arguments passed to `go.Figure`.
 
@@ -52,6 +55,10 @@ def plot_structure(
     valid_types = ["edge-and-node", "scatter"]
     if plot_type not in valid_types:
         raise ValueError(f"Invalid plot_type '{plot_type}'. Options: {valid_types}")
+
+    valid_color_by = ["basis", "unit_cell"]
+    if color_by not in valid_color_by:
+        raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
     # Use method on Lattice object
     coords = obj.coords()
@@ -96,11 +103,28 @@ def plot_structure(
     num_basis = len(obj.unit_cell) if obj.unit_cell else 1
     num_cells = coords.shape[0] // num_basis
 
-    basis_colors = ["blue", "red", "green", "orange", "purple"]
+    basis_colors = [
+        "blue",
+        "red",
+        "green",
+        "orange",
+        "purple",
+        "cyan",
+        "magenta",
+        "yellow",
+        "brown",
+        "pink",
+    ]
     colors = []
-    for _ in range(num_cells):
-        for b in range(num_basis):
-            colors.append(basis_colors[b % len(basis_colors)])
+    if color_by == "basis":
+        for _ in range(num_cells):
+            for b in range(num_basis):
+                colors.append(basis_colors[b % len(basis_colors)])
+    else:  # color_by == "unit_cell"
+        for c in range(num_cells):
+            color = basis_colors[c % len(basis_colors)]
+            for _ in range(num_basis):
+                colors.append(color)
 
     if obj.dim == 3:
         fig.add_trace(
