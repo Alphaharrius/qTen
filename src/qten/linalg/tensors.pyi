@@ -1,6 +1,6 @@
 import torch
 from ..abstracts import Convertible as Convertible, Operable as Operable
-from ..plottings.base import Plottable as Plottable
+from ..plottings import Plottable as Plottable
 from ..precision import get_precision_config as get_precision_config
 from ..symbolics.state_space import (
     BroadcastSpace as BroadcastSpace,

@@ -1,4 +1,5 @@
 from typing import Optional, Union, Tuple
+import colorsys
 
 import torch
 import numpy as np
@@ -6,8 +7,8 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from ..geometries.spatials import Lattice
-from ..linalg.tensors import Tensor
+from qten.geometries.spatials import Lattice
+from qten.linalg.tensors import Tensor
 from ._utils import compute_bonds
 
 
@@ -21,6 +22,7 @@ def plot_structure(
     plot_type: str = "edge-and-node",
     show: bool = True,
     fig: Optional[go.Figure] = None,
+    color_by: str = "basis",
     **kwargs,
 ) -> go.Figure:
     """
@@ -41,6 +43,8 @@ def plot_structure(
         If True, calls `fig.show()` to display the plot immediately.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
+    color_by : {'basis', 'unit_cell'}, default 'basis'
+        How to color the sites.
     **kwargs
         Additional keyword arguments passed to `go.Figure`.
 
@@ -52,6 +56,10 @@ def plot_structure(
     valid_types = ["edge-and-node", "scatter"]
     if plot_type not in valid_types:
         raise ValueError(f"Invalid plot_type '{plot_type}'. Options: {valid_types}")
+
+    valid_color_by = ["basis", "unit_cell"]
+    if color_by not in valid_color_by:
+        raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
     # Use method on Lattice object
     coords = obj.coords()
@@ -96,33 +104,79 @@ def plot_structure(
     num_basis = len(obj.unit_cell) if obj.unit_cell else 1
     num_cells = coords.shape[0] // num_basis
 
-    basis_colors = ["blue", "red", "green", "orange", "purple"]
-    colors = []
-    for _ in range(num_cells):
-        for b in range(num_basis):
-            colors.append(basis_colors[b % len(basis_colors)])
+    n_colors = num_basis if color_by == "basis" else num_cells
 
-    if obj.dim == 3:
-        fig.add_trace(
-            go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                mode="markers",
-                marker=dict(size=5, color=colors),
-                name="Sites",
-            )
+    basis_colors = [
+        f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+        for r, g, b in (
+            colorsys.hsv_to_rgb((i * 0.61803) % 1.0, 0.8, 0.9) for i in range(n_colors)
         )
-    else:
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                mode="markers",
-                marker=dict(size=10, color=colors, symbol="circle"),
-                name="Sites",
-            )
-        )
+    ]
+    if color_by == "basis":
+        for b in range(num_basis):
+            indices = [c * num_basis + b for c in range(num_cells)]
+            x_group = x[indices]
+            y_group = y[indices]
+            z_group = z[indices] if z is not None else None
+
+            trace_name = f"Basis {b}"
+            trace_color = basis_colors[b]
+
+            if obj.dim == 3:
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x_group,
+                        y=y_group,
+                        z=z_group,
+                        mode="markers",
+                        marker=dict(size=5, color=trace_color),
+                        name=trace_name,
+                    )
+                )
+            else:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_group,
+                        y=y_group,
+                        mode="markers",
+                        marker=dict(size=10, color=trace_color, symbol="circle"),
+                        name=trace_name,
+                    )
+                )
+
+    else:  # color_by == "unit_cell"
+        for c in range(num_cells):
+            start_idx = c * num_basis
+            end_idx = start_idx + num_basis
+
+            x_group = x[start_idx:end_idx]
+            y_group = y[start_idx:end_idx]
+            z_group = z[start_idx:end_idx] if z is not None else None
+
+            trace_name = f"Cell {c}"
+            trace_color = basis_colors[c]
+
+            if obj.dim == 3:
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x_group,
+                        y=y_group,
+                        z=z_group,
+                        mode="markers",
+                        marker=dict(size=5, color=trace_color),
+                        name=trace_name,
+                    )
+                )
+            else:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_group,
+                        y=y_group,
+                        mode="markers",
+                        marker=dict(size=10, color=trace_color, symbol="circle"),
+                        name=trace_name,
+                    )
+                )
 
     # Spins (Optional)
     if spin_data is not None:

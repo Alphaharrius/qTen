@@ -1,9 +1,10 @@
 from abc import ABC
-import importlib
+from importlib import metadata
 from typing import (
     Callable,
     Dict,
     ClassVar,
+    List,
     Tuple,
     Type,
 )
@@ -16,14 +17,21 @@ class Plottable(ABC):
 
     _registry: ClassVar[Dict[Tuple[Type, str, str], Callable]] = {}
     _backends_loaded: ClassVar[bool] = False
+    _backend_load_errors: ClassVar[List[str]] = []
 
     @classmethod
     def _ensure_backends_loaded(cls) -> None:
         if Plottable._backends_loaded:
             return
 
-        importlib.import_module("qten.plottings._mpl_impl")
-        importlib.import_module("qten.plottings._plotly_impl")
+        Plottable._backend_load_errors.clear()
+        for entry_point in metadata.entry_points(group="qten.plottings"):
+            try:
+                entry_point.load()
+            except Exception as exc:
+                Plottable._backend_load_errors.append(
+                    f"{entry_point.name}: {type(exc).__name__}: {exc}"
+                )
         Plottable._backends_loaded = True
 
     @classmethod
@@ -69,4 +77,8 @@ class Plottable(ABC):
             f"No plot method '{method}' with backend '{backend}' found for {type(self).__name__}.\n"
             f"Available methods for this object: {', '.join(available) or 'None'}"
         )
+        if Plottable._backend_load_errors:
+            msg += "\nExtension load errors: " + "; ".join(
+                Plottable._backend_load_errors
+            )
         raise ValueError(msg)

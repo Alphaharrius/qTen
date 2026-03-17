@@ -7,7 +7,7 @@ from ..abstracts import (
     HasDual as HasDual,
     Operable as Operable,
 )
-from ..plottings.base import Plottable as Plottable
+from ..plottings import Plottable as Plottable
 from ..precision import get_precision_config as get_precision_config
 from ..utils.collections_ext import FrozenDict as FrozenDict
 from ..validations import need_validation as need_validation

@@ -34,9 +34,9 @@ def _supercell_shifts(
     Generate the integer shifts within the supercell defined by M.
     """
     S, U, V = smith_normal_decomp(M, domain=sy.ZZ)
-    Q = V.inv()
+    U_inv = U.inv()
     ranges = [range(int(S[i, i])) for i in range(dim)]
-    shifts = [ImmutableDenseMatrix([n]) @ Q for n in product(*ranges)]
+    shifts = [U_inv @ ImmutableDenseMatrix(dim, 1, n) for n in product(*ranges)]
     return tuple(shifts)
 
 
@@ -45,7 +45,7 @@ def affine_space_transform(t: BasisTransform, space: AffineSpace) -> AffineSpace
     """
     Transform an AffineSpace by the basis transformation M.
     """
-    new_basis = t.M @ space.basis
+    new_basis = space.basis @ t.M
     return AffineSpace(basis=new_basis)
 
 
@@ -70,16 +70,16 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
         default_offset = Offset(rep=ImmutableDenseMatrix([0] * lat.dim), space=lat)
         items = [("0", default_offset)]
 
-    new_basis = t.M @ lat.basis
+    new_basis = lat.basis @ t.M
 
     for label, atom_offset in items:
-        atom_vec = atom_offset.rep.reshape(1, lat.dim)
+        atom_vec = atom_offset.rep
         for i, k in enumerate(shifts):
-            new_frac = (atom_vec + k) @ M_inv
+            new_frac = M_inv @ (atom_vec + k)
             new_frac = new_frac.applyfunc(lambda x: x - sy.floor(x))
 
             # Lattice.unit_cell expects Cartesian offsets, not fractional reps.
-            new_offset = ImmutableDenseMatrix(new_basis @ new_frac.T)
+            new_offset = ImmutableDenseMatrix(new_basis @ new_frac)
 
             new_label = f"{label}_{i}" if len(shifts) > 1 else label
             new_unit_cell[new_label] = new_offset
@@ -89,8 +89,8 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
             f"BasisTransform currently supports PeriodicBoundary only, got {type(lat.boundaries).__name__}."
         )
 
-    new_boundary_basis = lat.basis.inv() @ M_inv @ lat.basis @ lat.boundaries.basis
-    if any(x.q != 1 for x in new_boundary_basis):
+    new_boundary_basis = M_inv @ lat.boundaries.basis
+    if any(not sy.cancel(x).is_integer for x in new_boundary_basis):
         raise ValueError(
             "Transformed boundary basis must remain integral for PeriodicBoundary."
         )

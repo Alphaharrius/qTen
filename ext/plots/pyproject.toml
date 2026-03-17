@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qten-plots"
+version = "0.1.0"
+description = "Plotting extension for qten"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "qten",
+    "matplotlib>=3.10.7",
+    "nbformat>=4.2.0",
+    "plotly>=6.5.0",
+]
+
+[project.entry-points."qten.plottings"]
+matplotlib = "qten_plots._mpl_impl"
+plotly = "qten_plots._plotly_impl"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

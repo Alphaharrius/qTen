@@ -1,1 +1,1 @@
-from .base import Plottable as Plottable
+from ._plottings import Plottable as Plottable

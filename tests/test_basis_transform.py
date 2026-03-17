@@ -151,7 +151,7 @@ def test_affine_space_transform():
 
     new_space = t(space)
     assert isinstance(new_space, AffineSpace)
-    assert new_space.basis == M @ basis
+    assert new_space.basis == basis @ M
 
 
 def test_basis_transform_rejects_non_invertible_matrix():

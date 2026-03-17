@@ -5,14 +5,13 @@ import plotly.graph_objects as go
 import sympy as sy
 import torch
 
-import plotly.graph_objects as go
-
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
 from qten.geometries.spatials import Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
 from qten.symbolics.state_space import brillouin_zone
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
+from qten.plottings import Plottable
 
 
 @dataclass(frozen=True)
@@ -38,6 +37,42 @@ def create_dummy_tensor(data_like):
     dims = tuple(_space(dim, f"d{axis}_") for axis, dim in enumerate(data.shape))
 
     return Tensor(data=data, dims=dims)
+
+
+def test_plottable_loads_plot_extensions_from_entry_points(monkeypatch):
+    old_registry = dict(Plottable._registry)
+    old_loaded = Plottable._backends_loaded
+    old_errors = list(Plottable._backend_load_errors)
+
+    Plottable._registry.clear()
+    Plottable._backends_loaded = False
+    Plottable._backend_load_errors.clear()
+
+    loaded = []
+
+    class FakeEntryPoint:
+        name = "plotly"
+
+        def load(self):
+            loaded.append("plotly")
+
+    entry_points = [FakeEntryPoint()]
+
+    monkeypatch.setattr(
+        "qten.plottings._plottings.metadata.entry_points",
+        lambda **kwargs: entry_points
+        if kwargs.get("group") == "qten.plottings"
+        else [],
+    )
+    try:
+        Plottable._ensure_backends_loaded()
+
+        assert loaded == ["plotly"]
+        assert Plottable._backends_loaded is True
+    finally:
+        Plottable._registry = old_registry
+        Plottable._backends_loaded = old_loaded
+        Plottable._backend_load_errors = old_errors
 
 
 def test_plot_heatmap_complex_matrix_returns_two_traces():
