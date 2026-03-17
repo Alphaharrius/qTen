@@ -600,8 +600,7 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
     -------
     `Tuple[sy.Expr | None, Momentum]`
         The irrep of this transformation, `None` if `k` is not a fix point;
-        and the transformed momentum in the same reciprocal lattice space as `k`,
-        wrapped into the first Brillouin zone via `.fractional()`.
+        and the transformed momentum in the same reciprocal lattice space as `k`.
     """
     real_space = k.base().dual
     if t.base() != real_space:
@@ -615,5 +614,5 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
     if not isinstance(rep, sy.ImmutableDenseMatrix):
         rep = sy.ImmutableDenseMatrix(rep)
     new_rep = linear_rep.inv().T @ rep
-    new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base()).fractional()
+    new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base())
     return new_k
