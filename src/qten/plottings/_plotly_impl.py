@@ -117,7 +117,7 @@ def plot_structure(
             indices = [c * num_basis + b for c in range(num_cells)]
             x_group = x[indices]
             y_group = y[indices]
-            z_group = z[indices] if obj.dim == 3 else None
+            z_group = z[indices] if z is not None else None
 
             trace_name = f"Basis {b}"
             trace_color = basis_colors[b]
@@ -151,7 +151,7 @@ def plot_structure(
 
             x_group = x[start_idx:end_idx]
             y_group = y[start_idx:end_idx]
-            z_group = z[start_idx:end_idx] if obj.dim == 3 else None
+            z_group = z[start_idx:end_idx] if z is not None else None
 
             trace_name = f"Cell {c}"
             trace_color = basis_colors[c]
