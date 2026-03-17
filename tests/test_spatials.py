@@ -6,6 +6,7 @@ from qten.geometries.spatials import (
     Lattice,
     ReciprocalLattice,
     Offset,
+    Momentum,
     AffineSpace,
     AbstractLattice,
 )
@@ -92,6 +93,52 @@ def test_cartes_lattice():
     assert (1, 1) in coords
 
 
+def test_lattice_basis_vectors_return_primitive_vectors():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[2, 1], [0, 3]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    basis_vectors = lattice.basis_vectors()
+
+    assert len(basis_vectors) == 2
+    assert all(isinstance(v, Offset) for v in basis_vectors)
+    assert basis_vectors[0].space == lattice
+    assert basis_vectors[1].space == lattice
+    assert basis_vectors[0].rep == ImmutableDenseMatrix([1, 0])
+    assert basis_vectors[1].rep == ImmutableDenseMatrix([0, 1])
+    assert basis_vectors[0].to_vec() == ImmutableDenseMatrix([2, 0])
+    assert basis_vectors[1].to_vec() == ImmutableDenseMatrix([1, 3])
+
+
+def test_lattice_basis_vectors_use_affine_space_when_not_lattice_sites():
+    triangular = ImmutableDenseMatrix(
+        [
+            [sy.sqrt(3) / 2, 0],
+            [-sy.Rational(1, 2), 1],
+        ]
+    )
+    lattice = Lattice(
+        basis=triangular,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={
+            "a": triangular
+            @ ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": triangular
+            @ ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+        },
+    )
+
+    basis_vectors = lattice.basis_vectors()
+
+    assert len(basis_vectors) == 2
+    assert all(v.space == lattice.affine for v in basis_vectors)
+    assert all(v not in lattice for v in basis_vectors)
+    assert basis_vectors[0].rep == ImmutableDenseMatrix([1, 0])
+    assert basis_vectors[1].rep == ImmutableDenseMatrix([0, 1])
+
+
 def test_cartes_reciprocal_lattice():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     # shape (2, 2)
@@ -114,6 +161,23 @@ def test_cartes_reciprocal_lattice():
     assert (sy.Rational(1, 2), 0) in coords
     assert (0, sy.Rational(1, 2)) in coords
     assert (sy.Rational(1, 2), sy.Rational(1, 2)) in coords
+
+
+def test_reciprocal_basis_vectors_use_affine_space_when_not_sampled():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1, 0], [0, 1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    reciprocal = lattice.dual
+
+    basis_vectors = reciprocal.basis_vectors()
+
+    assert len(basis_vectors) == 2
+    assert all(not isinstance(v, Momentum) for v in basis_vectors)
+    assert all(v.space == reciprocal.affine for v in basis_vectors)
+    assert basis_vectors[0].rep == ImmutableDenseMatrix([1, 0])
+    assert basis_vectors[1].rep == ImmutableDenseMatrix([0, 1])
 
 
 def test_coords():
@@ -142,6 +206,63 @@ def test_coords():
     assert torch.any(torch.all(torch.isclose(coords_offset, expected), dim=1))
 
 
+def test_lattice_contains_offset_by_unit_cell_mod_lattice_vectors():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1, 0], [0, 1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={
+            "a": ImmutableDenseMatrix([0, 0]),
+            "b": ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(1, 2)]),
+        },
+    )
+
+    translated_unit_cell_site = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(3, 2), sy.Rational(5, 2)]),
+        space=lattice.affine,
+    )
+    off_unit_cell_site = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 4), sy.Rational(1, 2)]),
+        space=lattice.affine,
+    )
+
+    assert translated_unit_cell_site in lattice
+    assert off_unit_cell_site not in lattice
+
+
+def test_reciprocal_lattice_contains_only_valid_momentum_points_in_same_space():
+    basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice_a = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    lattice_b = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    reciprocal_a = lattice_a.dual
+    reciprocal_b = lattice_b.dual
+
+    momentum_same = Momentum(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]),
+        space=reciprocal_a,
+    )
+    momentum_equal_space = Momentum(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]),
+        space=reciprocal_b,
+    )
+    momentum_invalid = Momentum(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 4), 0]),
+        space=reciprocal_a,
+    )
+
+    assert momentum_same in reciprocal_a
+    assert momentum_equal_space in reciprocal_a
+    assert momentum_invalid not in reciprocal_a
+
+
 def test_offset_rejects_rep_with_wrong_dim():
     space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
 
@@ -162,3 +283,52 @@ def test_offset_rejects_non_numerical_rep():
 
     with pytest.raises(ValueError, match="contain only numerical entries"):
         Offset(rep=ImmutableDenseMatrix([x, 1]), space=space)
+
+
+def test_lattice_at_uses_unit_cell_site_in_origin_cell():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={
+            "a": ImmutableDenseMatrix([0, 0]),
+            "b": ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(1, 2)]),
+        },
+    )
+
+    offset = lattice.at("b")
+
+    assert isinstance(offset, Offset)
+    assert offset.space == lattice
+    assert offset.rep == ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(1, 2)])
+
+
+def test_lattice_at_adds_integer_cell_offset():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5, 5)),
+        unit_cell={"b": ImmutableDenseMatrix([sy.Rational(1, 2), 0])},
+    )
+
+    offset = lattice.at("b", (2, 3))
+
+    assert offset.rep == ImmutableDenseMatrix([sy.Rational(5, 2), 3])
+
+
+def test_lattice_at_rejects_unknown_unit_cell_site():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(3)),
+    )
+
+    with pytest.raises(KeyError, match="Unknown unit-cell site"):
+        lattice.at("missing")
+
+
+def test_lattice_at_rejects_wrong_cell_offset_dim():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(3, 3)),
+    )
+
+    with pytest.raises(ValueError, match="cell_offset must have length 2"):
+        lattice.at("r", (1,))

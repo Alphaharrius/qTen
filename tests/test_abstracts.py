@@ -1,6 +1,13 @@
 import pytest
 from dataclasses import dataclass
-from qten.abstracts import Functional, Operable, Updatable, operator_eq
+from qten.abstracts import (
+    Convertible,
+    Functional,
+    Operable,
+    Span,
+    Updatable,
+    operator_eq,
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,24 @@ class _DerivedFunctional(_MockFunctional):
     pass
 
 
+@dataclass(frozen=True)
+class MockSpan(Span[int]):
+    values: tuple[int, ...]
+
+    def elements(self) -> tuple[int, ...]:
+        return self.values
+
+
+@dataclass(frozen=True)
+class MockConvertibleToSpan(Convertible):
+    values: tuple[int, ...]
+
+
+@MockConvertibleToSpan.add_conversion(MockSpan)
+def _mock_convertible_to_span(v: MockConvertibleToSpan) -> MockSpan:
+    return MockSpan(v.values)
+
+
 @_MockFunctional.register(_BaseInput)
 def _apply_mock_functional_base(functional: _MockFunctional, obj: _BaseInput) -> str:
     return "base"
@@ -51,6 +76,9 @@ def test_operable_unimplemented():
     b = MockOperable()
 
     # Test all default implementations raise NotImplementedError
+
+    with pytest.raises(NotImplementedError):
+        _ = b in a
 
     # Arithmetics
     with pytest.raises(NotImplementedError):
@@ -103,6 +131,26 @@ def test_operable_unimplemented():
 
     with pytest.raises(NotImplementedError):
         _ = a | b
+
+
+def test_span_contains_uses_operator_contains():
+    sup = MockSpan((1, 2, 3))
+    sub = MockSpan((1, 3))
+
+    assert sub in sup
+
+
+def test_span_contains_converts_convertible_queries():
+    sup = MockSpan((1, 2, 3))
+
+    assert MockConvertibleToSpan((2, 3)) in sup
+
+
+def test_span_contains_rejects_non_convertible_queries():
+    sup = MockSpan((1, 2, 3))
+
+    with pytest.raises(ValueError, match="Cannot convert str to MockSpan"):
+        _ = "x" in sup
 
 
 def test_updatable_correct():

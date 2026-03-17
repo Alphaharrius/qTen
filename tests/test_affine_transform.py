@@ -123,7 +123,7 @@ def test_affine_group_affine_rep_non_identity_basis():
     offset = Offset(rep=ImmutableDenseMatrix([1, 1]), space=space)
     irrep = ImmutableDenseMatrix([[1, 0], [0, 2]])
     t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
-    expected = ImmutableDenseMatrix([[1, 0, 2], [0, 2, 1], [0, 0, 1]])
+    expected = ImmutableDenseMatrix([[1, 0, 1], [0, 2, 1], [0, 0, 1]])
     assert t.affine_rep == expected
 
 
@@ -152,19 +152,33 @@ def test_composedopr_supports_multiple_u1basis():
     assert out.base == U1Basis.new(3)
 
 
-def test_affine_group_rebase_changes_space_only():
+def test_affine_group_rebase_changes_basis_consistently():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(2)
-    irrep = ImmutableDenseMatrix([[1, 0], [0, 1]])
+    irrep = ImmutableDenseMatrix([[1, 2], [0, 1]])
     t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
 
     new_space = AffineSpace(basis=ImmutableDenseMatrix([[2, 0], [0, 2]]))
     new_t = t.rebase(new_space)
 
-    assert new_t.irrep == t.irrep
+    assert new_t.irrep == irrep
     assert new_t.axes == t.axes
     assert new_t.basis_function_order == t.basis_function_order
     assert new_t.offset.space == new_space
+
+
+def test_affine_group_rebase_conjugates_irrep_for_nontrivial_basis_change():
+    x, y = sy.symbols("x y")
+    space, offset = _space_and_offset(2)
+    irrep = ImmutableDenseMatrix([[0, -1], [1, 0]])
+    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
+
+    new_space = AffineSpace(basis=ImmutableDenseMatrix([[2, 0], [0, 1]]))
+    new_t = t.rebase(new_space)
+
+    change = new_space.basis.inv() @ space.basis
+    expected = change @ irrep @ change.inv()
+    assert new_t.irrep == ImmutableDenseMatrix(expected)
 
 
 def test_affine_group_basis_keys_match_eigenvalues():
@@ -326,10 +340,13 @@ def test_affine_transform_offset_rebase_transform_keeps_input_space():
     offset = Offset(rep=ImmutableDenseMatrix([1, 1]), space=space_b)
     result = _transformed(t, offset)
 
-    t_b = t.rebase(space_b)
-    hom = offset.rep.col_join(sy.ones(1, 1))
-    expected_hom = t_b.affine_rep @ hom
-    expected_rep = expected_hom[:-1, :]
+    native_offset = offset.rebase(space_a)
+    expected_native = t.irrep @ native_offset.rep + t.offset.rep
+    expected_rep = (
+        Offset(rep=ImmutableDenseMatrix(expected_native), space=space_a)
+        .rebase(space_b)
+        .rep
+    )
 
     assert result.space == space_b
     assert result.rep == ImmutableDenseMatrix(expected_rep)
@@ -839,6 +856,31 @@ def test_affine_query_c3_xy_and_inverse_orientation():
     assert t.axes == sy.symbols("x y")
     assert t.basis_function_order == 2
     assert t.irrep * t_inv.irrep == ImmutableDenseMatrix.eye(2)
+
+
+def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
+    triangular = ImmutableDenseMatrix(
+        [
+            [sy.sqrt(3) / 2, 0],
+            [-sy.Rational(1, 2), 1],
+        ]
+    )
+
+    honeycomb = Lattice(
+        basis=triangular,
+        unit_cell={
+            "a": triangular
+            @ ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": triangular
+            @ ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+        },
+        shape=(12, 12),
+    )
+
+    c6 = pointgroup("c6-xy:xy-o2")
+    rotated = (c6 @ honeycomb.at("a")).fractional()
+
+    assert rotated.rep.applyfunc(sy.simplify) == honeycomb.unit_cell["b"].rep
 
 
 def test_affine_query_c3_xyz_on_yz_plane():

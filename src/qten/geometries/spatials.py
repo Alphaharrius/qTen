@@ -12,7 +12,7 @@ from sympy import ImmutableDenseMatrix, sympify
 from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 
 from ..utils.collections_ext import FrozenDict
-from ..abstracts import Operable, HasDual, HasBase, Convertible
+from ..abstracts import Operable, HasDual, HasBase, Convertible, operator_contains
 from ..plottings import Plottable
 from .boundary import BoundaryCondition, PeriodicBoundary
 from ..validations import need_validation
@@ -204,6 +204,54 @@ class Lattice(AbstractLattice["Offset"]):
             Offset(rep=ImmutableDenseMatrix(el), space=self) for el in elements
         )
 
+    @lru_cache
+    def basis_vectors(self) -> Tuple["Offset", ...]:
+        """
+        Return the primitive basis vectors as spatial `Offset`s.
+
+        If a primitive vector coincides with a valid lattice site modulo unit-cell
+        offsets, it is returned in `self`. Otherwise it is returned in
+        `self.affine`, since the translation vector is still a valid spatial
+        vector even when it is not itself a site of the lattice.
+        """
+        vectors = []
+        for j in range(self.dim):
+            rep = ImmutableDenseMatrix(
+                [sy.Integer(1) if i == j else sy.Integer(0) for i in range(self.dim)]
+            )
+            candidate = Offset(rep=rep, space=self.affine)
+            vectors.append(candidate.rebase(self) if candidate in self else candidate)
+        return tuple(vectors)
+
+    def at(
+        self, unit_cell: str = "r", cell_offset: Sequence[int] | None = None
+    ) -> "Offset[Lattice]":
+        """
+        Create a lattice offset from a unit-cell site and an integer cell offset.
+
+        Parameters
+        ----------
+        `unit_cell` : `str`
+            Label of the site within the unit cell.
+        `cell_offset` : `Sequence[int] | None`
+            Integer translation in lattice coordinates. If omitted, the origin
+            cell is used.
+        """
+        try:
+            site = self.unit_cell[unit_cell]
+        except KeyError as e:
+            raise KeyError(f"Unknown unit-cell site {unit_cell!r}.") from e
+
+        if cell_offset is None:
+            cell_offset = (0,) * self.dim
+        elif len(cell_offset) != self.dim:
+            raise ValueError(
+                f"cell_offset must have length {self.dim}, got {len(cell_offset)}."
+            )
+
+        rep = ImmutableDenseMatrix(tuple(cell_offset)) + site.rep
+        return Offset(rep=ImmutableDenseMatrix(rep), space=self)
+
     def coords(
         self,
     ) -> torch.Tensor:
@@ -303,6 +351,27 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
         return tuple(
             Momentum(rep=ImmutableDenseMatrix(el), space=self) for el in scaled_elements
         )
+
+    @lru_cache
+    def basis_vectors(self) -> Tuple["Offset", ...]:
+        """
+        Return the primitive reciprocal basis vectors as spatial objects.
+
+        If a primitive reciprocal vector coincides with a sampled momentum point,
+        it is returned as a `Momentum` in `self`. Otherwise it is returned as an
+        `Offset` in `self.affine`.
+        """
+        vectors = []
+        for j in range(self.dim):
+            rep = ImmutableDenseMatrix(
+                [sy.Integer(1) if i == j else sy.Integer(0) for i in range(self.dim)]
+            )
+            candidate = Offset(rep=rep, space=self.affine)
+            momentum_candidate = Momentum(rep=rep, space=self)
+            vectors.append(
+                momentum_candidate if momentum_candidate in self else candidate
+            )
+        return tuple(vectors)
 
 
 _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
@@ -413,7 +482,7 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         new_rep = rebase_transform_mat @ self.rep
         return Offset(rep=ImmutableDenseMatrix(new_rep), space=space)
 
-    def to_vec(self, T: Type[_VecType]) -> _VecType:
+    def to_vec(self, T: Type[_VecType] = sy.ImmutableMatrix) -> _VecType:
         """Convert this Offset to a vector in Cartesian coordinates by applying
         the basis transformation of its affine space.
 
@@ -466,6 +535,14 @@ def operator_gt(a: Offset, b: Offset) -> bool:
     return tuple(va) > tuple(vb)
 
 
+@dispatch(Lattice, Offset)  # type: ignore[no-redef]
+def operator_contains(lattice: Lattice, offset: Offset) -> bool:
+    rebased = offset.rebase(lattice)
+    fractional = rebased.fractional().rep
+    unit_cell_offsets = {site.rep for site in lattice.unit_cell.values()}
+    return fractional in unit_cell_offsets
+
+
 @dataclass(frozen=True)
 class Momentum(Offset[ReciprocalLattice], Convertible):
     """
@@ -515,6 +592,13 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
         rebase_transform_mat = space.basis.inv() @ self.space.basis
         new_rep = rebase_transform_mat @ self.rep
         return Momentum(rep=ImmutableDenseMatrix(new_rep), space=space)
+
+
+@dispatch(ReciprocalLattice, Momentum)  # type: ignore[no-redef]
+def operator_contains(lattice: ReciprocalLattice, momentum: Momentum) -> bool:
+    if momentum.space != lattice:
+        return False
+    return momentum in set(lattice.cartes())
 
 
 @dispatch(Offset, Offset)  # type: ignore[no-redef]

@@ -3,9 +3,9 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, Any, cast, Tuple
-from qten.geometries.spatials import Lattice
+from qten.geometries.spatials import Lattice, ReciprocalLattice
 from qten.linalg.tensors import Tensor
-from qten.symbolics.state_space import MomentumSpace, same_rays
+from qten.symbolics.state_space import MomentumSpace, same_rays, brillouin_zone
 from qten.symbolics.hilbert_space import HilbertSpace
 from ._utils import compute_bonds
 
@@ -439,6 +439,7 @@ def plot_bandstructure_mpl(
     save_path: Optional[str] = None,
     ax: Optional[Any] = None,
     data_aspect: bool = True,
+    mode: str = "auto",
     **kwargs,
 ) -> plt.Figure:
     """
@@ -458,6 +459,8 @@ def plot_bandstructure_mpl(
         raise ValueError(
             f"Tensor must be rank 3 (Momentum, Hilbert, Hilbert), got rank {obj.rank()}"
         )
+    if mode not in ("auto", "path", "surface"):
+        raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
 
     k_space = obj.dims[0]
     if not isinstance(k_space, MomentumSpace):
@@ -479,18 +482,9 @@ def plot_bandstructure_mpl(
     eigvals_np = eigvals.detach().cpu().numpy()
     n_bands = eigvals_np.shape[1]
 
-    # 3. Detect 2D grid shape (aligned with plotly backend logic)
-    grid_shape = getattr(k_space, "shape", None)
-    if grid_shape is None and "shape" in kwargs:
-        grid_shape = kwargs["shape"]
-
-    is_2d_grid = (
-        grid_shape is not None
-        and len(grid_shape) == 2
-        and grid_shape[0] * grid_shape[1] == len(k_points)
-    )
-
-    # 4. Build Cartesian reciprocal coordinates once for both modes.
+    # 3. Build Cartesian reciprocal coordinates once for both modes.
+    recip = None
+    is_canonical_2d_bz = False
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
@@ -501,11 +495,28 @@ def plot_bandstructure_mpl(
             rep = k.rep
             k_fracs.append(np.array(rep).astype(float).flatten())
         k_fracs_arr = np.stack(k_fracs)
-        k_cart = k_fracs_arr @ basis_mat
+        k_cart = k_fracs_arr @ basis_mat.T
+
+        if (
+            isinstance(recip, ReciprocalLattice)
+            and recip.dim == 2
+            and all(k.space == recip for k in k_points)
+        ):
+            canonical_k_space = brillouin_zone(recip)
+            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
+                canonical_k_space.elements()
+            )
     else:
         k_cart = np.array([])
 
-    if is_2d_grid and grid_shape is not None and len(k_cart) > 0:
+    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    if is_surface and not is_canonical_2d_bz:
+        raise ValueError(
+            "Surface bandstructure plotting requires the momentum axis to be the "
+            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+
+    if is_surface and recip is not None and len(k_cart) > 0:
         # 2D Surface Plot
         # Requires 3D projection
         if ax is None:
@@ -519,10 +530,10 @@ def plot_bandstructure_mpl(
                 )
 
         # Reshape eigenvalues
-        evals_grid = eigvals_np.reshape(grid_shape[0], grid_shape[1], n_bands)
+        evals_grid = eigvals_np.reshape(recip.shape[0], recip.shape[1], n_bands)
 
-        KX = k_cart[:, 0].reshape(grid_shape[0], grid_shape[1])
-        KY = k_cart[:, 1].reshape(grid_shape[0], grid_shape[1])
+        KX = k_cart[:, 0].reshape(recip.shape[0], recip.shape[1])
+        KY = k_cart[:, 1].reshape(recip.shape[0], recip.shape[1])
 
         cmap = kwargs.get("cmap", "viridis")
         surface_alpha = kwargs.get("surface_alpha", 0.85)

@@ -70,6 +70,11 @@ class Lattice(AbstractLattice["Offset"]):
     @lru_cache
     @override
     def cartes(self) -> tuple["Offset", ...]: ...
+    @lru_cache
+    def basis_vectors(self) -> tuple["Offset", ...]: ...
+    def at(
+        self, unit_cell: str = "r", cell_offset: Sequence[int] | None = None
+    ) -> Offset[Lattice]: ...
     def coords(self) -> torch.Tensor: ...
 
 @dataclass(frozen=True)
@@ -87,6 +92,8 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
     @lru_cache
     @override
     def cartes(self) -> tuple["Momentum", ...]: ...
+    @lru_cache
+    def basis_vectors(self) -> tuple["Offset[Any]", ...]: ...
 
 S = TypeVar("S", bound=AffineSpace)
 

@@ -75,7 +75,7 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
     (`offset`) and exposes multiple representations:
     - `full_rep`: Kronecker power of `irrep` for the full tensor product basis.
     - `rep`: Symmetrized representation on the commuting Euclidean monomial basis.
-    - `affine_rep`: Homogeneous affine matrix in the physical basis of `offset.space`.
+    - `affine_rep`: Homogeneous affine matrix in the coordinate basis of `offset.space`.
 
     Parameters
     ----------
@@ -217,31 +217,22 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
     @lru_cache
     def affine_rep(self) -> sy.ImmutableDenseMatrix:
         """
-        Use the lattice space of `offset` to build the affine transform matrix in
-        physical (space-basis) coordinates.
+        Build the homogeneous affine matrix in the current coordinates of `offset.space`.
         It will take the form of:
         ```
         [ R | t ]
         [ 0 | 1 ]
         ```
-        where R and t are mapped into the `offset.space` basis via:
-        `R = B * irrep * B^-1` and `t = B * offset.rep`, with `B = offset.space.basis`.
+        where `R = irrep` and `t = offset.rep`, both expressed in the basis
+        coordinates of `offset.space`.
         """
-        space = self.offset.space
-        B = space.basis
-        if not isinstance(B, sy.ImmutableDenseMatrix):
-            B = sy.ImmutableDenseMatrix(B)
-        B_inv = B.inv()
-
         R = self.irrep
         if not isinstance(R, sy.ImmutableDenseMatrix):
             R = sy.ImmutableDenseMatrix(R)
-        R = B @ R @ B_inv
 
         t = self.offset.rep
         if not isinstance(t, sy.ImmutableDenseMatrix):
             t = sy.ImmutableDenseMatrix(t)
-        t = B @ t
 
         top = R.row_join(t)
         bottom = sy.zeros(1, R.cols).row_join(sy.ones(1, 1))
@@ -300,11 +291,25 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
         Returns
         -------
         `AffineTransform`
-            New element with the same symbolic linear representation and axes,
-            but with `offset` rebased to `new_base`.
+            New element with both linear and translation parts expressed in
+            `new_base` coordinates.
         """
+        old_base = self.offset.space
+        B_old = old_base.basis
+        if not isinstance(B_old, sy.ImmutableDenseMatrix):
+            B_old = sy.ImmutableDenseMatrix(B_old)
+        B_new = new_base.basis
+        if not isinstance(B_new, sy.ImmutableDenseMatrix):
+            B_new = sy.ImmutableDenseMatrix(B_new)
+
+        irrep = self.irrep
+        if not isinstance(irrep, sy.ImmutableDenseMatrix):
+            irrep = sy.ImmutableDenseMatrix(irrep)
+
+        change = B_new.inv() @ B_old
+        new_irrep = change @ irrep @ change.inv()
         return AffineTransform(
-            irrep=self.irrep,
+            irrep=sy.ImmutableDenseMatrix(new_irrep),
             axes=self.axes,
             offset=self.offset.rebase(new_base),
             basis_function_order=self.basis_function_order,
@@ -531,14 +536,10 @@ def _(t: AffineTransform, f: AbelianBasis) -> Multiple[AbelianBasis]:
 @AffineTransform.register(Offset)
 def _(t: AffineTransform, offset: Offset) -> Offset:
     """
-    Apply an affine group element to a spatial Offset using homogeneous coordinates.
+    Apply an affine group element to an `Offset`.
 
-    This implementation:
-    - Ensures the transform acts in the same lattice space as the input Offset by
-      rebasing the transform if necessary.
-    - Uses the affine (homogeneous) representation of the transform to combine
-      rotation/shear and translation in a single matrix multiply.
-    - Preserves the input Offset's space in the returned result.
+    This implementation rebases the transform into the input offset's space and
+    then applies the homogeneous affine matrix in those coordinates.
 
     Parameters
     ----------
@@ -556,23 +557,20 @@ def _(t: AffineTransform, offset: Offset) -> Offset:
 
     Notes
     -----
-    The method constructs a homogeneous coordinate vector:
-    `[offset.rep; 1]`, multiplies by `t.affine_rep`, then discards the trailing
-    homogeneous component. The result remains a column vector of shape `(dim, 1)`.
+    After `AffineTransform.rebase`, the transform's `irrep`, `offset.rep`, and
+    `affine_rep` are all expressed in the same coordinate system, so the
+    homogeneous action via `affine_rep` is valid directly.
     """
     if offset.space != t.offset.space:
         t = t.rebase(offset.space)
 
-    affine_rep = t.affine_rep
     rep = offset.rep
     if not isinstance(rep, sy.ImmutableDenseMatrix):
         rep = sy.ImmutableDenseMatrix(rep)
-
     hom = rep.col_join(sy.ones(1, 1))
-    new_hom = affine_rep @ hom
+    new_hom = t.affine_rep @ hom
     new_rep = new_hom[:-1, :]
-    new_offset = Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
-    return new_offset
+    return Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
 
 
 @AffineTransform.register(Momentum)
@@ -581,28 +579,13 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
     Apply an affine group element to a Momentum in fractional reciprocal coordinates.
 
     This implementation assumes:
-    - `k.rep` stores fractional coordinates in the reciprocal lattice basis
-      (values typically in [0, 1) per component).
-    - The affine group's linear part is expressed in the *physical* real-space
-      basis of `t.base()` via `t.affine_rep`.
-    - Translations do not act on momenta, so only the linear part is used.
+    - `k.rep` stores fractional coordinates in the reciprocal lattice basis.
+    - after `t.rebase(real_space)`, `t.irrep` is expressed in the same real-space
+      coordinates as `real_space.basis`.
+    - translations do not act on momenta, so only the linear part is used.
 
-    Let:
-    - `R_phys` be the real-space linear map in physical coordinates,
-      i.e. the top-left block of `t.affine_rep`.
-    - `G` be the reciprocal lattice basis (columns), `G = k.base().basis`.
-      In this codebase `G = 2π * B^{-T}` for real-space basis `B`.
-    - `k_frac` be the fractional reciprocal coordinates (`k.rep`).
-
-    Then physical momentum is `k_phys = G * k_frac`, and it transforms as
-    `k_phys' = (R_phys^{-1})^T * k_phys` (contravariant rule).
-    Mapping back to fractional coordinates gives:
-
-        k_frac' = G^{-1} * (R_phys^{-1})^T * G * k_frac
-
-    The `2π` factor in `G` cancels with `G^{-1}`, so it does not appear explicitly.
-    The output is wrapped with `.fractional()` to keep components in the first
-    Brillouin zone.
+    If `R` is the real-space linear map in those coordinates, then reciprocal
+    fractional coordinates transform contravariantly as `k' = (R^{-1})^T k`.
 
     Parameters
     ----------
@@ -624,21 +607,13 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
     if t.base() != real_space:
         t = t.rebase(real_space)
 
-    linear_rep = t.affine_rep[:-1, :-1]
+    linear_rep = t.irrep
     if not isinstance(linear_rep, sy.ImmutableDenseMatrix):
         linear_rep = sy.ImmutableDenseMatrix(linear_rep)
-
-    # Transform fractional reciprocal coordinates using
-    # k_frac' = G^{-1} * (R_phys^{-1})^T * G * k_frac
-    recip_basis = k.base().basis
-    if not isinstance(recip_basis, sy.ImmutableDenseMatrix):
-        recip_basis = sy.ImmutableDenseMatrix(recip_basis)
-    recip_basis_inv = recip_basis.inv()
-    reciprocal_rep = recip_basis_inv @ linear_rep.inv().T @ recip_basis
 
     rep = k.rep
     if not isinstance(rep, sy.ImmutableDenseMatrix):
         rep = sy.ImmutableDenseMatrix(rep)
-    new_rep = reciprocal_rep @ rep
+    new_rep = linear_rep.inv().T @ rep
     new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base()).fractional()
     return new_k

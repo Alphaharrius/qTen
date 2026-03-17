@@ -2615,7 +2615,7 @@ class TensorIndexing:
             return idx + 1, (dim,), slice(None)
         if same_rays(dim, v):
             return idx + 1, (v,), permutation_order(dim, v)
-        if dim.contains(v):
+        if v in dim:
             return idx + 1, (v,), embedding_order(v, dim)
 
         raise IndexError(

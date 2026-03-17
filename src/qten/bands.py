@@ -192,10 +192,12 @@ def bandfold(
 
     # 3. Create new transformed spaces
     scaled_reciprocal_lattice = scaled_lattice.dual
-    scaled_offsets = sorted(
-        scaled_lattice.unit_cell.values(), key=lambda x: tuple(x.rep)
+    transformed_unit_cell = tuple(
+        sorted(scaled_lattice.unit_cell.values(), key=lambda x: tuple(x.rep))
     )
-    enlarge_unit_cell = tuple(r.rebase(lattice) for r in scaled_offsets)
+    # Keep a rebased copy for the current Fourier/matching logic, but return
+    # the transformed offsets on the output Hilbert-space labels.
+    enlarge_unit_cell = tuple(r.rebase(lattice) for r in transformed_unit_cell)
 
     # Transform based on opt
     switch_index = -2 if opt == "left" else -1
@@ -208,6 +210,12 @@ def bandfold(
     rebased_hilbert = HilbertSpace.new(
         cast(U1Basis, target_space.lookup({Offset: r.fractional()})).replace(r)
         for r in enlarge_unit_cell
+    )
+    transformed_hilbert = HilbertSpace.new(
+        cast(U1Basis, target_space.lookup({Offset: r_lookup.fractional()})).replace(
+            r_out
+        )
+        for r_lookup, r_out in zip(enlarge_unit_cell, transformed_unit_cell)
     )
     # # Transform both sides
     f = fourier_transform(k_space, tensor.dims[switch_index], rebased_hilbert)
@@ -227,7 +235,11 @@ def bandfold(
         else k.fractional(),
     )
     k_map = mapping_matrix(k_space, new_k_space, mapping).transpose(0, 1)
-    return (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
+    transformed = (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
+    for dim in (1, 2):
+        if transformed.dims[dim] == rebased_hilbert:
+            transformed = transformed.replace_dim(dim, transformed_hilbert)
+    return transformed
 
 
 # TODO: add bandunfold function

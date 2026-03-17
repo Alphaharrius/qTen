@@ -19,6 +19,9 @@ from multipledispatch import dispatch
 
 @dataclass(frozen=True)
 class Operable(ABC):
+    def __contains__(self, other):
+        return operator_contains(self, other)
+
     def __add__(self, other):
         return operator_add(self, other)
 
@@ -75,6 +78,13 @@ class Operable(ABC):
 
     def __rtruediv__(self, other):
         return operator_truediv(other, self)
+
+
+@dispatch(Operable, Operable)
+def operator_contains(a, b):
+    raise NotImplementedError(
+        f"Containment of {type(b)} in {type(a)} is not supported!"
+    )
 
 
 @dispatch(Operable, Operable)
@@ -441,7 +451,7 @@ class Functional(ABC):
 _ElementType = TypeVar("_ElementType")
 
 
-class Span(ABC, Generic[_ElementType]):
+class Span(Operable, ABC, Generic[_ElementType]):
     """
     An object representing the span of a set of elements.
 
@@ -450,8 +460,12 @@ class Span(ABC, Generic[_ElementType]):
     combinations of those vectors. In a topological space, the span of a set
     of points might be the smallest closed set containing those points.
 
-    Implementations should define what it means to be an element and how to
-    determine if an object is contained within the span.
+    Spans participate in `Operable` membership using Python's `in` protocol:
+    `x in span` dispatches to `operator_contains(span, x)`.
+
+    The default containment rules support:
+    - `Span` queries, compared by `elements()`.
+    - `Convertible` queries, converted to `type(self)` before comparison.
 
     The `_ElementType` type variable represents the type of elements that define the span.
     """
@@ -468,51 +482,18 @@ class Span(ABC, Generic[_ElementType]):
         """
         pass
 
-    def contains(self, v) -> bool:
-        """
-        Check whether this span contains `v`.
 
-        Supported input
-        ---------------
-        - `Span`: compared directly via `v.elements()`.
-        - `Convertible`: converted to `type(self)` by
-          `v.convert(type(self))`, then compared via elements.
+@dispatch(Span, Span)  # type: ignore[no-redef]
+def operator_contains(a: Span, b: Span):
+    base = set(a.elements())
+    return all(el in base for el in b.elements())
 
-        Unsupported input
-        -----------------
-        - Any non-`Span` object that is not `Convertible`.
-        - `Convertible` objects without a registered conversion to `type(self)`.
 
-        Parameters
-        ----------
-        `v` : `Any`
-            Membership query object.
-
-        Returns
-        -------
-        `bool`
-            `True` when all elements in the query span are contained in this span.
-
-        Raises
-        ------
-        `ValueError`
-            If `v` cannot be converted to `type(self)`.
-
-        Developer Note
-        --------------
-        To make a custom type supported by `contains`, implement `Convertible`
-        and register a conversion to the target span type:
-        `@YourType.add_conversion(TargetSpanType)`.
-        """
-        if not isinstance(v, Span):
-            if isinstance(v, Convertible):
-                v = cast(Convertible, v).convert(type(self))
-            else:
-                raise ValueError(
-                    f"Cannot convert {type(v).__name__} to {type(self).__name__}!"
-                )
-        base = set(self.elements())
-        return all(el in base for el in v.elements())
+@dispatch(Span, object)  # type: ignore[no-redef]
+def operator_contains(a: Span, b):
+    if isinstance(b, Convertible):
+        return operator_contains(a, cast(Convertible, b).convert(type(a)))
+    raise ValueError(f"Cannot convert {type(b).__name__} to {type(a).__name__}!")
 
 
 class HasRays(ABC):

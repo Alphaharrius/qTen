@@ -7,8 +7,9 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from qten.geometries.spatials import Lattice
+from qten.geometries.spatials import Lattice, ReciprocalLattice
 from qten.linalg.tensors import Tensor
+from qten.symbolics.state_space import brillouin_zone
 from ._utils import compute_bonds
 
 
@@ -551,6 +552,7 @@ def plot_bandstructure(
     title: str = "Band Structure",
     show: bool = True,
     fig: Optional[go.Figure] = None,
+    mode: str = "auto",
     **kwargs,
 ) -> go.Figure:
     """
@@ -576,6 +578,9 @@ def plot_bandstructure(
     """
     if obj.rank() != 3:
         raise ValueError(f"Tensor must be rank 3, got {obj.rank()}")
+    if mode not in ("auto", "path", "surface"):
+        raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
+
     k_space = obj.dims[0]
     k_points = list(k_space)
 
@@ -584,18 +589,11 @@ def plot_bandstructure(
     eigvals_np = eigvals.detach().cpu().numpy()
     n_bands = eigvals_np.shape[1]
 
-    grid_shape = getattr(k_space, "shape", None)
-    if grid_shape is None and "shape" in kwargs:
-        grid_shape = kwargs["shape"]
-
-    is_2d_grid = False
-    if grid_shape is not None and len(grid_shape) == 2:
-        if grid_shape[0] * grid_shape[1] == len(k_points):
-            is_2d_grid = True
-
     if fig is None:
         fig = go.Figure()
 
+    recip = None
+    is_canonical_2d_bz = False
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
@@ -605,13 +603,32 @@ def plot_bandstructure(
         k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
         k_fracs_arr = np.stack(k_fracs)  # Shape: (K, 2)
 
-        k_cart = k_fracs_arr @ basis_mat
+        # `Momentum.rep` is stored as a column vector in the reciprocal basis,
+        # so batched row-wise conversion to Cartesian coordinates uses `B^T`.
+        k_cart = k_fracs_arr @ basis_mat.T
+
+        if (
+            isinstance(recip, ReciprocalLattice)
+            and recip.dim == 2
+            and all(k.space == recip for k in k_points)
+        ):
+            canonical_k_space = brillouin_zone(recip)
+            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
+                canonical_k_space.elements()
+            )
     else:
         k_cart = np.array([])
 
-    if is_2d_grid and grid_shape is not None:
+    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    if is_surface and not is_canonical_2d_bz:
+        raise ValueError(
+            "Surface bandstructure plotting requires the momentum axis to be the "
+            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+
+    if is_surface and recip is not None:
         # === 3D Surface Plot ===
-        nx, ny = grid_shape
+        nx, ny = recip.shape
 
         KX = k_cart[:, 0].reshape(nx, ny)
         KY = k_cart[:, 1].reshape(nx, ny)
@@ -652,7 +669,7 @@ def plot_bandstructure(
             zaxis_title="Energy (eV)",
             aspectmode="data",
         )
-        if is_2d_grid
+        if is_surface
         else None,
     )
 
