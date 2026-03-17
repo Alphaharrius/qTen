@@ -105,18 +105,7 @@ def plot_structure_mpl(
     num_cells = coords.shape[0] // num_basis
 
     # Basis colors
-    basis_colors = [
-        "blue",
-        "red",
-        "green",
-        "orange",
-        "purple",
-        "cyan",
-        "magenta",
-        "yellow",
-        "brown",
-        "pink",
-    ]
+    basis_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     colors = []
     if color_by == "basis":
         for _ in range(num_cells):

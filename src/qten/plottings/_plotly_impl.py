@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
+import plotly.colors as pc  # type: ignore[import-untyped]
 
 from ..geometries.spatials import Lattice
 from ..linalg.tensors import Tensor
@@ -103,18 +104,7 @@ def plot_structure(
     num_basis = len(obj.unit_cell) if obj.unit_cell else 1
     num_cells = coords.shape[0] // num_basis
 
-    basis_colors = [
-        "blue",
-        "red",
-        "green",
-        "orange",
-        "purple",
-        "cyan",
-        "magenta",
-        "yellow",
-        "brown",
-        "pink",
-    ]
+    basis_colors = pc.qualitative.Plotly
     colors = []
     if color_by == "basis":
         for _ in range(num_cells):
