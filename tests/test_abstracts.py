@@ -36,6 +36,11 @@ class _MockFunctional(Functional):
     pass
 
 
+@dataclass(frozen=True)
+class _DerivedFunctional(_MockFunctional):
+    pass
+
+
 @_MockFunctional.register(_BaseInput)
 def _apply_mock_functional_base(functional: _MockFunctional, obj: _BaseInput) -> str:
     return "base"
@@ -132,3 +137,29 @@ def test_functional_targeted_cache_invalidation():
         return "derived"
 
     assert functional(obj) == "derived"
+
+
+def test_functional_inherits_superclass_registration():
+    functional = _DerivedFunctional()
+    obj = _BaseInput()
+
+    assert functional(obj) == "base"
+    assert (
+        Functional._resolved_methods[(type(obj), type(functional))](functional, obj)
+        == "base"
+    )
+
+
+def test_functional_inherited_cache_invalidation():
+    functional = _DerivedFunctional()
+    obj = _DerivedInput()
+
+    assert functional(obj) == "derived"
+
+    @_MockFunctional.register(_DerivedInput)
+    def _apply_mock_functional_derived_v2(
+        functional: _MockFunctional, obj: _DerivedInput
+    ) -> str:
+        return "derived-v2"
+
+    assert functional(obj) == "derived-v2"

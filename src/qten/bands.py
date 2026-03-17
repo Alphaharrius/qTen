@@ -78,7 +78,7 @@ def bandaffine(
 
     def build_transform(space: HilbertSpace) -> Tensor:
         fractional = FuncOpr(Offset, Offset.fractional)
-        new_space = cast(HilbertSpace, fractional @ (t @ space))
+        new_space = cast(HilbertSpace, fractional @ t @ space)
         bloch_transform: Tensor = cast(Tensor, space.cross_gram(new_space)).h(
             -2, -1
         )  # (B', B)

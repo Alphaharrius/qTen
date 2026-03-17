@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple, cast
+from typing import Dict, Tuple
 from collections import OrderedDict
 from itertools import product
 from functools import lru_cache, reduce
@@ -9,12 +9,7 @@ import sympy as sy
 
 from ..abstracts import HasBase
 from ..geometries.spatials import AffineSpace, Spatial, Offset, Momentum
-from ..symbolics.hilbert_space import (
-    Opr,
-    HilbertSpace,
-    U1Basis,
-    U1Span,
-)
+from ..symbolics.hilbert_space import Opr
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
@@ -647,98 +642,3 @@ def _(t: AffineTransform, k: Momentum) -> Momentum:
     new_rep = reciprocal_rep @ rep
     new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base()).fractional()
     return new_k
-
-
-@AffineTransform.register(U1Basis)
-def _(t: AffineTransform, psi: U1Basis) -> U1Basis:
-    """
-    Apply an affine transform to a `U1Basis` by transforming each irrep component.
-
-    For each irrep in `psi.rep`, this method applies `t` when compatible
-    (`t.allows(irrep)`), multiplies returned gauge factors, and rebuilds the state
-    from transformed irreps. The state's U(1) label is
-    updated by the same accumulated gauge product when well-defined.
-
-    If any irrep transform reports `None` gauge, the overall state gauge is set to
-    `None` (non-eigenstate under this symmetry), but irrep transformations are still
-    applied and returned.
-
-    Parameters
-    ----------
-    `t` : `AffineTransform`
-        Affine symmetry operation.
-    `psi` : `U1Basis`
-        State to transform.
-
-    Returns
-    -------
-    `Tuple[sy.Expr | None, U1Basis]`
-        Overall gauge (or `None` if not a symmetry eigenstate) and transformed
-        `U1Basis`.
-    """
-    new_coef: sy.Expr = psi.coef
-    new_base: Tuple[Any, ...] = tuple()
-    for rep in psi.base:
-        ret = t(rep) if t.allows(rep) else rep
-        if isinstance(ret, Multiple):
-            new_coef *= ret.coef
-            rep = ret.base
-        else:
-            rep = ret
-        new_base += (rep,)
-    return U1Basis(new_coef, new_base)
-
-
-@AffineTransform.register(U1Span)
-def _(t: AffineTransform, v: U1Span) -> U1Span:
-    """
-    Apply an affine transform to a span of `U1Basis`s and extract its matrix irrep.
-
-    Each basis state in `v.span` is transformed independently. The transformed
-    span is then compared against the original span using `same_rays`.
-    - If the span is not invariant, returns `(None, transformed_span)`.
-    - If invariant, returns the cross-Gram overlap matrix `v.cross_gram(new_v)`,
-      which is the representation of the symmetry action in this basis.
-
-    Parameters
-    ----------
-    `t` : `AffineTransform`
-        Affine symmetry operation.
-    `v` : `U1Span`
-        Span to transform.
-
-    Returns
-    -------
-    `Tuple[sy.ImmutableDenseMatrix | None, U1Span]`
-        Matrix-valued irrep on the span basis when invariant, otherwise `None`,
-        together with the transformed span.
-    """
-    new_span: Tuple[U1Basis, ...] = tuple(cast(U1Basis, t @ psi) for psi in v.span)
-    return U1Span(new_span)
-
-
-@AffineTransform.register(HilbertSpace)
-def _(t: AffineTransform, h: HilbertSpace) -> HilbertSpace:
-    """
-    Apply an affine transform to a `HilbertSpace` basis and compute its action.
-
-    The transform is applied elementwise to build a new Hilbert space basis.
-    Invariance is checked by `same_rays(h, new_h)`:
-    - If the transformed basis leaves the span, returns `(None, new_h)`.
-    - If the span is preserved, returns the basis-action matrix `h.cross_gram(new_h)`.
-
-    Parameters
-    ----------
-    `t` : `AffineTransform`
-        Affine symmetry operation.
-    `h` : `HilbertSpace`
-        Hilbert-space basis to transform.
-
-    Returns
-    -------
-    `Tuple[Tensor | None, HilbertSpace]`
-        Tensor representation of the symmetry action in the original basis when
-        invariant, otherwise `None`; and the transformed Hilbert space.
-    """
-    new_h = HilbertSpace.new(cast(U1Basis, t @ el) for el in h)
-    return new_h

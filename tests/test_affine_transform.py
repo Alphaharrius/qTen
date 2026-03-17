@@ -127,6 +127,31 @@ def test_affine_group_affine_rep_non_identity_basis():
     assert t.affine_rep == expected
 
 
+def test_funcopr_supports_multiple_u1basis():
+    shift = FuncOpr(int, lambda x: x + 1)
+    psi = U1Basis.new(1)
+    weighted = Multiple(sy.Integer(3), psi)
+
+    out = shift(weighted)
+
+    assert type(out) is Multiple
+    assert out.coef == sy.Integer(3)
+    assert out.base == U1Basis.new(2)
+
+
+def test_composedopr_supports_multiple_u1basis():
+    shift = FuncOpr(int, lambda x: x + 1)
+    scale = FuncOpr(int, lambda x: 2 * x)
+    psi = U1Basis.new(1)
+    weighted = Multiple(sy.Integer(5), psi)
+
+    out = (shift @ scale)(weighted)
+
+    assert type(out) is Multiple
+    assert out.coef == sy.Integer(5)
+    assert out.base == U1Basis.new(3)
+
+
 def test_affine_group_rebase_changes_space_only():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(2)

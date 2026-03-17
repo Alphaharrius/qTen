@@ -96,9 +96,25 @@ def same_rays(a: HilbertSpace, b: HilbertSpace) -> bool: ...
 
 class Opr(Functional, Operable, ABC):
     def invoke(self, obj: _T, **kwargs: Any) -> _T | Multiple[_T]: ...  # type: ignore[override]
-    def __matmul__(self, other: Any) -> Any: ...
+    @overload
+    def __matmul__(self, other: Opr) -> ComposedOpr: ...
+    @overload
+    def __matmul__(self, other: U1Basis) -> U1Basis: ...
+    @overload
+    def __matmul__(self, other: U1Span) -> U1Span: ...
+    @overload
+    def __matmul__(self, other: HilbertSpace) -> HilbertSpace: ...
+    @overload
+    def __matmul__(self, other: Multiple[_T]) -> Multiple[_T]: ...
+    @overload
+    def __matmul__(self, other: _T) -> _T | Multiple[_T]: ...
 
 @dataclass(frozen=True)
 class FuncOpr(Opr, Generic[_IrrepType]):
     T: type[_IrrepType]
-    func: Callable
+    func: Callable[[_IrrepType], _IrrepType | Multiple[_IrrepType]]
+
+@dataclass(frozen=True)
+class ComposedOpr(Opr):
+    ops: tuple[Opr, ...]
+    def invoke(self, obj: _T, **kwargs: Any) -> _T | Multiple[_T]: ...  # type: ignore[override]

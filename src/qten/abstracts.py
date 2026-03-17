@@ -312,7 +312,7 @@ class Functional(ABC):
         stale_keys = [
             key
             for key in cls._resolved_methods
-            if key[1] is cls and issubclass(key[0], obj_type)
+            if issubclass(key[0], obj_type) and issubclass(key[1], cls)
         ]
         for key in stale_keys:
             del cls._resolved_methods[key]
@@ -321,8 +321,14 @@ class Functional(ABC):
     def register(cls, obj_type: type):
         """
         Register a function defining the action of the `Functional` on a specific object type.
-        Dispatch is resolved at call time via MRO, so only the exact `(obj_type, cls)`
-        key is stored here.
+        Dispatch is resolved at call time via MRO, so only the exact
+        `(obj_type, cls)` key is stored here. Resolution later searches both:
+
+        1. the MRO of the runtime object type, and
+        2. the MRO of the runtime functional type
+
+        This means registrations on a functional superclass are inherited by
+        subclass functionals unless a more specific registration overrides them.
 
         Parameters
         ----------
@@ -345,6 +351,22 @@ class Functional(ABC):
     def _resolve_method(
         cls, obj_class: type, functional_class: type
     ) -> Callable | None:
+        """
+        Resolve the most specific registered method for the given runtime types.
+
+        Resolution order is:
+
+        1. walk the MRO of `obj_class` from most specific to least specific
+        2. for each object type, walk the MRO of `functional_class` from most
+           specific to least specific
+
+        The first matching registration `(obj_super, functional_super)` is used
+        and cached under the exact runtime pair `(obj_class, functional_class)`.
+
+        As a consequence, subclass-specific functional registrations override
+        superclass registrations, but superclass registrations remain available
+        as inherited fallbacks.
+        """
         key = (obj_class, functional_class)
         method = cls._resolved_methods.get(key)
         if method is not None:
@@ -352,10 +374,13 @@ class Functional(ABC):
 
         table_get = cls._registered_methods.get
         for obj_super in obj_class.__mro__:
-            method = table_get((obj_super, functional_class))
-            if method is not None:
-                cls._resolved_methods[key] = method
-                return method
+            for functional_super in functional_class.__mro__:
+                if not issubclass(functional_super, Functional):
+                    continue
+                method = table_get((obj_super, functional_super))
+                if method is not None:
+                    cls._resolved_methods[key] = method
+                    return method
         return None
 
     @staticmethod
@@ -387,6 +412,12 @@ class Functional(ABC):
         -------
         bool
             True if this `Functional` can be applied on the object, False otherwise.
+
+        Notes
+        -----
+        Applicability is checked using the same inherited dispatch rules as
+        :meth:`invoke`: both the object's MRO and the functional-class MRO are
+        searched.
         """
         return self._resolve_method(type(obj), type(self)) is not None
 
