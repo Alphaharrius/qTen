@@ -237,9 +237,23 @@ class Lattice(AbstractLattice["Offset"]):
         total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
         total_fractional_flat = total_fractional.reshape(-1, self.dim)
 
+        # Vectorized wrapping of fractional coordinates modulo boundaries
+        # b = f @ N^{-T}
+        N_inv = np.array(self.boundaries.basis.inv().evalf(), dtype=precision.np_float)
+        b = total_fractional_flat @ N_inv.T
+
+        # Snap coordinates very close to integers to avoid floating point errors when applying modulo
+        b_rounded = np.round(b)
+        b_snapped = np.where(np.isclose(b, b_rounded, atol=1e-10), b_rounded, b)
+        b_wrapped = b_snapped % 1.0
+
+        # f_wrapped = b_wrapped @ N^T
+        N_mat = np.array(self.boundaries.basis.evalf(), dtype=precision.np_float)
+        wrapped_fractional_flat = b_wrapped @ N_mat.T
+
         basis_mat = np.array(self.basis.evalf(), dtype=precision.np_float)
 
-        coords_np = total_fractional_flat @ basis_mat.T
+        coords_np = wrapped_fractional_flat @ basis_mat.T
         return torch.tensor(coords_np, dtype=precision.torch_float)
 
 

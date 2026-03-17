@@ -76,7 +76,17 @@ class PeriodicBoundary(BoundaryCondition):
             for i in range(self.basis.rows)
         ]
         wrapped_coords = ImmutableDenseMatrix(self.basis.rows, 1, wrapped_entries)
-        return ImmutableDenseMatrix(self.basis @ wrapped_coords).applyfunc(sy.Rational)
+
+        # Avoid applying sy.Rational blindly as the wrapped result could contain
+        # irrational expressions (e.g. sqrt). We rationalise Floats within expressions.
+        def _rationalize(expr):
+            if hasattr(expr, "is_Float") and expr.is_Float:
+                return sy.nsimplify(expr)
+            elif hasattr(expr, "args") and expr.args:
+                return expr.func(*[_rationalize(arg) for arg in expr.args])
+            return expr
+
+        return ImmutableDenseMatrix(self.basis @ wrapped_coords).applyfunc(_rationalize)
 
     def representatives(self) -> tuple[ImmutableDenseMatrix, ...]:
         if self.basis.is_diagonal():
