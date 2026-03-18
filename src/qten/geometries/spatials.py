@@ -362,8 +362,8 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
 
         Parameters
         ----------
-        `T` : `Type[Union[Offset, torch.Tensor, np.ndarray]]`
-            Requested return type. `Offset` returns `Momentum` objects, while
+        `T` : `Type[Union[Momentum, torch.Tensor, np.ndarray]]`
+            Requested return type. `Momentum` returns momentum-point objects, while
             `torch.Tensor` and `np.ndarray` return Cartesian coordinates with
             shape `(n_points, dim)`.
         """
@@ -376,7 +376,7 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
         momenta = tuple(
             Momentum(rep=ImmutableDenseMatrix(el), space=self) for el in scaled_elements
         )
-        if T in (None, Offset):
+        if T in (None, Momentum):
             return momenta
         if T == np.ndarray:
             precision = get_precision_config()
@@ -390,7 +390,7 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
             precision = get_precision_config()
             return torch.tensor(self.cartes(np.ndarray), dtype=precision.torch_float)
         raise TypeError(
-            f"Unsupported type {T} for cartes. Supported types: Offset, torch.Tensor, np.ndarray"
+            f"Unsupported type {T} for cartes. Supported types: Momentum, torch.Tensor, np.ndarray"
         )
 
     @lru_cache

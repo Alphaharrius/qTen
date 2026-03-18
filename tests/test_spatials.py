@@ -172,6 +172,9 @@ def test_cartes_reciprocal_lattice():
     assert (0, sy.Rational(1, 2)) in coords
     assert (sy.Rational(1, 2), sy.Rational(1, 2)) in coords
 
+    explicit_points = reciprocal.cartes(Momentum)
+    assert explicit_points == points
+
 
 def test_reciprocal_basis_vectors_use_affine_space_when_not_sampled():
     lattice = Lattice(
