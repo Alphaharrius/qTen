@@ -16,8 +16,33 @@ def nearest_sites(
     Sites are ordered by increasing distance from `center`, with lattice-site
     ordering used to break ties deterministically. `n_nearest=1` returns the
     nearest-distance shell, `n_nearest=2` returns the first two distinct
-    distance shells, and so on. If `n_nearest` exceeds the number of distinct
-    distance shells in the finite lattice, all sites are returned.
+    distance shells, and so on.
+
+    Parameters
+    ----------
+    `lattice` : `Lattice`
+        Finite lattice whose sites define the candidate region.
+    `center` : `Offset[AffineSpace] | Offset[Lattice]`
+        Center used to rank lattice sites by distance. The center may be an
+        arbitrary offset in the lattice affine space and does not need to lie
+        on a lattice site.
+    `n_nearest` : `int`
+        Number of distinct distance shells to include. `0` returns an empty
+        region. If `n_nearest` exceeds the number of distinct distance shells
+        in the finite lattice, all sites are returned.
+
+    Returns
+    -------
+    `tuple[Offset[Lattice], ...]`
+        Tuple of lattice sites whose distances from `center` lie in the first
+        `n_nearest` distinct distance shells, ordered by increasing distance
+        and then by the lattice-site ordering.
+
+    Raises
+    ------
+    `ValueError`
+        If `n_nearest` is negative or if `center.dim` does not match
+        `lattice.dim`.
     """
     if n_nearest < 0:
         raise ValueError(f"n_nearest must be non-negative, got {n_nearest}.")
