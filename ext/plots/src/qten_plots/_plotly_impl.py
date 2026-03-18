@@ -1,4 +1,8 @@
+<<<<<<< dev/physics
 from typing import Optional, Union, Tuple, Sequence
+=======
+from typing import Optional, Union, Tuple
+>>>>>>> main
 import colorsys
 
 import torch
@@ -7,6 +11,7 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
+<<<<<<< dev/physics
 from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.state_space import brillouin_zone
@@ -20,6 +25,11 @@ def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
 
     coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
     return torch.tensor(coords, dtype=torch.float64)
+=======
+from qten.geometries.spatials import Lattice
+from qten.linalg.tensors import Tensor
+from ._utils import compute_bonds
+>>>>>>> main
 
 
 # --- Registered Plot Methods ---
@@ -33,7 +43,10 @@ def plot_structure(
     show: bool = True,
     fig: Optional[go.Figure] = None,
     color_by: str = "basis",
+<<<<<<< dev/physics
     highlights: Sequence[PointCloud] | None = None,
+=======
+>>>>>>> main
     **kwargs,
 ) -> go.Figure:
     """
@@ -72,7 +85,12 @@ def plot_structure(
     if color_by not in valid_color_by:
         raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
+<<<<<<< dev/physics
     coords = obj.cartes(torch.Tensor)
+=======
+    # Use method on Lattice object
+    coords = obj.coords()
+>>>>>>> main
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -231,6 +249,7 @@ def plot_structure(
             fig.add_traces(quiver.data)
 
     # Layout
+<<<<<<< dev/physics
     if highlights:
         fallback_colors = [
             f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
@@ -276,6 +295,8 @@ def plot_structure(
                     )
                 )
 
+=======
+>>>>>>> main
     if obj.dim == 3:
         fig.update_layout(title="3D Lattice System", scene=dict(aspectmode="data"))
     else:
@@ -288,6 +309,7 @@ def plot_structure(
     return fig
 
 
+<<<<<<< dev/physics
 @PointCloud.register_plot_method("scatter", backend="plotly")
 def plot_pointcloud(
     obj: PointCloud,
@@ -337,6 +359,8 @@ def plot_pointcloud(
     return fig
 
 
+=======
+>>>>>>> main
 @Tensor.register_plot_method("heatmap", backend="plotly")
 def plot_heatmap(
     obj: Tensor,
@@ -655,9 +679,12 @@ def plot_bandstructure(
     title: str = "Band Structure",
     show: bool = True,
     fig: Optional[go.Figure] = None,
+<<<<<<< dev/physics
     mode: str = "auto",
     hide_nullspace: bool = False,
     nullspace_tol: float = 1e-9,
+=======
+>>>>>>> main
     **kwargs,
 ) -> go.Figure:
     """
@@ -673,11 +700,14 @@ def plot_bandstructure(
         Whether to show the plot immediately.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
+<<<<<<< dev/physics
     hide_nullspace : bool, default False
         If True, mask surface points with |E| <= nullspace_tol so the
         band surface opens around the nullspace.
     nullspace_tol : float, default 1e-9
         Energy tolerance used when hide_nullspace is enabled.
+=======
+>>>>>>> main
     **kwargs
         Additional keyword arguments.
 
@@ -688,11 +718,14 @@ def plot_bandstructure(
     """
     if obj.rank() != 3:
         raise ValueError(f"Tensor must be rank 3, got {obj.rank()}")
+<<<<<<< dev/physics
     if mode not in ("auto", "path", "surface"):
         raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
     if nullspace_tol < 0:
         raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
 
+=======
+>>>>>>> main
     k_space = obj.dims[0]
     k_points = list(k_space)
 
@@ -701,11 +734,26 @@ def plot_bandstructure(
     eigvals_np = eigvals.detach().cpu().numpy()
     n_bands = eigvals_np.shape[1]
 
+<<<<<<< dev/physics
     if fig is None:
         fig = go.Figure()
 
     recip = None
     is_canonical_2d_bz = False
+=======
+    grid_shape = getattr(k_space, "shape", None)
+    if grid_shape is None and "shape" in kwargs:
+        grid_shape = kwargs["shape"]
+
+    is_2d_grid = False
+    if grid_shape is not None and len(grid_shape) == 2:
+        if grid_shape[0] * grid_shape[1] == len(k_points):
+            is_2d_grid = True
+
+    if fig is None:
+        fig = go.Figure()
+
+>>>>>>> main
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
@@ -715,6 +763,7 @@ def plot_bandstructure(
         k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
         k_fracs_arr = np.stack(k_fracs)  # Shape: (K, 2)
 
+<<<<<<< dev/physics
         # `Momentum.rep` is stored as a column vector in the reciprocal basis,
         # so batched row-wise conversion to Cartesian coordinates uses `B^T`.
         k_cart = k_fracs_arr @ basis_mat.T
@@ -741,13 +790,25 @@ def plot_bandstructure(
     if is_surface and recip is not None:
         # === 3D Surface Plot ===
         nx, ny = recip.shape
+=======
+        k_cart = k_fracs_arr @ basis_mat
+    else:
+        k_cart = np.array([])
+
+    if is_2d_grid and grid_shape is not None:
+        # === 3D Surface Plot ===
+        nx, ny = grid_shape
+>>>>>>> main
 
         KX = k_cart[:, 0].reshape(nx, ny)
         KY = k_cart[:, 1].reshape(nx, ny)
         evals_grid = eigvals_np.reshape(nx, ny, n_bands)
+<<<<<<< dev/physics
         if hide_nullspace:
             evals_grid = evals_grid.copy()
             evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
+=======
+>>>>>>> main
 
         for b in range(n_bands):
             fig.add_trace(
@@ -784,7 +845,11 @@ def plot_bandstructure(
             zaxis_title="Energy (eV)",
             aspectmode="data",
         )
+<<<<<<< dev/physics
         if is_surface
+=======
+        if is_2d_grid
+>>>>>>> main
         else None,
     )
 

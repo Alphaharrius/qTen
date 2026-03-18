@@ -13,7 +13,7 @@ from sympy import ImmutableDenseMatrix, sympify
 from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 
 from ..utils.collections_ext import FrozenDict
-from ..abstracts import Operable, HasDual, HasBase, Convertible, operator_contains
+from ..abstracts import Operable, HasDual, HasBase, Convertible
 from ..plottings import Plottable
 from .boundary import BoundaryCondition, PeriodicBoundary
 from ..validations import need_validation
