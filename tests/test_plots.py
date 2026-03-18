@@ -12,10 +12,7 @@ from qten.symbolics.state_space import brillouin_zone
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
-<<<<<<< dev/physics
 from qten_plots.plottables import PointCloud
-=======
->>>>>>> main
 
 
 @dataclass(frozen=True)
