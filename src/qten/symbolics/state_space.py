@@ -145,7 +145,7 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         """
         return same_rays(self, other)
 
-    def map(self, func: Callable[[T], T]) -> "StateSpace[T]":
+    def map(self, func: Callable[[T], T]) -> "Self":
         """
         Map the spatial elements of this state space using a provided function.
 
@@ -156,7 +156,7 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
 
         Returns
         -------
-        `StateSpace[T]`
+        `Self`
             A new state space with the transformed spatial elements.
         """
         new_structure = OrderedDict()

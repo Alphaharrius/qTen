@@ -184,6 +184,31 @@ class U1Basis(
             f"U1Basis has no irrep of type {target_type.__name__} to replace."
         )
 
+    def without(self, *T: Type[Any]) -> "U1Basis":
+        """
+        Return a new state with irreps of the requested concrete types removed.
+
+        Parameters
+        ----------
+        `*T` : `Type[Any]`
+            Concrete irrep types to remove. Matching uses exact runtime type
+            identity (`type(x) is T`), not subclass checks.
+
+        Returns
+        -------
+        `U1Basis`
+            A new `U1Basis` with all irreps whose concrete types are in `T`
+            removed. If none of the requested types are present, `self` is
+            returned unchanged.
+        """
+        if not T:
+            return self
+        targets = frozenset(T)
+        filtered = tuple(irrep for irrep in self.base if type(irrep) not in targets)
+        if len(filtered) == len(self.base):
+            return self
+        return replace(self, base=filtered)
+
     def irrep_of(self, T: Type[_IrrepType]) -> _IrrepType:
         """
         Return the unique irrep in this state whose concrete type is `T`.

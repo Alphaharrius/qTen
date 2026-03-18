@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, overload
 from typing import cast
 
 from multipledispatch import dispatch
@@ -10,6 +10,7 @@ from ..precision import get_precision_config
 from .spatials import Momentum, Offset
 from ..symbolics.state_space import MomentumSpace
 from ..symbolics.hilbert_space import HilbertSpace, U1Basis
+from ..symbolics.ops import region_hilbert
 from ..linalg.tensors import Tensor
 from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby
@@ -115,3 +116,72 @@ def fourier_transform(
     # (K, 1, R) * (1, B, R)
     f = f.unsqueeze(1) * map.data.unsqueeze(0)
     return Tensor(data=f, dims=(k_space, bloch_space, region_space))  # (K, B, R)
+
+
+@overload
+def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
+    """
+    Rebuild a Fourier transform tensor on a different real-space region.
+
+    Supported forms
+    ---------------
+    `region_restrict(tensor, R)`
+        Rebuild the Fourier transform tensor on the target real-space
+        `HilbertSpace` `R`, reusing the momentum and Bloch spaces from
+        `tensor`.
+
+    `region_restrict(tensor, region)`
+        Accept a tuple of `Offset` values, construct the corresponding real-
+        space `HilbertSpace` via `region_hilbert`, then rebuild the transform
+        on that region.
+
+    Parameters
+    ----------
+    `tensor` : `Tensor`
+        Fourier transform tensor whose dims are expected to be
+        `(MomentumSpace, HilbertSpace, HilbertSpace)`.
+    `R` : `HilbertSpace`
+        Target real-space region for the form
+        `region_restrict(tensor, R)`.
+    `region` : `tuple[Offset, ...]`
+        Offsets defining the target real-space region for the form
+        `region_restrict(tensor, region)`. These are converted to a
+        `HilbertSpace` via `region_hilbert` before rebuilding the transform.
+
+    Returns
+    -------
+    `Tensor`
+        Tensor with dims `(tensor.dims[0], tensor.dims[1], R)`, where `R` is
+        either the provided Hilbert space or the Hilbert space generated from
+        `region`.
+    """
+    ...
+
+
+@overload
+def region_restrict(tensor: Tensor, region: Tuple[Offset, ...]) -> Tensor: ...
+
+
+@dispatch(Tensor, HilbertSpace)  # type: ignore[no-redef,misc]
+def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
+    K, B, _ = tensor.dims
+    if not isinstance(K, MomentumSpace):
+        raise TypeError(
+            f"Expected first dim to be MomentumSpace, got {type(K).__name__}"
+        )
+    if not isinstance(B, HilbertSpace):
+        raise TypeError(
+            f"Expected second dim to be HilbertSpace, got {type(B).__name__}"
+        )
+    return fourier_transform(K, B, R)
+
+
+@dispatch(Tensor, tuple)  # type: ignore[no-redef]
+def region_restrict(tensor: Tensor, region: Tuple[Offset, ...]) -> Tensor:
+    B = tensor.dims[1]
+    if not isinstance(B, HilbertSpace):
+        raise TypeError(
+            f"Expected second dim to be HilbertSpace, got {type(B).__name__}"
+        )
+    R = region_hilbert(B, region)
+    return region_restrict(tensor, R)

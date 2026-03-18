@@ -34,7 +34,5 @@ from .linalg.tensors import (
     zeros as zeros,
 )
 
-from .geometries.fourier import fourier_transform as fourier_transform
-
 from .utils.devices import Device as Device
 from .utils import io as io

@@ -46,7 +46,9 @@ class AbstractLattice(AffineSpace, HasDual, Generic[_O], metaclass=abc.ABCMeta):
     @property
     def affine(self) -> AffineSpace: ...
     @abstractmethod
-    def cartes(self) -> tuple[_O, ...]: ...
+    def cartes(
+        self, T: type[_O] | type[torch.Tensor] | type[np.ndarray] | None = None
+    ) -> tuple[_O, ...] | torch.Tensor | np.ndarray: ...
 
 @dataclass(frozen=True)
 class Lattice(AbstractLattice["Offset"]):
@@ -67,15 +69,15 @@ class Lattice(AbstractLattice["Offset"]):
     @property
     @lru_cache
     def dual(self) -> ReciprocalLattice: ...
-    @lru_cache
     @override
-    def cartes(self) -> tuple["Offset", ...]: ...
-    @lru_cache
+    def cartes(
+        self,
+        T: type["Offset[Any]"] | type[torch.Tensor] | type[np.ndarray] | None = None,
+    ) -> tuple["Offset[Any]", ...] | torch.Tensor | np.ndarray: ...
     def basis_vectors(self) -> tuple["Offset", ...]: ...
     def at(
         self, unit_cell: str = "r", cell_offset: Sequence[int] | None = None
     ) -> Offset[Lattice]: ...
-    def coords(self) -> torch.Tensor: ...
 
 @dataclass(frozen=True)
 class ReciprocalLattice(AbstractLattice["Momentum"]):
@@ -89,10 +91,11 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
     @property
     @lru_cache
     def dual(self) -> Lattice: ...
-    @lru_cache
     @override
-    def cartes(self) -> tuple["Momentum", ...]: ...
-    @lru_cache
+    def cartes(
+        self,
+        T: type["Momentum"] | type[torch.Tensor] | type[np.ndarray] | None = None,
+    ) -> tuple["Momentum", ...] | torch.Tensor | np.ndarray: ...
     def basis_vectors(self) -> tuple["Offset[Any]", ...]: ...
 
 S = TypeVar("S", bound=AffineSpace)

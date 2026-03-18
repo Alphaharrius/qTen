@@ -69,6 +69,15 @@ def test_lattice_with_unit_cell():
         ReciprocalLattice(basis=basis, lattice=lattice, unit_cell=unit_cell_input)
 
 
+def test_affine_space_origin_returns_zero_offset():
+    affine = AffineSpace(basis=ImmutableDenseMatrix([[2, 1], [0, 3]]))
+    origin = affine.origin()
+
+    assert isinstance(origin, Offset)
+    assert origin.space == affine
+    assert origin.rep == ImmutableDenseMatrix([0, 0])
+
+
 def test_cartes_lattice():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     lattice = Lattice(
@@ -180,7 +189,7 @@ def test_reciprocal_basis_vectors_use_affine_space_when_not_sampled():
     assert basis_vectors[1].rep == ImmutableDenseMatrix([0, 1])
 
 
-def test_coords():
+def test_cartes_tensor():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     # Default unit cell (empty -> one atom at origin)
     lattice = Lattice(
@@ -188,7 +197,7 @@ def test_coords():
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
         unit_cell={"r": ImmutableDenseMatrix([0, 0])},
     )
-    coords = lattice.coords()
+    coords = lattice.cartes(torch.Tensor)
     assert coords.shape == (4, 2)
 
     # Explicit unit cell
@@ -198,7 +207,7 @@ def test_coords():
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
         unit_cell={"a": ImmutableDenseMatrix(unit_cell["a"])},
     )
-    coords_offset = lattice_offset.coords()
+    coords_offset = lattice_offset.cartes(torch.Tensor)
     assert coords_offset.shape == (4, 2)
 
     # Check that (0.1, 0.1) is in the coordinates (corresponding to cell 0,0)
@@ -227,6 +236,31 @@ def test_lattice_contains_offset_by_unit_cell_mod_lattice_vectors():
 
     assert translated_unit_cell_site in lattice
     assert off_unit_cell_site not in lattice
+
+
+def test_offset_distance_in_affine_space_is_euclidean():
+    affine = AffineSpace(basis=ImmutableDenseMatrix([[1, 0], [0, 1]]))
+    a = Offset(rep=ImmutableDenseMatrix([0, 0]), space=affine)
+    b = Offset(rep=ImmutableDenseMatrix([3, 4]), space=affine)
+
+    assert a.distance(b) == pytest.approx(5.0)
+    assert b.distance(a) == pytest.approx(5.0)
+
+
+def test_offset_distance_respects_periodic_boundary():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    a = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
+    b = Offset(rep=ImmutableDenseMatrix([3]), space=lattice)
+    c = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lattice.affine)
+    d = Offset(rep=ImmutableDenseMatrix([sy.Rational(7, 2)]), space=lattice)
+
+    assert a.distance(b) == pytest.approx(1.0)
+    assert b.distance(a) == pytest.approx(1.0)
+    assert c.distance(d) == pytest.approx(1.0)
 
 
 def test_reciprocal_lattice_contains_only_valid_momentum_points_in_same_space():

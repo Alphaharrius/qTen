@@ -2,15 +2,31 @@ import colorsys
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Union, Any, cast, Tuple
-from qten.geometries.spatials import Lattice, ReciprocalLattice
+from typing import Optional, Union, Any, cast, Tuple, Sequence
+from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.state_space import MomentumSpace, same_rays, brillouin_zone
 from qten.symbolics.hilbert_space import HilbertSpace
 from ._utils import compute_bonds
+from .plottables import PointCloud
 
 
 # --- Registered Plot Methods (Matplotlib Backend) ---
+
+
+def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
+    if not obj.offsets:
+        return torch.empty((0, 0), dtype=torch.float64)
+
+    coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
+    return torch.tensor(coords, dtype=torch.float64)
+
+
+def _canonical_lattice_offset(lattice: Lattice, offset: Offset) -> Offset:
+    rebased = offset.rebase(lattice)
+    fractional = rebased.fractional().rep
+    cell = lattice.boundaries.wrap(rebased.rep - fractional)
+    return Offset(rep=cell + fractional, space=lattice)
 
 
 @Lattice.register_plot_method("structure", backend="matplotlib")
@@ -23,6 +39,7 @@ def plot_structure_mpl(
     save_path: Optional[str] = None,
     ax: Optional[Any] = None,
     color_by: str = "basis",
+    highlights: Sequence[PointCloud] | None = None,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -63,7 +80,7 @@ def plot_structure_mpl(
     if color_by not in valid_color_by:
         raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
-    coords = obj.coords()
+    coords = obj.cartes(torch.Tensor)
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -126,6 +143,50 @@ def plot_structure_mpl(
     else:
         ax.scatter(x, y, c=colors, s=50, zorder=5, label="Sites")
 
+    if highlights:
+        site_to_index = {site: idx for idx, site in enumerate(obj.cartes())}
+        fallback_colors = [
+            colorsys.hsv_to_rgb((i * 0.38197 + 0.17) % 1.0, 0.95, 0.85)
+            for i in range(len(highlights))
+        ]
+        for idx, cloud in enumerate(highlights):
+            trace_indices = []
+            for offset in cloud.offsets:
+                canonical = _canonical_lattice_offset(obj, offset)
+                if canonical not in site_to_index:
+                    raise ValueError(
+                        f"Highlighted offset {offset} is not a site in the plotted lattice."
+                    )
+                trace_indices.append(site_to_index[canonical])
+
+            if not trace_indices:
+                continue
+
+            x_group = x[trace_indices]
+            y_group = y[trace_indices]
+            trace_color = cloud.color or fallback_colors[idx]
+            if is_3d:
+                z_group = z[trace_indices]
+                cast(Any, ax).scatter(
+                    x_group,
+                    y_group,
+                    z_group,
+                    c=[trace_color],
+                    s=55,
+                    marker="D",
+                    label=f"Highlight {idx}",
+                )
+            else:
+                ax.scatter(
+                    x_group,
+                    y_group,
+                    c=[trace_color],
+                    s=110,
+                    marker="D",
+                    zorder=6,
+                    label=f"Highlight {idx}",
+                )
+
     # Spins
     if spin_data is not None:
         if isinstance(spin_data, np.ndarray):
@@ -155,6 +216,52 @@ def plot_structure_mpl(
     ax.set_ylabel("Y")
     if is_3d:
         cast(Any, ax).set_zlabel("Z")
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+
+    return fig
+
+
+@PointCloud.register_plot_method("scatter", backend="matplotlib")
+def plot_pointcloud_mpl(
+    obj: PointCloud,
+    ax: Optional[Any] = None,
+    save_path: Optional[str] = None,
+    **kwargs,
+) -> plt.Figure:
+    coords = _pointcloud_coords(obj)
+    if coords.shape[1] not in (2, 3):
+        raise ValueError(
+            f"PointCloud scatter supports only 2D or 3D points, got dimension {coords.shape[1]}."
+        )
+
+    coords_np = coords.numpy()
+    is_3d = coords.shape[1] == 3
+
+    if ax is None:
+        fig = plt.figure(figsize=kwargs.get("figsize", (8, 6)))
+        if is_3d:
+            ax = fig.add_subplot(111, projection="3d")
+            ax.set_title("3D Point Cloud")
+        else:
+            ax = fig.add_subplot(111)
+            ax.set_title("2D Point Cloud")
+            ax.set_aspect("equal")
+    else:
+        fig = ax.get_figure()
+
+    trace_color = obj.color or kwargs.get("color", "#d1495b")
+    if is_3d:
+        cast(Any, ax).scatter(
+            coords_np[:, 0], coords_np[:, 1], coords_np[:, 2], c=trace_color, s=30
+        )
+        cast(Any, ax).set_zlabel("Z")
+    else:
+        ax.scatter(coords_np[:, 0], coords_np[:, 1], c=trace_color, s=60)
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
 
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
@@ -440,6 +547,8 @@ def plot_bandstructure_mpl(
     ax: Optional[Any] = None,
     data_aspect: bool = True,
     mode: str = "auto",
+    hide_nullspace: bool = False,
+    nullspace_tol: float = 1e-9,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -453,6 +562,11 @@ def plot_bandstructure_mpl(
         the corresponding figure is returned via `ax.get_figure()`.
     data_aspect : bool, default True
         If True, keep the real physical kx:ky axis ratio in 3D surface mode.
+    hide_nullspace : bool, default False
+        If True, mask surface points with |E| <= nullspace_tol so the
+        band surface opens around the nullspace.
+    nullspace_tol : float, default 1e-9
+        Energy tolerance used when hide_nullspace is enabled.
     """
     # 1. Check Dimensions
     if obj.rank() != 3:
@@ -461,6 +575,8 @@ def plot_bandstructure_mpl(
         )
     if mode not in ("auto", "path", "surface"):
         raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
+    if nullspace_tol < 0:
+        raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
 
     k_space = obj.dims[0]
     if not isinstance(k_space, MomentumSpace):
@@ -531,6 +647,9 @@ def plot_bandstructure_mpl(
 
         # Reshape eigenvalues
         evals_grid = eigvals_np.reshape(recip.shape[0], recip.shape[1], n_bands)
+        if hide_nullspace:
+            evals_grid = evals_grid.copy()
+            evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
 
         KX = k_cart[:, 0].reshape(recip.shape[0], recip.shape[1])
         KY = k_cart[:, 1].reshape(recip.shape[0], recip.shape[1])
@@ -556,7 +675,8 @@ def plot_bandstructure_mpl(
         if data_aspect:
             x_span = float(np.ptp(KX))
             y_span = float(np.ptp(KY))
-            z_span = float(np.ptp(evals_grid))
+            finite_evals = evals_grid[np.isfinite(evals_grid)]
+            z_span = float(np.ptp(finite_evals)) if finite_evals.size > 0 else 1.0
             # Keep real kx:ky scaling (plotly's aspectmode='data' equivalent).
             cast(Any, ax).set_box_aspect(
                 (

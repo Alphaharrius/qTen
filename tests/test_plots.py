@@ -12,6 +12,7 @@ from qten.symbolics.state_space import brillouin_zone
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
+from qten_plots.plottables import PointCloud
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,44 @@ def test_plot_structure_2d_and_3d():
     assert isinstance(fig_3d, go.Figure)
     assert len(fig_2d.data) >= 1
     assert len(fig_3d.data) >= 1
+
+
+def test_plot_structure_accepts_pointcloud_highlights():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    highlights = [
+        PointCloud.of(
+            [lattice.at(cell_offset=(0, 0)), lattice.at(cell_offset=(1, 1))],
+            color="#ff0000",
+        )
+    ]
+
+    fig = lattice.plot("structure", show=False, highlights=highlights)
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) >= 2
+
+
+def test_pointcloud_scatter_plot():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    cloud = PointCloud.of(
+        [lattice.at(cell_offset=(0, 0)), lattice.at(cell_offset=(1, 0))],
+        color="#00aa88",
+    )
+
+    fig = cloud.plot("scatter", show=False)
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 1
 
 
 def test_bandstructure_plot():

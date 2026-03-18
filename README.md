@@ -159,7 +159,7 @@ from dataclasses import dataclass
 import sympy as sy
 import torch
 
-import qten
+import qten.ops as Q
 from qten.geometries import Lattice, PeriodicBoundary, Offset
 from qten.symbolics import HilbertSpace, U1Basis, brillouin_zone
 
@@ -199,7 +199,7 @@ h_real = qten.Tensor(
 )
 
 k_space = brillouin_zone(lattice.dual)
-F = qten.fourier_transform(k_space, bloch_space, region_space)
+F = Q.fourier_transform(k_space, bloch_space, region_space)
 h_k = F @ h_real @ F.h(1, 2)
 
 print(h_k.dims[0])  # MomentumSpace(...)

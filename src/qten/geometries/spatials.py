@@ -52,6 +52,10 @@ class AffineSpace(Spatial):
         """Return the dimension induced by the basis matrix."""
         return self.basis.rows
 
+    def origin(self) -> "Offset":
+        """Return the zero offset in this affine space."""
+        return Offset(rep=ImmutableDenseMatrix([0] * self.dim), space=self)
+
     def __str__(self):
         data = [[str(sympify(x)) for x in row] for row in self.basis.tolist()]
         return f"AffineSpace(basis={data})"
@@ -75,7 +79,9 @@ class AbstractLattice(Generic[_O], AffineSpace, HasDual):
         return AffineSpace(basis=self.basis)
 
     @abstractmethod
-    def cartes(self) -> Tuple[_O, ...]:
+    def cartes(
+        self, T: Type[Union[_O, torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple[_O, ...], torch.Tensor, np.ndarray]:
         """Enumerate the canonical coordinates of the lattice."""
         raise NotImplementedError()
 
@@ -197,11 +203,34 @@ class Lattice(AbstractLattice["Offset"]):
 
     @lru_cache
     @override
-    def cartes(self) -> Tuple["Offset", ...]:
-        """Enumerate all canonical lattice offsets in the finite region."""
-        elements = product(*tuple(range(n) for n in self.shape))
+    def cartes(
+        self, T: Type[Union["Offset", torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple["Offset", ...], torch.Tensor, np.ndarray]:
+        """
+        Enumerate every site in the finite lattice.
+
+        Parameters
+        ----------
+        `T` : `Type[Union[Offset, torch.Tensor, np.ndarray]]`
+            Requested return type. `Offset` returns lattice-site objects,
+            while `torch.Tensor` and `np.ndarray` return Cartesian coordinates
+            with shape `(n_sites, dim)`.
+        """
+        if T == torch.Tensor:
+            return _lattice_coords(self)
+        if T == np.ndarray:
+            return cast(np.ndarray, _lattice_coords(self).detach().cpu().numpy())
+        if T not in (None, Offset):
+            raise TypeError(
+                f"Unsupported type {T} for cartes. Supported types: Offset, torch.Tensor, np.ndarray"
+            )
+
+        elements = self.boundaries.representatives()
+        unit_cell_sites = tuple(self.unit_cell.values())
         return tuple(
-            Offset(rep=ImmutableDenseMatrix(el), space=self) for el in elements
+            Offset(rep=ImmutableDenseMatrix(element + site.rep), space=self)
+            for element in elements
+            for site in unit_cell_sites
         )
 
     @lru_cache
@@ -252,57 +281,41 @@ class Lattice(AbstractLattice["Offset"]):
         rep = ImmutableDenseMatrix(tuple(cell_offset)) + site.rep
         return Offset(rep=ImmutableDenseMatrix(rep), space=self)
 
-    def coords(
-        self,
-    ) -> torch.Tensor:
-        """
-        Compute Cartesian coordinates for every site in the finite lattice.
 
-        Returns
-        -------
-        `torch.Tensor`
-            Tensor of shape `(n_sites, dim)` containing site coordinates in
-            Cartesian form.
-        """
-        precision = get_precision_config()
+def _lattice_coords(lattice: Lattice) -> torch.Tensor:
+    """Return Cartesian coordinates for every site in a finite lattice."""
+    precision = get_precision_config()
 
-        def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
-            return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
+    def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
+        return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
 
-        cell_reps = self.boundaries.representatives()
-        if not cell_reps:
-            return torch.empty((0, self.dim), dtype=precision.torch_float)
+    cell_reps = lattice.boundaries.representatives()
+    if not cell_reps:
+        return torch.empty((0, lattice.dim), dtype=precision.torch_float)
 
-        lat_reps = np.stack(
-            [_as_numeric_row(rep) for rep in cell_reps]
-        )  # (N_cells, dim)
+    lat_reps = np.stack([_as_numeric_row(rep) for rep in cell_reps])
 
-        sorted_unit_cell = sorted(self.unit_cell.items(), key=lambda x: str(x[0]))
-        basis_reps = np.stack(
-            [_as_numeric_row(site_offset.rep) for _, site_offset in sorted_unit_cell]
-        )  # (N_basis, dim)
+    sorted_unit_cell = sorted(lattice.unit_cell.items(), key=lambda x: str(x[0]))
+    basis_reps = np.stack(
+        [_as_numeric_row(site_offset.rep) for _, site_offset in sorted_unit_cell]
+    )
 
-        total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
-        total_fractional_flat = total_fractional.reshape(-1, self.dim)
+    total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
+    total_fractional_flat = total_fractional.reshape(-1, lattice.dim)
 
-        # Vectorized wrapping of fractional coordinates modulo boundaries
-        # b = f @ N^{-T}
-        N_inv = np.array(self.boundaries.basis.inv().evalf(), dtype=precision.np_float)
-        b = total_fractional_flat @ N_inv.T
+    N_inv = np.array(lattice.boundaries.basis.inv().evalf(), dtype=precision.np_float)
+    b = total_fractional_flat @ N_inv.T
 
-        # Snap coordinates very close to integers to avoid floating point errors when applying modulo
-        b_rounded = np.round(b)
-        b_snapped = np.where(np.isclose(b, b_rounded, atol=1e-10), b_rounded, b)
-        b_wrapped = b_snapped % 1.0
+    b_rounded = np.round(b)
+    b_snapped = np.where(np.isclose(b, b_rounded, atol=1e-10), b_rounded, b)
+    b_wrapped = b_snapped % 1.0
 
-        # f_wrapped = b_wrapped @ N^T
-        N_mat = np.array(self.boundaries.basis.evalf(), dtype=precision.np_float)
-        wrapped_fractional_flat = b_wrapped @ N_mat.T
+    N_mat = np.array(lattice.boundaries.basis.evalf(), dtype=precision.np_float)
+    wrapped_fractional_flat = b_wrapped @ N_mat.T
 
-        basis_mat = np.array(self.basis.evalf(), dtype=precision.np_float)
-
-        coords_np = wrapped_fractional_flat @ basis_mat.T
-        return torch.tensor(coords_np, dtype=precision.torch_float)
+    basis_mat = np.array(lattice.basis.evalf(), dtype=precision.np_float)
+    coords_np = wrapped_fractional_flat @ basis_mat.T
+    return torch.tensor(coords_np, dtype=precision.torch_float)
 
 
 @dataclass(frozen=True)
@@ -340,16 +353,43 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
 
     @lru_cache
     @override
-    def cartes(self) -> Tuple["Momentum", ...]:
-        """Enumerate canonical momentum points in fractional coordinates."""
+    def cartes(
+        self, T: Type[Union["Momentum", torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple["Momentum", ...], torch.Tensor, np.ndarray]:
+        """
+        Enumerate canonical momentum points.
+
+        Parameters
+        ----------
+        `T` : `Type[Union[Offset, torch.Tensor, np.ndarray]]`
+            Requested return type. `Offset` returns `Momentum` objects, while
+            `torch.Tensor` and `np.ndarray` return Cartesian coordinates with
+            shape `(n_points, dim)`.
+        """
         element_indices = product(*(range(n) for n in self.shape))
         sizes = ImmutableDenseMatrix(tuple(sy.Rational(1, n) for n in self.shape))
         scaled_elements = (
             ImmutableDenseMatrix(el).multiply_elementwise(sizes)
             for el in element_indices
         )
-        return tuple(
+        momenta = tuple(
             Momentum(rep=ImmutableDenseMatrix(el), space=self) for el in scaled_elements
+        )
+        if T in (None, Offset):
+            return momenta
+        if T == np.ndarray:
+            precision = get_precision_config()
+            return np.stack(
+                [
+                    np.array(momentum.to_vec(np.ndarray), dtype=precision.np_float)
+                    for momentum in momenta
+                ]
+            )
+        if T == torch.Tensor:
+            precision = get_precision_config()
+            return torch.tensor(self.cartes(np.ndarray), dtype=precision.torch_float)
+        raise TypeError(
+            f"Unsupported type {T} for cartes. Supported types: Offset, torch.Tensor, np.ndarray"
         )
 
     @lru_cache
@@ -503,6 +543,38 @@ class Offset(Generic[S], Spatial, HasBase[S]):
             raise TypeError(
                 f"Unsupported type {T} for to_vec. Supported types: np.ndarray, ImmutableDenseMatrix"
             )
+
+    def distance(self, r: "Offset") -> float:
+        """
+        Return the Cartesian distance to another offset.
+
+        If either offset is expressed on a `Lattice`, the distance is computed
+        using that lattice's boundary condition by searching the nearest
+        periodic image of the displacement. Otherwise, the plain Euclidean norm
+        of the displacement in the current affine space is returned.
+        """
+        if isinstance(self.space, Lattice):
+            a = self
+            b = r.rebase(self.space)
+            delta = a - b
+            boundary_basis = self.space.boundaries.basis
+            affine = self.space.affine
+            min_distance = float("inf")
+            for coeffs in product((-1, 0, 1), repeat=self.dim):
+                shift = boundary_basis @ ImmutableDenseMatrix(coeffs)
+                candidate = Offset(
+                    rep=ImmutableDenseMatrix(delta.rep + shift), space=affine
+                )
+                distance = float(np.linalg.norm(candidate.to_vec(np.ndarray)))
+                if distance < min_distance:
+                    min_distance = distance
+            return min_distance
+
+        if isinstance(r.space, Lattice):
+            return r.distance(self)
+
+        delta = self - r.rebase(self.space)
+        return float(np.linalg.norm(delta.to_vec(np.ndarray)))
 
     def __str__(self):
         # If it's a column vector, flatten to 1D python list

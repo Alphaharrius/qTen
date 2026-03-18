@@ -1,4 +1,4 @@
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Sequence
 import colorsys
 
 import torch
@@ -7,10 +7,26 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from qten.geometries.spatials import Lattice, ReciprocalLattice
+from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.state_space import brillouin_zone
 from ._utils import compute_bonds
+from .plottables import PointCloud
+
+
+def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
+    if not obj.offsets:
+        return torch.empty((0, 0), dtype=torch.float64)
+
+    coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
+    return torch.tensor(coords, dtype=torch.float64)
+
+
+def _canonical_lattice_offset(lattice: Lattice, offset: Offset) -> Offset:
+    rebased = offset.rebase(lattice)
+    fractional = rebased.fractional().rep
+    cell = lattice.boundaries.wrap(rebased.rep - fractional)
+    return Offset(rep=cell + fractional, space=lattice)
 
 
 # --- Registered Plot Methods ---
@@ -24,6 +40,7 @@ def plot_structure(
     show: bool = True,
     fig: Optional[go.Figure] = None,
     color_by: str = "basis",
+    highlights: Sequence[PointCloud] | None = None,
     **kwargs,
 ) -> go.Figure:
     """
@@ -62,8 +79,7 @@ def plot_structure(
     if color_by not in valid_color_by:
         raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
-    # Use method on Lattice object
-    coords = obj.coords()
+    coords = obj.cartes(torch.Tensor)
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -222,11 +238,108 @@ def plot_structure(
             fig.add_traces(quiver.data)
 
     # Layout
+    if highlights:
+        site_to_index = {site: idx for idx, site in enumerate(obj.cartes())}
+        fallback_colors = [
+            f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+            for r, g, b in (
+                colorsys.hsv_to_rgb((i * 0.38197 + 0.17) % 1.0, 0.95, 0.85)
+                for i in range(len(highlights))
+            )
+        ]
+        for idx, cloud in enumerate(highlights):
+            trace_indices = []
+            for offset in cloud.offsets:
+                canonical = _canonical_lattice_offset(obj, offset)
+                # if canonical not in site_to_index:
+                #     raise ValueError(
+                #         f"Highlighted offset {offset} is not a site in the plotted lattice."
+                #     )
+                trace_indices.append(site_to_index[canonical])
+
+            if not trace_indices:
+                continue
+
+            trace_color = cloud.color or fallback_colors[idx]
+            x_group = x[trace_indices]
+            y_group = y[trace_indices]
+            z_group = z[trace_indices] if z is not None else None
+            if obj.dim == 3:
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x_group,
+                        y=y_group,
+                        z=z_group,
+                        mode="markers",
+                        marker=dict(size=8, color=trace_color, symbol="diamond"),
+                        name=f"Highlight {idx}",
+                    )
+                )
+            else:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_group,
+                        y=y_group,
+                        mode="markers",
+                        marker=dict(size=13, color=trace_color, symbol="diamond"),
+                        name=f"Highlight {idx}",
+                    )
+                )
+
     if obj.dim == 3:
         fig.update_layout(title="3D Lattice System", scene=dict(aspectmode="data"))
     else:
         fig.update_layout(
             title="2D Lattice System", yaxis=dict(scaleanchor="x", scaleratio=1)
+        )
+
+    if show:
+        fig.show()
+    return fig
+
+
+@PointCloud.register_plot_method("scatter", backend="plotly")
+def plot_pointcloud(
+    obj: PointCloud,
+    show: bool = True,
+    fig: Optional[go.Figure] = None,
+    **kwargs,
+) -> go.Figure:
+    coords = _pointcloud_coords(obj)
+    if coords.shape[1] not in (2, 3):
+        raise ValueError(
+            f"PointCloud scatter supports only 2D or 3D points, got dimension {coords.shape[1]}."
+        )
+
+    coords_np = coords.numpy()
+    if fig is None:
+        fig = go.Figure()
+
+    trace_color = obj.color or kwargs.pop("color", "#d1495b")
+    if coords.shape[1] == 3:
+        fig.add_trace(
+            go.Scatter3d(
+                x=coords_np[:, 0],
+                y=coords_np[:, 1],
+                z=coords_np[:, 2],
+                mode="markers",
+                marker=dict(size=6, color=trace_color),
+                name="PointCloud",
+            )
+        )
+        fig.update_layout(title="3D Point Cloud", scene=dict(aspectmode="data"))
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=coords_np[:, 0],
+                y=coords_np[:, 1],
+                mode="markers",
+                marker=dict(size=10, color=trace_color, symbol="circle"),
+                name="PointCloud",
+            )
+        )
+        fig.update_layout(
+            title="2D Point Cloud", yaxis=dict(scaleanchor="x", scaleratio=1)
         )
 
     if show:
@@ -553,6 +666,8 @@ def plot_bandstructure(
     show: bool = True,
     fig: Optional[go.Figure] = None,
     mode: str = "auto",
+    hide_nullspace: bool = False,
+    nullspace_tol: float = 1e-9,
     **kwargs,
 ) -> go.Figure:
     """
@@ -568,6 +683,11 @@ def plot_bandstructure(
         Whether to show the plot immediately.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
+    hide_nullspace : bool, default False
+        If True, mask surface points with |E| <= nullspace_tol so the
+        band surface opens around the nullspace.
+    nullspace_tol : float, default 1e-9
+        Energy tolerance used when hide_nullspace is enabled.
     **kwargs
         Additional keyword arguments.
 
@@ -580,6 +700,8 @@ def plot_bandstructure(
         raise ValueError(f"Tensor must be rank 3, got {obj.rank()}")
     if mode not in ("auto", "path", "surface"):
         raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
+    if nullspace_tol < 0:
+        raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
 
     k_space = obj.dims[0]
     k_points = list(k_space)
@@ -633,6 +755,9 @@ def plot_bandstructure(
         KX = k_cart[:, 0].reshape(nx, ny)
         KY = k_cart[:, 1].reshape(nx, ny)
         evals_grid = eigvals_np.reshape(nx, ny, n_bands)
+        if hide_nullspace:
+            evals_grid = evals_grid.copy()
+            evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
 
         for b in range(n_bands):
             fig.add_trace(
