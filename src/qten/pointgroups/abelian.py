@@ -9,7 +9,9 @@ import sympy as sy
 
 from ..abstracts import HasBase
 from ..geometries.spatials import AffineSpace, Spatial, Offset, Momentum
-from ..symbolics.hilbert_space import Opr
+from ..symbolics.hilbert_space import HilbertSpace, Opr
+from ..symbolics.ops import hilbert_opr_repr
+from ..linalg.tensors import Tensor
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
@@ -506,6 +508,41 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
                 break
 
         return FrozenDict(tbl)
+
+    def hilbert_repr(self, space: HilbertSpace) -> Tensor:
+        """
+        Return the Hilbert-space representation of this affine group element.
+
+        For an affine transform with action `x -> R x + t`, this method builds
+        the induced operator matrix on the symbolic/physical Hilbert space
+        `space`. In a basis `space = span{ |e_i⟩ }`, the returned tensor has
+        entries
+
+        `⟨e_i | g | e_j⟩`,
+
+        where `g` is this `AffineTransform`. Concretely, the affine action is
+        lifted to each basis state through the registered actions on irreps such
+        as `Offset`, `Momentum`, and `AbelianBasis`, and then assembled into the
+        corresponding matrix representation.
+
+        Parameters
+        ----------
+        `space` : `HilbertSpace`
+            Hilbert-space basis carrying the induced representation.
+
+        Returns
+        -------
+        `Tensor`
+            Matrix representation of this affine transform on `space`.
+
+        Notes
+        -----
+        This differs from `rep`, which is the polynomial-coordinate
+        representation on monomials built from `axes`. `hilbert_repr` instead
+        gives the representation of the same symmetry element on the Hilbert
+        space supplied by the caller.
+        """
+        return hilbert_opr_repr(self, space)
 
 
 @AffineTransform.register(AbelianBasis)

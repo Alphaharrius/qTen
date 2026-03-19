@@ -88,8 +88,7 @@ def bandaffine(
                 f"Hilbert space {space} is not symmetric under the transform {t}!"
             )
         bloch_transform = cast(Tensor, space.cross_gram(new_space)).h(-2, -1)
-        bloch_transform = bloch_transform.replace_dim(0, new_space)  # (B', B)
-        left_fourier = fourier_transform(kspace, space, new_space)  # (K, B, B')
+        left_fourier = fourier_transform(kspace, space, space)  # (K, B, B')
         right_fourier = fourier_transform(kspace, space, space)  # (K, B, B)
         # Keep the transformed unit-cell labels explicit on the region leg so
         # StateSpace auto-alignment does not erase the site permutation.

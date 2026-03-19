@@ -1,7 +1,8 @@
 from typing import Sequence
 
 from ..geometries import Offset
-from . import HilbertSpace
+from ..linalg.tensors import Tensor
+from . import HilbertSpace, Opr
 
 
 def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> HilbertSpace:
@@ -70,3 +71,48 @@ def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> Hilbe
                 yield psi.replace(region_offset)
 
     return HilbertSpace.new(iter_region_basis())
+
+
+def hilbert_opr_repr(opr: Opr, space: HilbertSpace) -> Tensor:
+    """
+    Return the matrix representation of an operator on a Hilbert-space basis.
+
+    Let `space = span{ |e_i> }` be the input `HilbertSpace` and let `opr` act
+    on each basis state to produce `opr @ space = span{ opr |e_j> }`. This
+    function constructs the corresponding representation matrix
+
+    `M_{ij} = ⟨e_i | opr | e_j⟩`,
+
+    implemented as the cross-Gram matrix between the original basis and its
+    transformed image. The resulting `Tensor` therefore represents `opr` in the
+    basis supplied by `space`.
+
+    Parameters
+    ----------
+    `opr` : `Opr`
+        Operator whose representation is to be computed.
+    `space` : `HilbertSpace`
+        Basis in which the operator is represented.
+
+    Returns
+    -------
+    `Tensor`
+        Square tensor whose entries are the matrix elements of `opr` in the
+        basis `space`.
+
+    Raises
+    ------
+    `ValueError`
+        If `opr` does not preserve the ray structure of `space`, so no
+        representation internal to the same projective Hilbert space exists.
+
+    Notes
+    -----
+    The output dimensions are relabeled back onto `space`, so the returned
+    tensor can be interpreted directly as an endomorphism of that Hilbert
+    space.
+    """
+    new_space = opr @ space
+    if not space.same_rays(new_space):
+        raise ValueError("opr does not preserve the ray structure of space.")
+    return space.cross_gram(new_space).replace_dim(1, space)
