@@ -996,6 +996,21 @@ def operator_eq(left: TensorType, right: Tensor) -> TensorType:
     - relies on torch runtime broadcasting for singleton/broadcast-backed axes
     - returns output with `dims == union_dims`
     """
+    return _tensor_comparison_op(left, right, torch.eq)
+
+
+def _tensor_comparison_op(
+    left: TensorType,
+    right: Tensor,
+    op: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+) -> TensorType:
+    """
+    Perform an element-wise comparison between two tensors using symmetric
+    StateSpace-aware alignment and broadcasting.
+    """
+    target_rank = max(left.rank(), right.rank())
+    left = cast(TensorType, promote_rank(left, target_rank))
+    right = promote_rank(right, target_rank)
     merged_dims = union_dims(left.dims, right.dims, allow_merge=False)
     aligned_left = left.align_all(merged_dims)
     aligned_right = right.align_all(merged_dims)
@@ -1017,7 +1032,81 @@ def operator_eq(left: TensorType, right: Tensor) -> TensorType:
             f"merged_dims={_format_dims(merged_dims)}, "
             f"expected_shape={expected_shape}, runtime_shape={tuple(runtime_shape)}"
         )
-    return replace(left, data=aligned_left.data == aligned_right.data, dims=merged_dims)
+    return replace(
+        left, data=op(aligned_left.data, aligned_right.data), dims=merged_dims
+    )
+
+
+@dispatch(Tensor, Tensor)
+def operator_lt(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise less-than comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.lt)
+
+
+@dispatch(Tensor, Tensor)
+def operator_le(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise less-than-or-equal comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.le)
+
+
+@dispatch(Tensor, Tensor)
+def operator_gt(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise greater-than comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.gt)
+
+
+@dispatch(Tensor, Tensor)
+def operator_ge(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise greater-than-or-equal comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.ge)
+
+
+@dispatch(Tensor, Number)
+def operator_lt(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise less-than comparison between a tensor and a scalar."""
+    return operator_lt(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_lt(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise less-than comparison between a scalar and a tensor."""
+    return operator_lt(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_le(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise less-than-or-equal comparison between a tensor and a scalar."""
+    return operator_le(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_le(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise less-than-or-equal comparison between a scalar and a tensor."""
+    return operator_le(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_gt(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise greater-than comparison between a tensor and a scalar."""
+    return operator_gt(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_gt(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise greater-than comparison between a scalar and a tensor."""
+    return operator_gt(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_ge(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise greater-than-or-equal comparison between a tensor and a scalar."""
+    return operator_ge(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_ge(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise greater-than-or-equal comparison between a scalar and a tensor."""
+    return operator_ge(Tensor.scalar(left), right)
 
 
 @dispatch(Tensor)

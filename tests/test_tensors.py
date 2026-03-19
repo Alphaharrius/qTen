@@ -1890,6 +1890,139 @@ def test_all_over_tensor_equality_dim_and_keepdim():
     assert torch.equal(reduced_keepdim.data, torch.tensor([[True, False]]))
 
 
+def test_tensor_lt_returns_bool_mask_with_aligned_dims():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    left_data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
+    right_data_ba = torch.empty_like(left_data)
+    perm = torch.tensor([3, 4, 0, 1, 2], dtype=torch.long)
+    right_data_ba[perm] = torch.tensor([1.5, 1.5, 1.5, 1.5, 1.5], dtype=torch.float64)
+
+    left = Tensor(data=left_data, dims=(space_ab,))
+    right = Tensor(data=right_data_ba, dims=(space_ba,))
+
+    out = left < right
+
+    assert out.dims == (space_ab,)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, torch.tensor([True, True, False, False, False]))
+
+
+def test_tensor_comparisons_use_symmetric_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    left = Tensor(
+        data=torch.tensor([[1.0], [3.0]], dtype=torch.float64),
+        dims=(a, BroadcastSpace()),
+    )
+    right = Tensor(
+        data=torch.tensor([[0.0, 2.0, 1.0]], dtype=torch.float64),
+        dims=(BroadcastSpace(), b),
+    )
+
+    lt_out = left < right
+    ge_out = left >= right
+
+    expected_lt = torch.lt(left.data, right.data)
+    expected_ge = torch.ge(left.data, right.data)
+
+    assert lt_out.dims == (a, b)
+    assert ge_out.dims == (a, b)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, expected_lt)
+    assert torch.equal(ge_out.data, expected_ge)
+
+
+def test_tensor_le_and_gt_support_scalar_rank_promotion():
+    left = IndexSpace.linear(2)
+
+    vector = Tensor(data=torch.tensor([1.0, 3.0], dtype=torch.float64), dims=(left,))
+    scalar = Tensor(data=torch.tensor(2.0, dtype=torch.float64), dims=())
+
+    le_out = vector <= scalar
+    gt_out = vector > scalar
+
+    assert le_out.dims == (left,)
+    assert gt_out.dims == (left,)
+    assert torch.equal(le_out.data, torch.tensor([True, False]))
+    assert torch.equal(gt_out.data, torch.tensor([False, True]))
+
+
+def test_tensor_ordered_comparisons_reject_complex_dtype():
+    left = IndexSpace.linear(2)
+
+    a = Tensor(data=torch.tensor([1 + 1j, 2 + 0j], dtype=torch.complex64), dims=(left,))
+    b = Tensor(data=torch.tensor([0 + 1j, 3 + 0j], dtype=torch.complex64), dims=(left,))
+
+    with pytest.raises(RuntimeError, match="not implemented"):
+        _ = a < b
+
+
+def test_tensor_scalar_ordered_comparisons_return_bool_masks():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    lt_out = tensor < 2.5
+    ge_out = tensor >= 2.0
+
+    assert lt_out.dims == (left,)
+    assert ge_out.dims == (left,)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, torch.tensor([True, True, False]))
+    assert torch.equal(ge_out.data, torch.tensor([False, True, True]))
+
+
+def test_scalar_tensor_ordered_comparisons_return_bool_masks():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    lt_out = 2.5 < tensor
+    ge_out = 2.0 >= tensor
+
+    assert lt_out.dims == (left,)
+    assert ge_out.dims == (left,)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, torch.tensor([False, False, True]))
+    assert torch.equal(ge_out.data, torch.tensor([True, True, False]))
+
+
+def test_tensor_scalar_ordered_comparisons_support_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    tensor = Tensor(
+        data=torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float64),
+        dims=(a, b),
+    )
+
+    out = tensor <= 4.0
+
+    assert out.dims == (a, b)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(
+        out.data, torch.tensor([[True, True, True], [True, False, False]])
+    )
+
+
+def test_tensor_scalar_ordered_comparisons_reject_complex_scalar():
+    left = IndexSpace.linear(2)
+    tensor = Tensor(data=torch.tensor([1.0, 2.0], dtype=torch.float64), dims=(left,))
+
+    with pytest.raises(RuntimeError, match="not implemented"):
+        _ = tensor < (1 + 1j)
+
+
 def test_all_supports_tuple_dims_without_keepdim():
     left = _simple_hilbert("left", 3)
     right = _simple_hilbert("right", 2)
