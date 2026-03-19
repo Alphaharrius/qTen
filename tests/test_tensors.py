@@ -30,6 +30,7 @@ from qten.symbolics.state_space import (
     BroadcastSpace,
     IndexSpace,
     MomentumSpace,
+    StateSpace,
 )
 from qten.utils.collections_ext import FrozenDict
 from qten.linalg.tensors import unsqueeze
@@ -1594,6 +1595,21 @@ def test_where_condition_only_returns_index_tensors():
         assert torch.equal(actual.data, exp)
 
 
+def test_where_condition_only_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = where(condition, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
 def test_where_rejects_non_bool_condition():
     mode_a = make_mode("a", 2)
     space_a = _space_from_modes(mode_a)
@@ -1644,6 +1660,34 @@ def test_tensor_nonzero_as_tuple_true_matches_torch():
     for actual, exp in zip(out, expected):
         assert actual.dims == (IndexSpace.linear(exp.numel()),)
         assert torch.equal(actual.data, exp)
+
+
+def test_nonzero_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = nonzero(condition, as_tuple=True, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
+def test_nonzero_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = nonzero(condition, as_tuple=True, index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
 
 
 def test_where_uses_symmetric_broadcast_dims():
@@ -1741,6 +1785,24 @@ def test_tensor_where_method_supports_condition_only_form():
         assert torch.equal(actual.data, exp.data)
 
 
+def test_tensor_where_method_supports_condition_only_tuple_index_output():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_a = _space_from_modes(mode_a)
+    space_b = _space_from_modes(mode_b)
+
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(space_a, space_b),
+    )
+
+    out = condition.where(index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
 def test_tensor_where_method_rejects_single_argument():
     mode_a = make_mode("a", 2)
     space_a = _space_from_modes(mode_a)
@@ -1752,6 +1814,78 @@ def test_tensor_where_method_rejects_single_argument():
 
     with pytest.raises(TypeError, match="where\\(\\) or where\\(input, other\\)"):
         _ = condition.where(input=input_tensor)
+
+
+def test_tensor_where_method_rejects_index_type_for_ternary_form():
+    mode_a = make_mode("a", 2)
+    space_a = _space_from_modes(mode_a)
+    condition = Tensor(
+        data=torch.tensor([True, False], dtype=torch.bool),
+        dims=(space_a,),
+    )
+    input_tensor = Tensor(data=torch.tensor([1.0, 2.0]), dims=(space_a,))
+    other_tensor = Tensor(data=torch.tensor([3.0, 4.0]), dims=(space_a,))
+
+    with pytest.raises(TypeError, match="index_type"):
+        _ = condition.where(input_tensor, other_tensor, index_type=tuple)
+
+
+def test_tensor_nonzero_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = condition.nonzero(as_tuple=True, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
+def test_tensor_where_method_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = condition.where(index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
+
+
+def test_tensor_nonzero_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = condition.nonzero(as_tuple=True, index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
+
+
+def test_statespace_index_output_rejects_rank_greater_than_one():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    with pytest.raises(ValueError, match="rank-1"):
+        _ = where(condition, index_type=StateSpace)
+
+    with pytest.raises(ValueError, match="rank-1"):
+        _ = nonzero(condition, as_tuple=True, index_type=StateSpace)
 
 
 def test_tensor_item_raises_for_non_scalar():

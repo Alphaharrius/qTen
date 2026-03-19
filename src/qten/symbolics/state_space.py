@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace, field
 from typing import Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self, cast
 from typing_extensions import override
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from functools import lru_cache
 from itertools import islice
 
@@ -83,19 +83,23 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         # TODO: Do we need to consider the order of the structure?
         return hash(tuple(self.structure.items()))
 
-    def __getitem__(self, v: Union[int, slice, range]) -> Union[T, "StateSpace[T]"]:
+    def __getitem__(
+        self, v: Union[int, slice, range, Sequence[int]]
+    ) -> Union[T, "StateSpace[T]"]:
         """
         Index into the state-space by element position.
 
         Parameters
         ----------
-        `v` : `Union[int, slice, range]`
+        `v` : `Union[int, slice, range, Sequence[int]]`
             - `int` returns a single spatial element by position (supports negative
               indices).
             - `slice` returns a new instance containing the selected elements in
               order, with slices re-packed to be contiguous.
             - `range` returns a new instance containing the elements at the given
               indices (in the range order), with slices re-packed to be contiguous.
+            - `Sequence[int]` returns a new instance containing the elements at
+              the given indices in exactly that order.
 
         Returns
         -------
@@ -109,7 +113,7 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         IndexError
             If an integer index is out of bounds.
         TypeError
-            If `v` is not an `int`, `slice`, or `range`.
+            If `v` is not an `int`, `slice`, `range`, or sequence of integers.
         """
         if isinstance(v, int):
             if v < 0:
@@ -125,8 +129,31 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
             keys = tuple(self.structure.keys())
             new_structure = OrderedDict((keys[i], self.structure[keys[i]]) for i in v)
             return replace(self, structure=restructure(new_structure))
+        if isinstance(v, Sequence) and not isinstance(v, (str, bytes)):
+            keys = tuple(self.structure.keys())
+            indices: list[int] = []
+            seen = set()
+            for idx in v:
+                if isinstance(idx, bool) or not isinstance(idx, int):
+                    raise TypeError(
+                        "StateSpace sequence indices must contain only integers"
+                    )
+                normalized = idx
+                if normalized < 0:
+                    normalized += len(keys)
+                if normalized < 0 or normalized >= len(keys):
+                    raise IndexError("StateSpace index out of range")
+                if normalized in seen:
+                    raise ValueError("StateSpace sequence indices must be unique")
+                seen.add(normalized)
+                indices.append(normalized)
+            new_structure = OrderedDict(
+                (keys[i], self.structure[keys[i]]) for i in indices
+            )
+            return replace(self, structure=restructure(new_structure))
         raise TypeError(
-            f"StateSpace indices must be int, slice, or range, not {type(v)}"
+            "StateSpace indices must be int, slice, range, or a sequence of ints, "
+            f"not {type(v)}"
         )
 
     def same_rays(self, other: "StateSpace") -> bool:

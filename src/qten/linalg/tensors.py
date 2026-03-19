@@ -2,6 +2,7 @@ from typing import (
     Self,
     NamedTuple,
     Tuple,
+    Type,
     TypeVar,
     Generic,
     Union,
@@ -12,6 +13,7 @@ from typing import (
     Optional,
     Callable,
     TypeAlias,
+    get_origin,
 )
 from typing_extensions import override
 from functools import wraps, reduce
@@ -470,7 +472,13 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         self,
         input: Optional["Tensor"] = None,
         other: Optional["Tensor"] = None,
-    ) -> Union["Tensor", Tuple["Tensor", ...]]:
+        index_type: Type[Any] = None,
+    ) -> Union[
+        "Tensor",
+        Tuple["Tensor", ...],
+        Tuple[Tuple[int, ...], ...],
+        StateSpace,
+    ]:
         """
         Apply `where` using this tensor as the boolean condition mask.
 
@@ -480,6 +488,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
           elementwise selection between `input` and `other`.
         - `condition.where()`:
           returns index tensors of `True` entries.
+        - `condition.where(index_type=...)`:
+          returns the requested index representation for `True` entries.
 
         Parameters
         ----------
@@ -487,10 +497,13 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             Tensor selected where `condition` is `True`.
         `other` : `Optional[Tensor]`, optional
             Tensor selected where `condition` is `False`.
+        `index_type` : `Type[Any]`, optional
+            Only used for the condition-only form. Supported values are
+            `Tensor`, `tuple` / `Tuple`, and `StateSpace`.
 
         Returns
         -------
-        `Union[Tensor, Tuple[Tensor, ...]]`
+        `Union[Tensor, Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
             Return value depends on call form:
             - For `condition.where(input, other)`, returns a single `Tensor`
               with `dims == union_dims(condition.dims, input.dims, other.dims,
@@ -502,21 +515,37 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
               Each returned tensor has shape `(nnz,)` and
               `dims == (IndexSpace.linear(nnz),)`, where `nnz` is the number of
               `True` entries in `condition`.
+            - For `condition.where(index_type=Tensor)`, returns
+              `Tuple[Tensor, ...]`.
+            - For `condition.where(index_type=tuple)` or `Tuple`, returns one
+              Python coordinate tuple per `True` entry.
+            - For `condition.where(index_type=StateSpace)`, returns the
+              selected subspace for rank-1 conditions only.
 
         Raises
         ------
         `TypeError`
             If only one of `input`/`other` is provided.
         """
+        if index_type is None:
+            index_type = Tensor
         if input is None and other is None:
-            return where(self)
+            return where(self, index_type=index_type)
         if input is None or other is None:
             raise TypeError(
                 "Tensor.where supports either where() or where(input, other)"
             )
+        if index_type is not Tensor:
+            raise TypeError("index_type is only supported for where()")
         return where(self, input, other)
 
-    def nonzero(self, as_tuple: bool = True) -> Tuple["Tensor", ...]:
+    def nonzero(
+        self, as_tuple: bool = True, index_type: Type[Any] = None
+    ) -> Union[
+        Tuple["Tensor", ...],
+        Tuple[Tuple[int, ...], ...],
+        StateSpace,
+    ]:
         """
         Return indices of non-zero / `True` entries for this tensor.
 
@@ -527,18 +556,23 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ----------
         `as_tuple` : `bool`, optional
             Must be `True`.
+        `index_type` : `Type[Any]`, optional
+            Requested index representation. Supported values are `Tensor`,
+            `tuple` / `Tuple`, and `StateSpace`.
 
         Returns
         -------
-        `Tuple[Tensor, ...]`
-            Tuple of 1D index tensors, one per axis.
+        `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+            Index representation selected by `index_type`.
 
         Raises
         ------
         `NotImplementedError`
             If `as_tuple` is `False`.
         """
-        return nonzero(self, as_tuple=as_tuple)
+        if index_type is None:
+            index_type = Tensor
+        return nonzero(self, as_tuple=as_tuple, index_type=index_type)
 
     def unsqueeze(self, dim: int) -> Self:
         """
@@ -2691,7 +2725,13 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
 
 
 @dispatch(Tensor)  # type: ignore[no-redef]
-def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
+def where(
+    condition: Tensor[torch.BoolTensor], index_type: Type[Any] = Tensor
+) -> Union[
+    Tuple[Tensor, ...],
+    Tuple[Tuple[int, ...], ...],
+    StateSpace,
+]:
     """
     Return coordinate tensors of `True` entries in a boolean mask.
 
@@ -2712,8 +2752,8 @@ def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
 
     Returns
     -------
-    `Tuple[Tensor, ...]`
-        Tuple of index tensors with length matching `torch.where(condition)`.
+    `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+        Index representation selected by `index_type`.
 
     Raises
     ------
@@ -2723,13 +2763,32 @@ def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
 
+    rows = torch.nonzero(condition.data, as_tuple=False)
     indices = torch.where(condition.data)
     nnz = indices[0].numel() if len(indices) > 0 else 0
     index_dim = IndexSpace.linear(nnz)
-    return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    origin = get_origin(index_type)
+    if index_type is Tensor:
+        return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    if index_type is tuple or origin is tuple:
+        return tuple(tuple(int(v) for v in row.tolist()) for row in rows)
+    if index_type is StateSpace:
+        if condition.rank() != 1:
+            raise ValueError(
+                "StateSpace index output is only supported for rank-1 conditions"
+            )
+        selected = [int(row[0].item()) for row in rows]
+        return condition.dims[0][selected]
+    raise TypeError("index_type must be one of Tensor, tuple/Tuple, or StateSpace")
 
 
-def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
+def nonzero(
+    condition: Tensor, as_tuple: bool = True, index_type: Type[Any] = Tensor
+) -> Union[
+    Tuple[Tensor, ...],
+    Tuple[Tuple[int, ...], ...],
+    StateSpace,
+]:
     """
     Return indices of non-zero / `True` entries.
 
@@ -2742,11 +2801,14 @@ def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
         Input tensor.
     `as_tuple` : `bool`, optional
         Must be `True`.
+    `index_type` : `Type[Any]`, optional
+        Requested index representation. Supported values are `Tensor`,
+        `tuple` / `Tuple`, and `StateSpace`.
 
     Returns
     -------
-    `Tuple[Tensor, ...]`
-        Tuple of index tensors, one per input axis.
+    `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+        Index representation selected by `index_type`.
 
     Raises
     ------
@@ -2756,10 +2818,23 @@ def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
     if not as_tuple:
         raise NotImplementedError("nonzero currently supports only as_tuple=True")
 
+    rows = torch.nonzero(condition.data, as_tuple=False)
     indices = torch.nonzero(condition.data, as_tuple=True)
     nnz = indices[0].numel() if len(indices) > 0 else 0
     index_dim = IndexSpace.linear(nnz)
-    return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    origin = get_origin(index_type)
+    if index_type is Tensor:
+        return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    if index_type is tuple or origin is tuple:
+        return tuple(tuple(int(v) for v in row.tolist()) for row in rows)
+    if index_type is StateSpace:
+        if condition.rank() != 1:
+            raise ValueError(
+                "StateSpace index output is only supported for rank-1 conditions"
+            )
+        selected = [int(row[0].item()) for row in rows]
+        return condition.dims[0][selected]
+    raise TypeError("index_type must be one of Tensor, tuple/Tuple, or StateSpace")
 
 
 TensorIndexType: TypeAlias = Union[

@@ -208,11 +208,23 @@ def test_statespace_getitem_variants():
     hs_range = hs[range(0, 2)]
     assert list(hs_range.structure.keys()) == [states[0], states[1]]
 
+    hs_seq = hs[[2, 0]]
+    assert list(hs_seq.structure.keys()) == [states[2], states[0]]
+
+    hs_tuple = hs[(1, -1)]
+    assert list(hs_tuple.structure.keys()) == [states[1], states[2]]
+
     with pytest.raises(IndexError):
         _ = hs[3]
 
     with pytest.raises(TypeError):
         _ = hs["bad"]
+
+    with pytest.raises(ValueError, match="unique"):
+        _ = hs[[0, 0]]
+
+    with pytest.raises(TypeError, match="integers"):
+        _ = hs[[0, "bad"]]  # type: ignore[list-item]
 
 
 def test_hilbert_space_gram_diagonal_for_identical_basis():
