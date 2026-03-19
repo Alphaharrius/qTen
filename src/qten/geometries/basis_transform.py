@@ -77,11 +77,8 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
         for i, k in enumerate(shifts):
             new_frac = M_inv @ (atom_vec + k)
             new_frac = new_frac.applyfunc(lambda x: x - sy.floor(x))
-
-            new_offset = ImmutableDenseMatrix(new_frac)
-
             new_label = f"{label}_{i}" if len(shifts) > 1 else label
-            new_unit_cell[new_label] = new_offset
+            new_unit_cell[new_label] = ImmutableDenseMatrix(new_frac)
 
     if not isinstance(lat.boundaries, PeriodicBoundary):
         raise NotImplementedError(
