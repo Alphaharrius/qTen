@@ -1,5 +1,6 @@
-from typing import Optional, Union, Tuple, Sequence
+from typing import Optional, Union, Tuple, Sequence, cast
 import colorsys
+import math
 
 import torch
 import numpy as np
@@ -9,7 +10,8 @@ from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
 from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
-from qten.symbolics.state_space import brillouin_zone
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
+from qten.symbolics.state_space import StateSpace, brillouin_zone
 from ._utils import compute_bonds
 from .plottables import PointCloud
 
@@ -20,6 +22,26 @@ def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
 
     coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
     return torch.tensor(coords, dtype=torch.float64)
+
+
+def _complex_phase_colors(values: np.ndarray) -> list[str]:
+    colors: list[str] = []
+    for value in values:
+        phase = np.angle(value)
+        hue = float((phase + np.pi) / (2 * np.pi))
+        r, g, b = colorsys.hsv_to_rgb(hue % 1.0, 0.95, 0.95)
+        colors.append(f"rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})")
+    return colors
+
+
+def _subplot_grid(n_items: int, ncols: int) -> tuple[int, int]:
+    cols = min(ncols, max(1, n_items))
+    rows = math.ceil(n_items / cols)
+    return rows, cols
+
+
+def _column_label(col_dim: StateSpace, index: int) -> str:
+    return str(col_dim.elements()[index])
 
 
 # --- Registered Plot Methods ---
@@ -484,6 +506,164 @@ def plot_heatmap(
 
     fig.update_yaxes(autorange="reversed")
     fig.update_layout(title=title)
+
+    if show:
+        fig.show()
+    return fig
+
+
+@Tensor.register_plot_method("column_scatter", backend="plotly")
+def plot_tensor_scatter(
+    obj: Tensor,
+    title: str = "Tensor Scatter",
+    show: bool = True,
+    default_size: float = 16.0,
+    ncols: int = 3,
+    **kwargs,
+) -> go.Figure:
+    """
+    Plot a rank-2 tensor as one spatial scatter subplot per column.
+
+    The first axis must be a HilbertSpace containing `Offset` irreps, and the
+    second axis is treated as a pure column index.
+    """
+    if obj.rank() != 2:
+        raise ValueError(
+            "Tensor scatter requires a rank-2 tensor with dims "
+            f"(HilbertSpace, StateSpace), got rank {obj.rank()}."
+        )
+    if default_size <= 0:
+        raise ValueError(f"default_size must be positive, got {default_size}")
+    if ncols <= 0:
+        raise ValueError(f"ncols must be positive, got {ncols}")
+
+    row_dim, col_dim = obj.dims
+    if not isinstance(row_dim, HilbertSpace) or not isinstance(col_dim, StateSpace):
+        raise ValueError(
+            "Tensor scatter requires dims (HilbertSpace, StateSpace), got "
+            f"({type(row_dim).__name__}, {type(col_dim).__name__})."
+        )
+    if not row_dim.is_homogeneous():
+        raise ValueError(
+            "Tensor scatter requires the first HilbertSpace to be homogeneous."
+        )
+
+    row_basis = cast(tuple[U1Basis, ...], row_dim.elements())
+    if row_basis:
+        try:
+            row_basis[0].irrep_of(Offset)
+        except ValueError as exc:
+            raise ValueError(
+                "Tensor scatter requires the first HilbertSpace to contain Offset irreps."
+            ) from exc
+
+    row_offsets = [basis.irrep_of(Offset) for basis in row_basis]
+    if row_offsets:
+        coords = np.stack(
+            [offset.to_vec(np.ndarray).reshape(-1) for offset in row_offsets]
+        )
+        spatial_dim = coords.shape[1]
+    else:
+        coords = np.empty((0, 0), dtype=float)
+        spatial_dim = 0
+    if spatial_dim not in (1, 2, 3):
+        raise ValueError(
+            "Tensor scatter only supports Offset coordinates of dimension 1, 2, or 3; "
+            f"got {spatial_dim}."
+        )
+
+    tensor = obj.data.detach().cpu()
+    if not tensor.is_complex():
+        tensor = tensor.to(torch.complex128)
+    tensor_np = tensor.numpy()
+
+    n_columns = tensor_np.shape[1]
+    rows, cols = _subplot_grid(n_columns, ncols=ncols)
+    column_labels = [_column_label(col_dim, j) for j in range(n_columns)]
+    subplot_titles = column_labels
+
+    specs = None
+    if spatial_dim == 3:
+        specs = [[{"type": "scene"} for _ in range(cols)] for _ in range(rows)]
+
+    fig = make_subplots(
+        rows=rows,
+        cols=cols,
+        specs=specs,
+        subplot_titles=subplot_titles,
+    )
+
+    max_mag = float(np.abs(tensor_np).max()) if tensor_np.size > 0 else 0.0
+    for j in range(n_columns):
+        panel_row = j // cols + 1
+        panel_col = j % cols + 1
+        column_label = column_labels[j]
+
+        column = tensor_np[:, j]
+        magnitudes = np.abs(column)
+        if max_mag > 0:
+            sizes = default_size * magnitudes / max_mag
+        else:
+            sizes = np.full_like(magnitudes, fill_value=default_size, dtype=float)
+        colors = _complex_phase_colors(column)
+
+        marker = dict(size=sizes.tolist(), color=colors, opacity=0.9)
+        hovertext = [
+            (
+                f"row={i}<br>"
+                f"column={column_label}<br>"
+                f"value={value.real:.6g}{value.imag:+.6g}j<br>"
+                f"|value|={abs(value):.6g}<br>"
+                f"phase={np.angle(value):.6g}"
+            )
+            for i, value in enumerate(column)
+        ]
+
+        if spatial_dim == 3:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=coords[:, 0],
+                    y=coords[:, 1],
+                    z=coords[:, 2],
+                    mode="markers",
+                    marker=marker,
+                    name=column_label,
+                    hovertext=hovertext,
+                    hoverinfo="text",
+                    showlegend=False,
+                ),
+                row=panel_row,
+                col=panel_col,
+            )
+        else:
+            y = coords[:, 1] if spatial_dim == 2 else np.zeros(coords.shape[0])
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[:, 0],
+                    y=y,
+                    mode="markers",
+                    marker=marker,
+                    name=column_label,
+                    hovertext=hovertext,
+                    hoverinfo="text",
+                    showlegend=False,
+                ),
+                row=panel_row,
+                col=panel_col,
+            )
+            if spatial_dim == 2:
+                fig.update_yaxes(
+                    scaleanchor=f"x{j + 1}", scaleratio=1, row=panel_row, col=panel_col
+                )
+
+    fig.update_layout(title=title, **kwargs)
+    if spatial_dim == 3:
+        fig.update_layout(
+            **{
+                f"scene{'' if i == 0 else i + 1}": dict(aspectmode="data")
+                for i in range(n_columns)
+            }
+        )
 
     if show:
         fig.show()

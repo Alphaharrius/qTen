@@ -1,12 +1,18 @@
 import colorsys
+import math
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, Any, cast, Tuple, Sequence
 from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
-from qten.symbolics.state_space import MomentumSpace, same_rays, brillouin_zone
-from qten.symbolics.hilbert_space import HilbertSpace
+from qten.symbolics.state_space import (
+    MomentumSpace,
+    StateSpace,
+    same_rays,
+    brillouin_zone,
+)
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from ._utils import compute_bonds
 from .plottables import PointCloud
 
@@ -20,6 +26,25 @@ def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
 
     coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
     return torch.tensor(coords, dtype=torch.float64)
+
+
+def _complex_phase_colors(values: np.ndarray) -> list[tuple[float, float, float]]:
+    colors: list[tuple[float, float, float]] = []
+    for value in values:
+        phase = np.angle(value)
+        hue = float((phase + np.pi) / (2 * np.pi))
+        colors.append(colorsys.hsv_to_rgb(hue % 1.0, 0.95, 0.95))
+    return colors
+
+
+def _subplot_grid(n_items: int, ncols: int) -> tuple[int, int]:
+    cols = min(ncols, max(1, n_items))
+    rows = math.ceil(n_items / cols)
+    return rows, cols
+
+
+def _column_label(col_dim: StateSpace, index: int) -> str:
+    return str(col_dim.elements()[index])
 
 
 @Lattice.register_plot_method("structure", backend="matplotlib")
@@ -523,6 +548,114 @@ def plot_spectrum_mpl(
 
     ax.set_title(title)
 
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+
+    return fig
+
+
+@Tensor.register_plot_method("column_scatter", backend="matplotlib")
+def plot_tensor_column_scatter_mpl(
+    obj: Tensor,
+    title: str = "Tensor Scatter",
+    save_path: Optional[str] = None,
+    default_size: float = 16.0,
+    ncols: int = 3,
+    **kwargs,
+) -> plt.Figure:
+    if obj.rank() != 2:
+        raise ValueError(
+            "Tensor scatter requires a rank-2 tensor with dims "
+            f"(HilbertSpace, StateSpace), got rank {obj.rank()}."
+        )
+    if default_size <= 0:
+        raise ValueError(f"default_size must be positive, got {default_size}")
+    if ncols <= 0:
+        raise ValueError(f"ncols must be positive, got {ncols}")
+
+    row_dim, col_dim = obj.dims
+    if not isinstance(row_dim, HilbertSpace) or not isinstance(col_dim, StateSpace):
+        raise ValueError(
+            "Tensor scatter requires dims (HilbertSpace, StateSpace), got "
+            f"({type(row_dim).__name__}, {type(col_dim).__name__})."
+        )
+    if not row_dim.is_homogeneous():
+        raise ValueError(
+            "Tensor scatter requires the first HilbertSpace to be homogeneous."
+        )
+
+    row_basis = cast(tuple[U1Basis, ...], row_dim.elements())
+    if row_basis:
+        try:
+            row_basis[0].irrep_of(Offset)
+        except ValueError as exc:
+            raise ValueError(
+                "Tensor scatter requires the first HilbertSpace to contain Offset irreps."
+            ) from exc
+
+    row_offsets = [basis.irrep_of(Offset) for basis in row_basis]
+    if row_offsets:
+        coords = np.stack(
+            [offset.to_vec(np.ndarray).reshape(-1) for offset in row_offsets]
+        )
+        spatial_dim = coords.shape[1]
+    else:
+        coords = np.empty((0, 0), dtype=float)
+        spatial_dim = 0
+    if spatial_dim not in (1, 2, 3):
+        raise ValueError(
+            "Tensor scatter only supports Offset coordinates of dimension 1, 2, or 3; "
+            f"got {spatial_dim}."
+        )
+
+    tensor = obj.data.detach().cpu()
+    if not tensor.is_complex():
+        tensor = tensor.to(torch.complex128)
+    tensor_np = tensor.numpy()
+
+    n_columns = tensor_np.shape[1]
+    nrows, ncols_actual = _subplot_grid(n_columns, ncols=ncols)
+    figsize = kwargs.pop("figsize", (5 * ncols_actual, 4 * nrows))
+    column_labels = [_column_label(col_dim, j) for j in range(n_columns)]
+
+    subplot_kwargs: dict[str, Any] = {"figsize": figsize, "squeeze": False}
+    if spatial_dim == 3:
+        subplot_kwargs["subplot_kw"] = {"projection": "3d"}
+
+    fig, axes = plt.subplots(nrows, ncols_actual, **subplot_kwargs)
+    fig.suptitle(title)
+
+    max_mag = float(np.abs(tensor_np).max()) if tensor_np.size > 0 else 0.0
+    for j in range(n_columns):
+        ax = axes[j // ncols_actual, j % ncols_actual]
+        column = tensor_np[:, j]
+        magnitudes = np.abs(column)
+        if max_mag > 0:
+            sizes = default_size * magnitudes / max_mag
+        else:
+            sizes = np.full_like(magnitudes, fill_value=default_size, dtype=float)
+        colors = _complex_phase_colors(column)
+
+        if spatial_dim == 3:
+            cast(Any, ax).scatter(
+                coords[:, 0], coords[:, 1], coords[:, 2], s=sizes, c=colors
+            )
+            cast(Any, ax).set_zlabel("Z")
+        else:
+            y = coords[:, 1] if spatial_dim == 2 else np.zeros(coords.shape[0])
+            ax.scatter(coords[:, 0], y, s=sizes, c=colors)
+            if spatial_dim == 2:
+                ax.set_aspect("equal")
+
+        ax.set_title(column_labels[j])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.grid(True, alpha=0.2)
+
+    for j in range(n_columns, nrows * ncols_actual):
+        axes[j // ncols_actual, j % ncols_actual].set_visible(False)
+
+    fig.tight_layout()
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
 

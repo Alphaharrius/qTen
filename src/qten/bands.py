@@ -81,18 +81,19 @@ def bandaffine(
     def build_transform(space: HilbertSpace) -> Tensor:
         fractional = FuncOpr(Offset, Offset.fractional)
         new_space = cast(HilbertSpace, fractional @ t @ space)
-        bloch_transform: Tensor = cast(Tensor, space.cross_gram(new_space)).h(
-            -2, -1
-        )  # (B', B)
         # The transformation will distort the unit-cell of the Hilbert space,
         # we will use fractional to return it to the original unit-cell.
         if not space.same_rays(new_space):
             raise ValueError(
                 f"Hilbert space {space} is not symmetric under the transform {t}!"
             )
-        left_fourier = fourier_transform(kspace, space, space)  # (K, B, B'=B)
+        bloch_transform = cast(Tensor, space.cross_gram(new_space)).h(-2, -1)
+        bloch_transform = bloch_transform.replace_dim(0, new_space)  # (B', B)
+        left_fourier = fourier_transform(kspace, space, new_space)  # (K, B, B')
         right_fourier = fourier_transform(kspace, space, space)  # (K, B, B)
-        # (K, B, B'=B) @ (B'=B, B) @ (B, B)
+        # Keep the transformed unit-cell labels explicit on the region leg so
+        # StateSpace auto-alignment does not erase the site permutation.
+        # (K, B, B') @ (B', B) @ (B, B)
         transform = (
             left_fourier @ bloch_transform @ right_fourier.h(-2, -1)
         )  # (K, B, B)

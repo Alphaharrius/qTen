@@ -209,6 +209,31 @@ def test_affine_transform_eigenfunction_phase():
     assert out == f
 
 
+def test_affine_transform_abelian_basis_ignores_offset():
+    x = sy.symbols("x")
+    space, _ = _space_and_offset(1)
+    irrep = ImmutableDenseMatrix([[-1]])
+    t0 = AffineTransform(
+        irrep=irrep,
+        axes=(x,),
+        offset=Offset(rep=ImmutableDenseMatrix([0]), space=space),
+        basis_function_order=1,
+    )
+    t1 = AffineTransform(
+        irrep=irrep,
+        axes=(x,),
+        offset=Offset(rep=ImmutableDenseMatrix([7]), space=space),
+        basis_function_order=1,
+    )
+    f = AbelianBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
+
+    gauge0, out0 = _split_result(t0(f))
+    gauge1, out1 = _split_result(t1(f))
+
+    assert gauge0 == gauge1 == -1
+    assert out0 == out1 == f
+
+
 def test_affine_transform_non_eigenfunction_raises():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
@@ -395,6 +420,65 @@ def test_affine_transform_with_origin_at_fixed_point_keeps_origin_fixed():
     result_prime = _transformed(t_prime, target_prime)
     result = Offset(rep=result_prime.rep + origin.rep, space=space)
     assert result.rep == origin.rep
+
+
+def test_affine_transform_fixpoint_at_makes_target_offset_invariant():
+    x, y = sy.symbols("x y")
+    space, _ = _space_and_offset(2)
+    t = AffineTransform(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
+        basis_function_order=1,
+    )
+    fixed_point = Offset(rep=ImmutableDenseMatrix([2, -1]), space=space)
+
+    t_fixed = t.fixpoint_at(fixed_point)
+    result = _transformed(t_fixed, fixed_point)
+
+    assert result.rep == fixed_point.rep
+    assert result.space == fixed_point.space
+
+
+def test_affine_transform_fixpoint_at_default_rebases_point_to_transform_base():
+    x, y = sy.symbols("x y")
+    space, _ = _space_and_offset(2)
+    other_space = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    t = AffineTransform(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
+        basis_function_order=1,
+    )
+    fixed_point_other = Offset(rep=ImmutableDenseMatrix([1, -2]), space=other_space)
+
+    t_fixed = t.fixpoint_at(fixed_point_other)
+    fixed_point_base = fixed_point_other.rebase(space)
+    result = _transformed(t_fixed, fixed_point_base)
+
+    assert t_fixed.base() == space
+    assert result.rep == fixed_point_base.rep
+    assert result.space == space
+
+
+def test_affine_transform_fixpoint_at_rebase_true_rebases_transform_to_point_space():
+    x, y = sy.symbols("x y")
+    space, _ = _space_and_offset(2)
+    other_space = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    t = AffineTransform(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
+        basis_function_order=1,
+    )
+    fixed_point_other = Offset(rep=ImmutableDenseMatrix([1, -2]), space=other_space)
+
+    t_fixed = t.fixpoint_at(fixed_point_other, rebase=True)
+    result = _transformed(t_fixed, fixed_point_other)
+
+    assert t_fixed.base() == other_space
+    assert result.rep == fixed_point_other.rep
+    assert result.space == other_space
 
 
 def test_affine_group_element_order_c3_c4():

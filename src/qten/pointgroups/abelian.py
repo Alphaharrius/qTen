@@ -369,6 +369,55 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
             basis_function_order=t.basis_function_order,
         )
 
+    def fixpoint_at(self, r: Offset, rebase: bool = False) -> "AffineTransform":
+        """
+        Return a transform with the same linear part whose invariant fixed point is `r`.
+
+        For the affine action `x -> R x + t`, requiring `r` to be fixed means
+        `R r + t = r`, so the translation must be `t = (I - R) r`.
+
+        Parameters
+        ----------
+        `r` : `Offset`
+            Desired fixed point.
+        `rebase` : `bool`, default `False`
+            Base-handling mode when `r.space` differs from this transform's base:
+            if `False`, rebase `r` to this transform's base and keep the
+            returned transform in its current base; if `True`, rebase the
+            transform to `r.space` and return the result there.
+
+        Returns
+        -------
+        `AffineTransform`
+            A new affine transform with the same linear part and with `r` as an
+            invariant point.
+        """
+        t = self.rebase(r.space) if rebase and r.space != self.offset.space else self
+        r_target = r if t.offset.space == r.space else r.rebase(t.offset.space)
+
+        irrep = t.irrep
+        if not isinstance(irrep, sy.ImmutableDenseMatrix):
+            irrep = sy.ImmutableDenseMatrix(irrep)
+
+        r_rep = r_target.rep
+        if not isinstance(r_rep, sy.ImmutableDenseMatrix):
+            r_rep = sy.ImmutableDenseMatrix(r_rep)
+
+        ident = sy.eye(irrep.rows)
+        if not isinstance(ident, sy.ImmutableDenseMatrix):
+            ident = sy.ImmutableDenseMatrix(ident)
+
+        fixed_offset = Offset(
+            rep=sy.ImmutableDenseMatrix((ident - irrep) @ r_rep),
+            space=t.offset.space,
+        )
+        return AffineTransform(
+            irrep=irrep,
+            axes=t.axes,
+            offset=fixed_offset,
+            basis_function_order=t.basis_function_order,
+        )
+
     @lru_cache
     def group_elements(self, max_order: int = 128) -> Tuple["AffineTransform", ...]:
         """
@@ -462,16 +511,19 @@ class AffineTransform(Opr, HasBase[AffineSpace]):
 @AffineTransform.register(AbelianBasis)
 def _(t: AffineTransform, f: AbelianBasis) -> Multiple[AbelianBasis]:
     """
-    Apply an affine group element to a basis function and extract its phase factor.
+    Apply the linear part of an affine group element to a basis function and extract
+    its phase factor.
 
-    This treats the affine group element as a linear operator on the monomial basis
-    of order `f.order`. The result of applying the representation to `f.rep`
-    (the coefficient vector of `f` in that basis) must be a scalar multiple of the
-    original vector for `f` to be an eigenfunction of the transform. When that holds,
-    the scalar is the phase factor and we return it together with the original
-    function `f` (the basis function itself does not change, only its phase).
+    For `AbelianBasis`, the translation `offset` is intentionally ignored. Only
+    the linear representation `irrep` acts on the polynomial basis coefficients.
+    The result of applying that representation to `f.rep` (the coefficient vector
+    of `f` in the monomial basis) must be a scalar multiple of the original vector
+    for `f` to be an eigenfunction of the transform. When that holds, the scalar is
+    the phase factor and we return it together with the original function `f`
+    (the basis function itself does not change, only its phase).
 
     The procedure is as follows:
+    - Replace `t` by a zero-translation transform with the same `irrep` and axes.
     - Compute `transformed_rep = t.rep @ f.rep`.
     - If `transformed_rep == phase * f.rep` for a single scalar `phase`, then
       `f` is a basis function for this transform and `phase` is returned.
@@ -501,13 +553,16 @@ def _(t: AffineTransform, f: AbelianBasis) -> Multiple[AbelianBasis]:
             f"Axes of AbelianGroup and PointGroupBasis must match: {t.axes} != {f.axes}"
         )
 
-    if t.basis_function_order != f.order:
-        t = AffineTransform(
-            irrep=t.irrep,
-            axes=t.axes,
-            offset=t.offset,
-            basis_function_order=f.order,
-        )
+    zero_offset = Offset(
+        rep=sy.ImmutableDenseMatrix([0] * t.offset.space.dim),
+        space=t.offset.space,
+    )
+    t = AffineTransform(
+        irrep=t.irrep,
+        axes=t.axes,
+        offset=zero_offset,
+        basis_function_order=f.order,
+    )
 
     g_irrep = t.rep
     basis_rep = f.rep
