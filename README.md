@@ -205,7 +205,7 @@ h_k = F @ h_real @ F.h(1, 2)
 print(h_k.dims[0])  # MomentumSpace(...)
 ```
 
-## AffineTransform Examples
+## AbelianOpr Examples
 
 You can construct affine symmetries directly or use the point-group query helper.
 
@@ -215,17 +215,18 @@ You can construct affine symmetries directly or use the point-group query helper
 import sympy as sy
 
 from qten.geometries import AffineSpace, Offset
-from qten.pointgroups import AffineTransform
+from qten.pointgroups import AbelianGroup, AbelianOpr
 
 x, y = sy.symbols("x y")
 space = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(2))
 shift = Offset(rep=sy.ImmutableDenseMatrix([1, 0]), space=space)
 
-t = AffineTransform(
-    irrep=sy.ImmutableDenseMatrix([[0, -1], [1, 0]]),
-    axes=(x, y),
+t = AbelianOpr(
+    g=AbelianGroup(
+        irrep=sy.ImmutableDenseMatrix([[0, -1], [1, 0]]),
+        axes=(x, y),
+    ),
     offset=shift,
-    basis_function_order=1,
 )
 
 print(t.affine_rep)
@@ -236,8 +237,8 @@ print(t.affine_rep)
 ```python
 from qten.pointgroups import pointgroup
 
-c4 = pointgroup("c4-xy:xy-o1")
-mirror = pointgroup("m-xy:x-o1")
+c4 = pointgroup("c4-xy:xy")
+mirror = pointgroup("m-xy:x")
 
 print(c4.irrep)
 print(mirror.irrep)
@@ -250,17 +251,18 @@ import sympy as sy
 from sympy import ImmutableDenseMatrix
 
 from qten.geometries import AffineSpace, Offset
-from qten.pointgroups import AbelianBasis, AffineTransform
+from qten.pointgroups import AbelianBasis, AbelianGroup, AbelianOpr
 
 x = sy.symbols("x")
 space = AffineSpace(basis=ImmutableDenseMatrix.eye(1))
 origin = Offset(rep=ImmutableDenseMatrix([0]), space=space)
 
-parity = AffineTransform(
-    irrep=ImmutableDenseMatrix([[-1]]),
-    axes=(x,),
+parity = AbelianOpr(
+    g=AbelianGroup(
+        irrep=ImmutableDenseMatrix([[-1]]),
+        axes=(x,),
+    ),
     offset=origin,
-    basis_function_order=1,
 )
 
 f = AbelianBasis(
@@ -275,29 +277,24 @@ print(phase)        # -1
 print(transformed)  # AbelianBasis(x)
 ```
 
-### 4. Build `AbelianBasis` Directly From An `AffineTransform`
+### 4. Build `AbelianBasis` Directly From An `AbelianGroup`
 
-`AffineTransform.basis` computes eigen-basis functions of the polynomial representation and returns them as a mapping from eigenvalue to `AbelianBasis`.
+`AbelianGroup.basis(order)` computes eigen-basis functions of the polynomial representation and returns them as a mapping from eigenvalue to `AbelianBasis`.
 
 ```python
 import sympy as sy
 from sympy import ImmutableDenseMatrix
 
-from qten.geometries import AffineSpace, Offset
-from qten.pointgroups import AffineTransform
+from qten.pointgroups import AbelianGroup
 
 x, y = sy.symbols("x y")
-space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
-origin = Offset(rep=ImmutableDenseMatrix([0, 0]), space=space)
 
-mirror = AffineTransform(
+mirror = AbelianGroup(
     irrep=ImmutableDenseMatrix([[1, 0], [0, -1]]),
     axes=(x, y),
-    offset=origin,
-    basis_function_order=1,
 )
 
-eigen_basis = mirror.basis
+eigen_basis = mirror.basis(1)
 even = eigen_basis[1]
 odd = eigen_basis[-1]
 
@@ -307,7 +304,7 @@ print(even.expr) # x
 print(odd.expr)  # y
 ```
 
-## `bandfold` And `bandaffine`
+## `bandfold` And `bandtransform`
 
 These helpers work on rank-3 tensors with dims `(MomentumSpace, HilbertSpace, HilbertSpace)`.
 
@@ -350,7 +347,19 @@ for n in range(k_space.dim):
 h_k = qten.Tensor(data=data, dims=(k_space, band_space, band_space))
 ```
 
-### 2. Apply A Symmetry With `bandaffine`
+### 2. Apply `bandtransform`
+
+`bandtransform` accepts an `Opr`, but not every `Opr` is valid. The operator
+must act coherently on:
+
+- `Momentum`, so each k-point can be relabeled under the transform.
+- `U1Basis`, in particular on the `Offset` irrep carried by each Bloch basis state.
+- The real-space and momentum labels in a mutually compatible way, so the
+  Fourier transform remains valid after the action.
+
+In addition, the transformed Hilbert space must close back onto the original
+band space after offset fractionalization. If the transform sends the basis to
+states outside the original ray structure, `bandtransform` raises `ValueError`.
 
 ```python
 from dataclasses import dataclass
@@ -359,9 +368,9 @@ import sympy as sy
 import torch
 
 import qten
-from qten.bands import bandaffine
+from qten.bands import bandtransform
 from qten.geometries import Lattice, Offset, PeriodicBoundary
-from qten.pointgroups import AffineTransform
+from qten.pointgroups import AbelianOpr
 from qten.symbolics import HilbertSpace, U1Basis, brillouin_zone
 
 
@@ -391,14 +400,14 @@ for n in range(k_space.dim):
 h_k = qten.Tensor(data=data, dims=(k_space, band_space, band_space))
 
 x, y = sy.symbols("x y")
-c4 = AffineTransform(
+c4 = AbelianOpr(
     irrep=sy.ImmutableDenseMatrix([[0, -1], [1, 0]]),
     axes=(x, y),
     offset=Offset(rep=sy.ImmutableDenseMatrix([0, 0]), space=lattice.affine),
     basis_function_order=1,
 )
 
-h_k_rot = bandaffine(c4, h_k, opt="both")
+h_k_rot = bandtransform(c4, h_k, opt="both")
 print(h_k_rot.data.shape)
 ```
 

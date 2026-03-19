@@ -15,38 +15,59 @@ from .linalg.tensors import Tensor, mapping_matrix
 from .geometries.spatials import ReciprocalLattice
 from .geometries.basis_transform import BasisTransform
 from .geometries.fourier import fourier_transform
-from .pointgroups.abelian import AffineTransform
+from .symbolics.hilbert_space import Opr
 from .utils.collections_ext import matchby
 
 
-def bandaffine(
-    t: AffineTransform,
+def bandtransform(
+    t: Opr,
     tensor: Tensor,
     opt: Literal["left", "right", "both"] = "both",
 ) -> Tensor:
     """
-    Apply an affine symmetry action to a momentum-resolved operator tensor.
+    Apply a basis transform to a momentum-resolved operator tensor.
 
     The expected tensor shape is `(K, B_left, B_right)` where `K` is a
     `MomentumSpace` and `B_left`, `B_right` are `HilbertSpace`s. Depending on
-    `opt`, this function applies the symmetry-induced basis transform on the
+    `opt`, this function applies the operator-induced basis transform on the
     left side, right side, or both sides of the band tensor.
 
     For each transformed side, a k-dependent matrix is built from:
-    - the affine action on the Hilbert space basis (`t(space)`), and
+    - the action of `t` on the Hilbert-space basis (`t(space)`), and
     - Fourier transforms that connect Bloch and real-space sectors.
 
     Momentum handling:
-    - The k action is treated as a relabeling/permutation of sectors.
+    - The action on `Momentum` is treated as a relabeling/permutation of sectors.
     - We align the k-axis of the transform tensors to the canonical `kspace`
       ordering before multiplication.
     - The input tensor itself is not pre-remapped in k; remapping is used only
       to align transform blocks with each momentum sector.
 
+    Notes
+    -----
+    This function accepts a general `Opr`, but not every `Opr` is valid here.
+    In practice, `t` must act coherently across the real-space and
+    momentum-space labels carried by the tensor:
+
+    - `t @ k` must be defined for each `Momentum` in the first tensor axis.
+    - `t @ psi` must be defined for each `U1Basis` in the Hilbert-space axes,
+      in particular for the `Offset` irrep stored inside each basis state.
+    - The Hilbert-space action and momentum action must be dual-compatible, so
+      that the Fourier transform remains consistent after applying `t`.
+    - After applying `FuncOpr(Offset, Offset.fractional)`, the transformed
+      Hilbert space must have the same rays as the original one; otherwise the
+      transformed basis does not close on the input band space and this
+      function raises `ValueError`.
+
+    Operators that only act on abstract `U1Basis` values or only on `Momentum`
+    values are not sufficient. The operator must provide matching actions on
+    site offsets and crystal momentum.
+
     Parameters
     ----------
-    `t` : `AffineTransform`
-        Affine transformation to apply.
+    `t` : `Opr`
+        Operator to apply. It must satisfy the compatibility conditions
+        described in the notes below.
     `tensor` : `Tensor`
         Momentum-space tensor with dims
         `(MomentumSpace, HilbertSpace, HilbertSpace)`.
@@ -63,10 +84,10 @@ def bandaffine(
     `ValueError`
         If `opt` is invalid, if `tensor` is not rank-3 with dims
         `(MomentumSpace, HilbertSpace, HilbertSpace)`, or if a Hilbert space
-        side is not symmetry-compatible with `t`.
+        side is not closed under the action of `t`.
     """
     if opt not in ("both", "left", "right"):
-        raise ValueError(f"Invalid option {opt} for bandaffine!")
+        raise ValueError(f"Invalid option {opt} for bandtransform!")
     if not len(tensor.dims) == 3:
         raise ValueError("Input tensor must have exactly 3 dimensions.")
     if not isinstance(tensor.dims[0], MomentumSpace):
@@ -85,7 +106,7 @@ def bandaffine(
         # we will use fractional to return it to the original unit-cell.
         if not space.same_rays(new_space):
             raise ValueError(
-                f"Hilbert space {space} is not symmetric under the transform {t}!"
+                f"Hilbert space {space} is not closed under the transform {t}!"
             )
         bloch_transform = cast(Tensor, space.cross_gram(new_space)).h(-2, -1)
         left_fourier = fourier_transform(kspace, space, space)  # (K, B, B')

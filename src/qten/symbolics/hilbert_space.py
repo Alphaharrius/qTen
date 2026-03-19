@@ -1347,7 +1347,7 @@ class ComposedOpr(Opr):
     Examples
     --------
     If `fractional = FuncOpr(Offset, Offset.fractional)` and `t` is an
-    `AffineTransform`, then:
+    `AbelianOpr`, then:
 
     - `fractional @ t @ space`
 

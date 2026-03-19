@@ -2,12 +2,11 @@ import re
 
 import sympy as sy
 
-from .abelian import AffineTransform
-from ..geometries.spatials import AffineSpace, Offset
+from .abelian import AbelianGroup
 
 
 _AFFINE_QUERY_RE = re.compile(
-    r"^(?P<group>c\d+|m)-(?P<ambient>[xyz]+):(?P<target>[xyz]+)-o(?P<order>\d+)$"
+    r"^(?P<group>c\d+|m)-(?P<ambient>[xyz]+):(?P<target>[xyz]+)$"
 )
 
 
@@ -15,17 +14,13 @@ def _parse_affine_query(query: str):
     match = _AFFINE_QUERY_RE.fullmatch(query.strip())
     if match is None:
         raise ValueError(
-            "Invalid query format. Expected '<group>-<ambient>:<target>-o<order>', "
-            "for example 'c3-xy:xy-o2'."
+            "Invalid query format. Expected '<group>-<ambient>:<target>', "
+            "for example 'c3-xy:xy'."
         )
 
     group = match.group("group")
     ambient = match.group("ambient")
     target = match.group("target")
-    order = int(match.group("order"))
-
-    if order <= 0:
-        raise ValueError("Basis function order must be a positive integer.")
 
     if len(set(ambient)) != len(ambient):
         raise ValueError(f"Ambient axes must be unique, got '{ambient}'.")
@@ -36,7 +31,7 @@ def _parse_affine_query(query: str):
             f"Target axes '{target}' must be a subset of ambient axes '{ambient}'."
         )
 
-    return group, ambient, target, order
+    return group, ambient, target
 
 
 def _build_cyclic_irrep(n: int, ambient: str, target: str) -> sy.ImmutableDenseMatrix:
@@ -90,7 +85,7 @@ def _build_mirror_irrep(ambient: str, target: str) -> sy.ImmutableDenseMatrix:
     if dim == 1:
         if len(target) != 1 or target != ambient:
             raise ValueError(
-                "In 1D, mirror target must match ambient axis (e.g. 'm-x:x-o1')."
+                "In 1D, mirror target must match ambient axis (e.g. 'm-x:x')."
             )
         return sy.ImmutableDenseMatrix([[-1]])
 
@@ -117,9 +112,9 @@ def _build_mirror_irrep(ambient: str, target: str) -> sy.ImmutableDenseMatrix:
     return sy.ImmutableDenseMatrix(mutable)
 
 
-def pointgroup(query: str) -> AffineTransform:
+def pointgroup(query: str) -> AbelianGroup:
     """
-    Build an `AffineTransform` from a compact query string.
+    Build an `AbelianGroup` from a compact query string.
 
     This is a user-facing constructor for common point operations in Cartesian
     axes (`x`, `y`, `z`), currently supporting cyclic rotations and mirrors.
@@ -130,7 +125,7 @@ def pointgroup(query: str) -> AffineTransform:
     -------------
     The accepted format is:
 
-    `"<group>-<ambient>:<target>-o<order>"`
+    `"<group>-<ambient>:<target>"`
 
     where:
     - `<group>` is:
@@ -140,7 +135,6 @@ def pointgroup(query: str) -> AffineTransform:
       defining the space dimension and basis-axis order in the returned transform.
       Examples: `x`, `xy`, `xyz`, `yzx`.
     - `<target>` chooses where the group action lives (must be subset of ambient).
-    - `<order>` is the polynomial basis-function order for `AffineTransform`.
 
     Group semantics
     ---------------
@@ -148,12 +142,12 @@ def pointgroup(query: str) -> AffineTransform:
     - Always interpreted as a 2D rotation block with angle `2*pi/n`.
     - `<target>` must have exactly 2 axes, defining the rotation plane.
     - In 2D ambient, `<target>` must use the same two axes as ambient.
-      Example: `c3-xy:xy-o2` is valid, `c3-xy:xz-o2` is invalid.
+      Example: `c3-xy:xy` is valid, `c3-xy:xz` is invalid.
     - Target order controls orientation:
-      - `c3-xy:xy-o2` and `c3-xy:yx-o2` act on the same plane,
+      - `c3-xy:xy` and `c3-xy:yx` act on the same plane,
       - the second is the inverse orientation of the first.
     - In 3D ambient, the remaining axis is unchanged.
-      Example: `c6-xyz:yz-o2` rotates in the `yz` plane, keeps `x` fixed.
+      Example: `c6-xyz:yz` rotates in the `yz` plane, keeps `x` fixed.
 
     Mirror (`m`)
     - 1D (`ambient` length 1):
@@ -161,57 +155,54 @@ def pointgroup(query: str) -> AffineTransform:
       - action is sign flip in 1D (`x -> -x`).
     - 2D (`ambient` length 2):
       - `<target>` must have exactly 1 axis and denotes the fixed axis.
-      - Example: `m-xy:y-o1` mirrors about the y-axis (`x -> -x`, `y -> y`).
+      - Example: `m-xy:y` mirrors about the y-axis (`x -> -x`, `y -> y`).
     - 3D (`ambient` length 3):
       - `<target>` must have exactly 2 axes and denotes the fixed plane.
-      - Example: `m-xyz:yz-o1` mirrors about the yz-plane (`x -> -x`).
+      - Example: `m-xyz:yz` mirrors about the yz-plane (`x -> -x`).
 
     Validation rules
     ----------------
     - `ambient` and `target` cannot contain repeated axis letters.
     - `target` must be a subset of `ambient`.
-    - `order` must be a positive integer.
     - Invalid dimensional/group combinations raise `ValueError`.
 
     Return value
     ------------
-    Returns an `AffineTransform` with:
+    Returns an `AbelianGroup` with:
     - `irrep`: the linear matrix representation from query semantics,
-    - `axes`: symbols in ambient order,
-    - `offset`: zero offset in the identity lattice,
-    - `basis_function_order`: parsed `<order>`.
+    - `axes`: symbols in ambient order.
 
     Examples
     --------
     Cyclic, 2D:
-    - `pointgroup("c6-xy:xy-o2")`:
+    - `pointgroup("c6-xy:xy")`:
       60-degree rotation in `xy`.
-    - `pointgroup("c6-xy:yx-o2")`:
+    - `pointgroup("c6-xy:yx")`:
       inverse orientation of the same `c6`.
 
     Cyclic, 3D:
-    - `pointgroup("c6-xyz:yz-o2")`:
+    - `pointgroup("c6-xyz:yz")`:
       rotate `yz` by 60 degrees, keep `x` fixed.
 
     Mirror, 1D:
-    - `pointgroup("m-x:x-o1")`:
+    - `pointgroup("m-x:x")`:
       reflection in 1D (`x -> -x`).
 
     Mirror, 2D:
-    - `pointgroup("m-xy:y-o2")`:
+    - `pointgroup("m-xy:y")`:
       mirror about y-axis (`x -> -x`, `y -> y`).
-    - `pointgroup("m-xy:x-o2")`:
+    - `pointgroup("m-xy:x")`:
       mirror about x-axis (`x -> x`, `y -> -y`).
 
     Mirror, 3D:
-    - `pointgroup("m-xyz:yz-o1")`:
+    - `pointgroup("m-xyz:yz")`:
       mirror about yz-plane (`x -> -x`).
-    - `pointgroup("m-xyz:xz-o1")`:
+    - `pointgroup("m-xyz:xz")`:
       mirror about xz-plane (`y -> -y`).
-    - `pointgroup("m-xyz:xy-o1")`:
+    - `pointgroup("m-xyz:xy")`:
       mirror about xy-plane (`z -> -z`).
     """
-    group, ambient, target, basis_order = _parse_affine_query(query)
+    group, ambient, target = _parse_affine_query(query)
 
     axes_symbols = {
         "x": sy.Symbol("x"),
@@ -219,8 +210,6 @@ def pointgroup(query: str) -> AffineTransform:
         "z": sy.Symbol("z"),
     }
     axes = tuple(axes_symbols[c] for c in ambient)
-    dim = len(axes)
-
     if group.startswith("c"):
         n = int(group[1:])
         irrep = _build_cyclic_irrep(n=n, ambient=ambient, target=target)
@@ -231,11 +220,4 @@ def pointgroup(query: str) -> AffineTransform:
             f"Unsupported group '{group}'. Supported groups are cyclic and mirror."
         )
 
-    space = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(dim))
-    zero = Offset(rep=sy.ImmutableDenseMatrix([0] * dim), space=space)
-    return AffineTransform(
-        irrep=irrep,
-        axes=axes,
-        offset=zero,
-        basis_function_order=basis_order,
-    )
+    return AbelianGroup(irrep=irrep, axes=axes)
