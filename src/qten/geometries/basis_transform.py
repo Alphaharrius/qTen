@@ -78,8 +78,7 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
             new_frac = M_inv @ (atom_vec + k)
             new_frac = new_frac.applyfunc(lambda x: x - sy.floor(x))
 
-            # Lattice.unit_cell expects Cartesian offsets, not fractional reps.
-            new_offset = ImmutableDenseMatrix(new_basis @ new_frac)
+            new_offset = ImmutableDenseMatrix(new_frac)
 
             new_label = f"{label}_{i}" if len(shifts) > 1 else label
             new_unit_cell[new_label] = new_offset

@@ -133,10 +133,8 @@ def test_lattice_basis_vectors_use_affine_space_when_not_lattice_sites():
         basis=triangular,
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
         unit_cell={
-            "a": triangular
-            @ ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
-            "b": triangular
-            @ ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+            "a": ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
         },
     )
 
