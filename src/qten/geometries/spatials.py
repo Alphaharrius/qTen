@@ -128,9 +128,7 @@ class Lattice(AbstractLattice["Offset"]):
             Boundary condition defining the periodic region. If omitted,
             `shape` is used to build a `PeriodicBoundary`.
         `unit_cell` : `Mapping[str, ImmutableDenseMatrix] | None`
-            Mapping from site labels to site positions in Cartesian coordinates.
-            Positions are converted and stored internally in fractional
-            coordinates.
+            Mapping from site labels to site positions in fractional coordinates.
         `shape` : `Sequence[int] | None`
             Legacy shorthand for a diagonal periodic boundary.
         """
@@ -166,7 +164,6 @@ class Lattice(AbstractLattice["Offset"]):
             )
 
         processed_cell: dict[str, ImmutableDenseMatrix] = {}
-        basis_inverse = self.basis.inv()
         for site, offset in unit_cell.items():
             if not isinstance(offset, ImmutableDenseMatrix):
                 raise TypeError(
@@ -179,9 +176,7 @@ class Lattice(AbstractLattice["Offset"]):
                     raise ValueError(
                         f"unit_cell['{site}'] has shape {offset.shape}; expected ({self.dim}, 1)."
                     ) from e
-            fractional_offset = basis_inverse @ offset
-            fractional_offset = ImmutableDenseMatrix(fractional_offset)
-            processed_cell[site] = fractional_offset
+            processed_cell[site] = offset
         object.__setattr__(self, "_unit_cell_fractional", FrozenDict(processed_cell))
 
     @property

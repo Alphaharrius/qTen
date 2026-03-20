@@ -897,10 +897,8 @@ def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
     honeycomb = Lattice(
         basis=triangular,
         unit_cell={
-            "a": triangular
-            @ ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
-            "b": triangular
-            @ ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+            "a": ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
         },
         shape=(12, 12),
     )
