@@ -8,6 +8,7 @@ from .linalg.tensors import (
     allclose as allclose,
     argmax as argmax,
     argmin as argmin,
+    abs as abs,
     astype as astype,
     conj as conj,
     equal as equal,
@@ -20,10 +21,13 @@ from .linalg.tensors import (
     mean as mean,
     nonzero as nonzero,
     one_hot as one_hot,
+    imag as imag,
+    isclose as isclose,
     ones as ones,
     permute as permute,
     product_dims as product_dims,
     promote_rank as promote_rank,
+    real as real,
     rank as rank,
     replace_dim as replace_dim,
     squeeze as squeeze,
@@ -33,8 +37,6 @@ from .linalg.tensors import (
     where as where,
     zeros as zeros,
 )
-
-from .geometries.fourier import fourier_transform as fourier_transform
 
 from .utils.devices import Device as Device
 from .utils import io as io

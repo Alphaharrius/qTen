@@ -2,6 +2,7 @@ from typing import (
     Self,
     NamedTuple,
     Tuple,
+    Type,
     TypeVar,
     Generic,
     Union,
@@ -12,6 +13,7 @@ from typing import (
     Optional,
     Callable,
     TypeAlias,
+    get_origin,
 )
 from typing_extensions import override
 from functools import wraps, reduce
@@ -65,6 +67,145 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
 @need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
 class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
+    """
+    StateSpace-aware tensor wrapper over `torch.Tensor`.
+
+    A `Tensor` pairs raw tensor data with symbolic axis metadata in `dims`.
+    Each entry of `dims` is a `StateSpace` whose size must match the
+    corresponding axis of `data`. This lets tensor operations preserve not only
+    shapes, but also the semantic identity and ordering of axes.
+
+    Core model
+    ----------
+    - `data` stores the underlying numeric values as a `torch.Tensor`.
+    - `dims` stores one `StateSpace` per axis.
+    - `tensor.data.shape` must equal `tuple(dim.dim for dim in tensor.dims)`.
+    - Axes are aligned by `StateSpace` compatibility rather than by position
+      alone. If two axes represent the same rays in different orders, QTen can
+      permute one operand to match the other.
+    - Singleton broadcast axes are represented symbolically by
+      `BroadcastSpace()`.
+
+    Construction
+    ------------
+    Create tensors directly from a torch tensor and a matching dims tuple:
+
+    `Tensor(data=torch.randn(2, 3), dims=(left_space, right_space))`
+
+    Use `Tensor.scalar(number)` to construct a rank-0 tensor.
+
+    Supported operators
+    -------------------
+    Tensor-Tensor:
+    - `a @ b`: StateSpace-aware matrix multiplication / contraction.
+    - `a + b`: StateSpace union add with metadata-aware alignment.
+    - `a - b`: subtraction.
+    - `a == b`: element-wise equality, returns a bool `Tensor`.
+    - `a < b`, `a <= b`, `a > b`, `a >= b`: element-wise ordered comparisons,
+      return bool `Tensor`s.
+
+    Tensor-Number / Number-Tensor:
+    - `a * c`, `c * a`: element-wise scalar multiplication.
+    - `a / c`: element-wise scalar division.
+    - `a < c`, `a <= c`, `a > c`, `a >= c`: scalar broadcast comparisons.
+    - `c < a`, `c <= a`, `c > a`, `c >= a`: reflected scalar broadcast
+      comparisons.
+
+    Scalar add/sub semantics:
+    - `a + c`, `c + a`, `a - c`, `c - a` treat `a` as a matrix or batch of
+      matrices over its last two axes and add/subtract `c * I` on that matrix
+      part.
+    - These operations therefore require rank at least 2 through `eye(dims)`.
+    - Scalar addition is not element-wise broadcasting.
+
+    Comparison semantics
+    --------------------
+    Comparisons use symmetric StateSpace-aware alignment:
+    - operands are rank-promoted with leading `BroadcastSpace()` axes when
+      needed,
+    - dims are merged with `union_dims(..., allow_merge=False)`,
+    - operands are aligned to the merged dims,
+    - runtime broadcast compatibility is validated,
+    - the result is a bool `Tensor` with those merged dims.
+
+    Ordered comparisons on complex tensors are not supported and defer to
+    PyTorch's runtime error behavior.
+
+    Shape and axis transforms
+    -------------------------
+    - `permute(*order)`: reorder axes.
+    - `transpose(dim0, dim1)`: swap two axes.
+    - `h(dim0, dim1)`: conjugate transpose across two axes.
+    - `unsqueeze(dim)`: insert a singleton `BroadcastSpace` axis.
+    - `squeeze(dim)`: remove a `BroadcastSpace` axis if present.
+    - `replace_dim(dim, new_dim)`: replace metadata for one axis with size
+      validation.
+    - `factorize_dim(dim, rule)`: split one axis into multiple factor spaces.
+    - `product_dims(*groups)`: combine groups of axes into tensor-product axes.
+    - `promote_rank(tensor, target_rank)`: prepend broadcast axes.
+
+    Alignment and metadata utilities
+    --------------------------------
+    - `align(dim, target_dim)`: align one axis to a compatible `StateSpace`.
+    - `align_all(dims)`: align all axes to a target dims tuple.
+    - `expand_to_union(union_dims)`: materialize data expansion for
+      `BroadcastSpace` axes.
+    - `dim_types()`: return the runtime types of all dims.
+    - `rank()`: return the tensor rank.
+
+    Reductions and element queries
+    ------------------------------
+    - `all(dim=None, keepdim=False)`: logical AND reduction.
+    - `mean(dim=None)`: arithmetic mean reduction.
+    - `argmax(dim)`, `argmin(dim)`: index reductions.
+    - `item()`: extract the Python scalar from a rank-0 tensor.
+    - `equal(other)`: exact equality after metadata alignment, returning
+      Python `bool`.
+    - `allclose(other, ...)`: approximate equality after metadata alignment,
+      returning Python `bool`.
+
+    Boolean-mask helpers
+    --------------------
+    - `where(input, other)`: use this tensor as a bool mask and select between
+      two tensors.
+    - `where()`: return index tensors for `True` entries.
+    - `nonzero(as_tuple=True)`: return index tensors for nonzero / `True`
+      entries.
+
+    Indexing
+    --------
+    `__getitem__` supports:
+    - Python integers, slices, `None`, and `...`,
+    - `StateSpace` / `Convertible` axis selection and reindexing,
+    - `Tensor` advanced indices.
+
+    Tensor advanced indexing is metadata-aware and can align tensor index dims
+    before dispatching to torch indexing. Boolean tensor indices are not
+    supported in `__getitem__`; use comparison masks together with `where` or
+    `nonzero` instead.
+
+    Autograd and devices
+    --------------------
+    - `attach()`: return a leaf tensor with `requires_grad=True`.
+    - `detach()`: detach from autograd without cloning storage.
+    - `clone()`: deep-copy tensor data.
+    - `grad`: wrapped gradient tensor, if available.
+    - `requires_grad`: autograd flag from underlying data.
+    - `backward(...)`: autograd backward pass.
+    - `device`: logical QTen device view of the underlying torch device.
+    - `to_device(device)`: move data to another logical device.
+
+    Factory and module-level companion functions
+    --------------------------------------------
+    The module also exposes helpers that create or operate on `Tensor`:
+    `matmul`, `permute`, `transpose`, `conj`, `unsqueeze`, `squeeze`,
+    `align`, `align_all`, `all`, `mean`, `argmax`, `argmin`, `astype`,
+    `one_hot`, `equal`, `allclose`, `expand_to_union`, `union_dims`,
+    `mapping_matrix`, `eye`, `zeros`, `ones`, `kernel_tensor`,
+    `replace_dim`, `factorize_dim`, `product_dims`, `promote_rank`,
+    `where`, and `nonzero`.
+    """
+
     data: T
     dims: Tuple[StateSpace, ...]
 
@@ -164,6 +305,21 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         return allclose(self, other, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
+    def isclose(
+        self,
+        other: Union["Tensor", Number],
+        rtol: float = 1e-05,
+        atol: float = 1e-08,
+        equal_nan: bool = False,
+    ) -> Self:
+        """
+        Perform element-wise approximate equality comparison.
+
+        This is the mask-producing counterpart to `allclose`: it returns a bool
+        `Tensor` instead of a Python bool.
+        """
+        return isclose(self, other, rtol=rtol, atol=atol, equal_nan=equal_nan)
+
     def conj(self) -> Self:
         """
         Compute the complex conjugate of the given tensor.
@@ -174,6 +330,32 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             The complex conjugate of the tensor.
         """
         return conj(self)
+
+    def real(self) -> Self:
+        """
+        Return the real part of the tensor, preserving dims.
+
+        For complex-valued tensors this drops the imaginary component. For
+        real-valued tensors this returns a tensor with the same values.
+        """
+        return real(self)
+
+    def imag(self) -> Self:
+        """
+        Return the imaginary part of the tensor, preserving dims.
+
+        For complex-valued tensors this returns the imaginary component. For
+        real-valued tensors this returns zeros with the corresponding real dtype.
+        """
+        return imag(self)
+
+    def abs(self) -> Self:
+        """
+        Return the element-wise absolute value / magnitude of the tensor.
+
+        For complex-valued tensors this returns the magnitude.
+        """
+        return abs(self)
 
     def permute(self, *order: Union[int, Sequence[int]]) -> Self:
         """
@@ -290,7 +472,13 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         self,
         input: Optional["Tensor"] = None,
         other: Optional["Tensor"] = None,
-    ) -> Union["Tensor", Tuple["Tensor", ...]]:
+        index_type: Type[Any] = None,
+    ) -> Union[
+        "Tensor",
+        Tuple["Tensor", ...],
+        Tuple[Tuple[int, ...], ...],
+        StateSpace,
+    ]:
         """
         Apply `where` using this tensor as the boolean condition mask.
 
@@ -300,6 +488,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
           elementwise selection between `input` and `other`.
         - `condition.where()`:
           returns index tensors of `True` entries.
+        - `condition.where(index_type=...)`:
+          returns the requested index representation for `True` entries.
 
         Parameters
         ----------
@@ -307,10 +497,13 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             Tensor selected where `condition` is `True`.
         `other` : `Optional[Tensor]`, optional
             Tensor selected where `condition` is `False`.
+        `index_type` : `Type[Any]`, optional
+            Only used for the condition-only form. Supported values are
+            `Tensor`, `tuple` / `Tuple`, and `StateSpace`.
 
         Returns
         -------
-        `Union[Tensor, Tuple[Tensor, ...]]`
+        `Union[Tensor, Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
             Return value depends on call form:
             - For `condition.where(input, other)`, returns a single `Tensor`
               with `dims == union_dims(condition.dims, input.dims, other.dims,
@@ -322,21 +515,37 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
               Each returned tensor has shape `(nnz,)` and
               `dims == (IndexSpace.linear(nnz),)`, where `nnz` is the number of
               `True` entries in `condition`.
+            - For `condition.where(index_type=Tensor)`, returns
+              `Tuple[Tensor, ...]`.
+            - For `condition.where(index_type=tuple)` or `Tuple`, returns one
+              Python coordinate tuple per `True` entry.
+            - For `condition.where(index_type=StateSpace)`, returns the
+              selected subspace for rank-1 conditions only.
 
         Raises
         ------
         `TypeError`
             If only one of `input`/`other` is provided.
         """
+        if index_type is None:
+            index_type = Tensor
         if input is None and other is None:
-            return where(self)
+            return where(self, index_type=index_type)
         if input is None or other is None:
             raise TypeError(
                 "Tensor.where supports either where() or where(input, other)"
             )
+        if index_type is not Tensor:
+            raise TypeError("index_type is only supported for where()")
         return where(self, input, other)
 
-    def nonzero(self, as_tuple: bool = True) -> Tuple["Tensor", ...]:
+    def nonzero(
+        self, as_tuple: bool = True, index_type: Type[Any] = None
+    ) -> Union[
+        Tuple["Tensor", ...],
+        Tuple[Tuple[int, ...], ...],
+        StateSpace,
+    ]:
         """
         Return indices of non-zero / `True` entries for this tensor.
 
@@ -347,18 +556,23 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ----------
         `as_tuple` : `bool`, optional
             Must be `True`.
+        `index_type` : `Type[Any]`, optional
+            Requested index representation. Supported values are `Tensor`,
+            `tuple` / `Tuple`, and `StateSpace`.
 
         Returns
         -------
-        `Tuple[Tensor, ...]`
-            Tuple of 1D index tensors, one per axis.
+        `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+            Index representation selected by `index_type`.
 
         Raises
         ------
         `NotImplementedError`
             If `as_tuple` is `False`.
         """
-        return nonzero(self, as_tuple=as_tuple)
+        if index_type is None:
+            index_type = Tensor
+        return nonzero(self, as_tuple=as_tuple, index_type=index_type)
 
     def unsqueeze(self, dim: int) -> Self:
         """
@@ -996,6 +1210,21 @@ def operator_eq(left: TensorType, right: Tensor) -> TensorType:
     - relies on torch runtime broadcasting for singleton/broadcast-backed axes
     - returns output with `dims == union_dims`
     """
+    return _tensor_comparison_op(left, right, torch.eq)
+
+
+def _tensor_comparison_op(
+    left: TensorType,
+    right: Tensor,
+    op: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+) -> TensorType:
+    """
+    Perform an element-wise comparison between two tensors using symmetric
+    StateSpace-aware alignment and broadcasting.
+    """
+    target_rank = max(left.rank(), right.rank())
+    left = cast(TensorType, promote_rank(left, target_rank))
+    right = promote_rank(right, target_rank)
     merged_dims = union_dims(left.dims, right.dims, allow_merge=False)
     aligned_left = left.align_all(merged_dims)
     aligned_right = right.align_all(merged_dims)
@@ -1017,7 +1246,119 @@ def operator_eq(left: TensorType, right: Tensor) -> TensorType:
             f"merged_dims={_format_dims(merged_dims)}, "
             f"expected_shape={expected_shape}, runtime_shape={tuple(runtime_shape)}"
         )
-    return replace(left, data=aligned_left.data == aligned_right.data, dims=merged_dims)
+    return replace(
+        left, data=op(aligned_left.data, aligned_right.data), dims=merged_dims
+    )
+
+
+def _binary_elementwise_mask_op(
+    left: TensorType,
+    right: Tensor,
+    op: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+) -> TensorType:
+    """
+    Apply a boolean-mask-producing binary tensor op with symmetric StateSpace
+    alignment and broadcasting.
+    """
+    target_rank = max(left.rank(), right.rank())
+    left = cast(TensorType, promote_rank(left, target_rank))
+    right = promote_rank(right, target_rank)
+    merged_dims = union_dims(left.dims, right.dims, allow_merge=False)
+    aligned_left = left.align_all(merged_dims)
+    aligned_right = right.align_all(merged_dims)
+    expected_shape = tuple(dim.dim for dim in merged_dims)
+    try:
+        runtime_shape = torch.broadcast_shapes(
+            aligned_left.data.shape, aligned_right.data.shape
+        )
+    except RuntimeError as e:
+        raise ValueError(
+            "operands are not broadcastable after StateSpace alignment: "
+            f"left_shape={tuple(aligned_left.data.shape)}, "
+            f"right_shape={tuple(aligned_right.data.shape)}, "
+            f"merged_dims={_format_dims(merged_dims)}"
+        ) from e
+    if runtime_shape != expected_shape:
+        raise ValueError(
+            "StateSpace dims do not match runtime broadcast shape: "
+            f"merged_dims={_format_dims(merged_dims)}, "
+            f"expected_shape={expected_shape}, runtime_shape={tuple(runtime_shape)}"
+        )
+    return replace(
+        left, data=op(aligned_left.data, aligned_right.data), dims=merged_dims
+    )
+
+
+@dispatch(Tensor, Tensor)
+def operator_lt(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise less-than comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.lt)
+
+
+@dispatch(Tensor, Tensor)
+def operator_le(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise less-than-or-equal comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.le)
+
+
+@dispatch(Tensor, Tensor)
+def operator_gt(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise greater-than comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.gt)
+
+
+@dispatch(Tensor, Tensor)
+def operator_ge(left: TensorType, right: Tensor) -> TensorType:
+    """Perform element-wise greater-than-or-equal comparison between two tensors."""
+    return _tensor_comparison_op(left, right, torch.ge)
+
+
+@dispatch(Tensor, Number)
+def operator_lt(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise less-than comparison between a tensor and a scalar."""
+    return operator_lt(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_lt(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise less-than comparison between a scalar and a tensor."""
+    return operator_lt(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_le(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise less-than-or-equal comparison between a tensor and a scalar."""
+    return operator_le(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_le(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise less-than-or-equal comparison between a scalar and a tensor."""
+    return operator_le(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_gt(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise greater-than comparison between a tensor and a scalar."""
+    return operator_gt(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_gt(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise greater-than comparison between a scalar and a tensor."""
+    return operator_gt(Tensor.scalar(left), right)
+
+
+@dispatch(Tensor, Number)
+def operator_ge(left: TensorType, right: Number) -> TensorType:
+    """Perform element-wise greater-than-or-equal comparison between a tensor and a scalar."""
+    return operator_ge(left, Tensor.scalar(right))
+
+
+@dispatch(Number, Tensor)
+def operator_ge(left: Number, right: TensorType) -> TensorType:  # type: ignore[no-redef]
+    """Perform element-wise greater-than-or-equal comparison between a scalar and a tensor."""
+    return operator_ge(Tensor.scalar(left), right)
 
 
 @dispatch(Tensor)
@@ -1285,6 +1626,32 @@ def conj(tensor: TensorType) -> TensorType:
         The complex conjugate of the tensor, preserving the input wrapper type.
     """
     return replace(tensor, data=tensor.data.conj())
+
+
+def real(tensor: TensorType) -> TensorType:
+    """
+    Return the real part of a tensor, preserving dims and wrapper type.
+    """
+    return replace(tensor, data=cast(T, tensor.data.real))
+
+
+def imag(tensor: TensorType) -> TensorType:
+    """
+    Return the imaginary part of a tensor, preserving dims and wrapper type.
+
+    For real-valued tensors this is a zero tensor with the corresponding real dtype.
+    """
+    if tensor.data.is_complex():
+        return replace(tensor, data=cast(T, tensor.data.imag))
+    return replace(tensor, data=cast(T, torch.zeros_like(tensor.data)))
+
+
+def abs(tensor: TensorType) -> TensorType:
+    """
+    Return the element-wise absolute value / magnitude of a tensor, preserving
+    dims and wrapper type.
+    """
+    return replace(tensor, data=cast(T, tensor.data.abs()))
 
 
 def unsqueeze(tensor: TensorType, dim: int) -> TensorType:
@@ -1730,6 +2097,31 @@ def allclose(
 
     return torch.allclose(
         a.data, aligned_b.data, rtol=rtol, atol=atol, equal_nan=equal_nan
+    )
+
+
+def isclose(
+    a: TensorType,
+    b: Union[Tensor, Number],
+    rtol: float = 1e-05,
+    atol: float = 1e-08,
+    equal_nan: bool = False,
+) -> TensorType:
+    """
+    Perform element-wise approximate equality comparison with dimension-aware
+    alignment and broadcasting.
+
+    This returns a bool `Tensor` mask, unlike `allclose`, which reduces to a
+    Python bool.
+    """
+    if not isinstance(b, Tensor):
+        b = Tensor.scalar(b)
+    return _binary_elementwise_mask_op(
+        a,
+        b,
+        lambda left, right: torch.isclose(
+            left, right, rtol=rtol, atol=atol, equal_nan=equal_nan
+        ),
     )
 
 
@@ -2333,7 +2725,13 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
 
 
 @dispatch(Tensor)  # type: ignore[no-redef]
-def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
+def where(
+    condition: Tensor[torch.BoolTensor], index_type: Type[Any] = Tensor
+) -> Union[
+    Tuple[Tensor, ...],
+    Tuple[Tuple[int, ...], ...],
+    StateSpace,
+]:
     """
     Return coordinate tensors of `True` entries in a boolean mask.
 
@@ -2354,8 +2752,8 @@ def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
 
     Returns
     -------
-    `Tuple[Tensor, ...]`
-        Tuple of index tensors with length matching `torch.where(condition)`.
+    `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+        Index representation selected by `index_type`.
 
     Raises
     ------
@@ -2365,13 +2763,32 @@ def where(condition: Tensor[torch.BoolTensor]) -> Tuple[Tensor, ...]:
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
 
+    rows = torch.nonzero(condition.data, as_tuple=False)
     indices = torch.where(condition.data)
     nnz = indices[0].numel() if len(indices) > 0 else 0
     index_dim = IndexSpace.linear(nnz)
-    return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    origin = get_origin(index_type)
+    if index_type is Tensor:
+        return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    if index_type is tuple or origin is tuple:
+        return tuple(tuple(int(v) for v in row.tolist()) for row in rows)
+    if index_type is StateSpace:
+        if condition.rank() != 1:
+            raise ValueError(
+                "StateSpace index output is only supported for rank-1 conditions"
+            )
+        selected = [int(row[0].item()) for row in rows]
+        return condition.dims[0][selected]
+    raise TypeError("index_type must be one of Tensor, tuple/Tuple, or StateSpace")
 
 
-def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
+def nonzero(
+    condition: Tensor, as_tuple: bool = True, index_type: Type[Any] = Tensor
+) -> Union[
+    Tuple[Tensor, ...],
+    Tuple[Tuple[int, ...], ...],
+    StateSpace,
+]:
     """
     Return indices of non-zero / `True` entries.
 
@@ -2384,11 +2801,14 @@ def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
         Input tensor.
     `as_tuple` : `bool`, optional
         Must be `True`.
+    `index_type` : `Type[Any]`, optional
+        Requested index representation. Supported values are `Tensor`,
+        `tuple` / `Tuple`, and `StateSpace`.
 
     Returns
     -------
-    `Tuple[Tensor, ...]`
-        Tuple of index tensors, one per input axis.
+    `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
+        Index representation selected by `index_type`.
 
     Raises
     ------
@@ -2398,10 +2818,23 @@ def nonzero(condition: Tensor, as_tuple: bool = True) -> Tuple[Tensor, ...]:
     if not as_tuple:
         raise NotImplementedError("nonzero currently supports only as_tuple=True")
 
+    rows = torch.nonzero(condition.data, as_tuple=False)
     indices = torch.nonzero(condition.data, as_tuple=True)
     nnz = indices[0].numel() if len(indices) > 0 else 0
     index_dim = IndexSpace.linear(nnz)
-    return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    origin = get_origin(index_type)
+    if index_type is Tensor:
+        return tuple(Tensor(data=idx, dims=(index_dim,)) for idx in indices)
+    if index_type is tuple or origin is tuple:
+        return tuple(tuple(int(v) for v in row.tolist()) for row in rows)
+    if index_type is StateSpace:
+        if condition.rank() != 1:
+            raise ValueError(
+                "StateSpace index output is only supported for rank-1 conditions"
+            )
+        selected = [int(row[0].item()) for row in rows]
+        return condition.dims[0][selected]
+    raise TypeError("index_type must be one of Tensor, tuple/Tuple, or StateSpace")
 
 
 TensorIndexType: TypeAlias = Union[
@@ -2615,7 +3048,7 @@ class TensorIndexing:
             return idx + 1, (dim,), slice(None)
         if same_rays(dim, v):
             return idx + 1, (v,), permutation_order(dim, v)
-        if dim.contains(v):
+        if v in dim:
             return idx + 1, (v,), embedding_order(v, dim)
 
         raise IndexError(

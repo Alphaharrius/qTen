@@ -218,3 +218,6 @@ uv.lock
 # Pickle files
 .data/
 *.pkl
+
+# Notebooks
+*.ipynb

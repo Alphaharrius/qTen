@@ -184,6 +184,31 @@ class U1Basis(
             f"U1Basis has no irrep of type {target_type.__name__} to replace."
         )
 
+    def without(self, *T: Type[Any]) -> "U1Basis":
+        """
+        Return a new state with irreps of the requested concrete types removed.
+
+        Parameters
+        ----------
+        `*T` : `Type[Any]`
+            Concrete irrep types to remove. Matching uses exact runtime type
+            identity (`type(x) is T`), not subclass checks.
+
+        Returns
+        -------
+        `U1Basis`
+            A new `U1Basis` with all irreps whose concrete types are in `T`
+            removed. If none of the requested types are present, `self` is
+            returned unchanged.
+        """
+        if not T:
+            return self
+        targets = frozenset(T)
+        filtered = tuple(irrep for irrep in self.base if type(irrep) not in targets)
+        if len(filtered) == len(self.base):
+            return self
+        return replace(self, base=filtered)
+
     def irrep_of(self, T: Type[_IrrepType]) -> _IrrepType:
         """
         Return the unique irrep in this state whose concrete type is `T`.
@@ -931,49 +956,88 @@ class Opr(Functional, Operable, ABC):
        value component.
 
     Conceptually, an operator application returns two outputs:
+    - a transformed object of the same runtime type as the input, or
+    - `Multiple(coef, transformed_object)` when the action also contributes a
+      scalar prefactor
 
-    - an observation/measurement-like payload (`_ObservableType`)
-    - the transformed object (same runtime type as the input)
-
-    The observation payload allows operator execution to report auxiliary
-    information while still producing an updated value.
+    The `Multiple` form is used when the operator naturally decomposes into a
+    scalar factor times an object in the same representation family. Typical
+    examples include phase factors, characters, gauge coefficients, and other
+    symbolic amplitudes that should stay factored instead of being folded
+    directly into the transformed object.
 
     Type Parameters
     ---------------
     `_ObservableType`
-        The type of the first element returned by an operator application
-        (e.g. expectation value, coefficient, metadata, or any domain-specific
-        observable artifact).
+        Historical name from an earlier design. In the current implementation,
+        operators return either the transformed object itself or
+        `Multiple[transformed_object]`.
 
     Implementation Guidelines
     -------------------------
-    - The registered callable chain for an operator must produce a
-      2-tuple `(observable, transformed_value)`.
-    - The transformed value must have the same runtime type as the input object.
-      This invariant is validated by :meth:`apply` using assertions.
-    - Closure validation in :meth:`apply` has two branches:
-      - for `U1Basis` inputs, closure is span-based
-        (`same_rays(input, transformed_value)`).
-      - for non-`U1Basis` inputs, closure is value-based
-        (`input == transformed_value`).
-      In either branch, if closure fails, the observable must be `None`.
-    - If no registration exists for `(type(input), type(operator))`,
-      :class:`NotImplementedError` is raised by `Functional.apply`.
+    - A registered handler should return a plain transformed object when the
+      operator acts without producing an extra scalar factor.
+    - A registered handler should return `Multiple(coef, value)` when the
+      action produces a scalar prefactor that should remain explicit.
+    - In both cases, the underlying transformed value must stay in the same
+      representation family as the input. More precisely:
+      - plain return: `type(result) is type(input)` or a compatible subclass
+      - multiple return: `type(result.base) is type(input)` or a compatible
+        subclass
+    - `Opr.invoke` automatically lifts operators over `Multiple`: if
+      `op(base) -> y`, then `op(Multiple(c, base)) -> Multiple(c, y)`; if
+      `op(base) -> Multiple(c2, y)`, the coefficients are multiplied to produce
+      `Multiple(simplify(c * c2), y)`.
+    - For symbolic container inputs `U1Basis`, `U1Span`, and `HilbertSpace`,
+      the generic `Opr` lifting in this module expects the final result to stay
+      in-kind and not return `Multiple` at the top level. Scalar factors should
+      instead be attached to the contained irreps/components and accumulated
+      into the container's internal coefficient structure.
+    - This module provides generic `Opr` registrations for `U1Basis`,
+      `U1Span`, and `HilbertSpace`. Subclasses inherit those handlers through
+      `Functional` MRO fallback unless they define more specific registrations.
+    - If no registration exists for `(type(input), type(operator))` after MRO
+      fallback on both the input type and the operator type,
+      :class:`NotImplementedError` is raised by `Functional.invoke`.
 
     Usage Pattern
     -------------
     1. Define an `Operator` subclass.
     2. Register behavior with `@YourOperatorSubclass.register(InputType)`.
     3. Apply by either:
-       - `obs, out = op(input_obj)` to receive both outputs, or
-       - `out = op @ input_obj` to receive only the transformed value.
+       - `out = op(input_obj)` to receive the transformed value, or
+       - `out = op @ input_obj` using infix syntax.
+
+    Return-value Guidance
+    ---------------------
+    As a rule of thumb:
+
+    - return `value` when the operator only changes the representation/object
+      itself
+    - return `Multiple(coef, value)` when the operator contributes a symbolic
+      scalar prefactor that should remain factored
+
+    In particular, for atomic irreps or basis-function-like objects, returning
+    `Multiple` is often appropriate. For higher-level symbolic containers such
+    as `U1Basis`, `U1Span`, and `HilbertSpace`, prefer returning the same
+    container type directly and let the generic lifting logic accumulate scalar
+    factors internally.
     """
 
     @override
     def invoke(  # type: ignore[override]
         self, v: _T, **kwargs
     ) -> Union[_T, Multiple[_T]]:
+        if type(v) is Multiple:
+            result = super().invoke(v.base, **kwargs)
+            if type(result) is Multiple:
+                return Multiple((v.coef * result.coef).simplify(), result.base)
+            return Multiple(v.coef, result)
         result = super().invoke(v, **kwargs)
+        if isinstance(v, (U1Basis, U1Span, HilbertSpace)):
+            assert type(result) is not Multiple, (
+                f"Operator {type(self)} acting on {type(v).__name__} should not yield a Multiple!"
+            )
         assert isinstance(result, type(v)) or (
             type(result) is Multiple and isinstance(result.base, type(v))
         ), (
@@ -988,10 +1052,31 @@ def operator_matmul(o: Opr, v: Operable):
     return o(v)
 
 
-@dataclass(frozen=True)
-class FuncOpr(Generic[_IrrepType], Opr):
-    T: Type[_IrrepType]
-    func: Callable
+@Opr.register(U1Basis)
+def _(o: Opr, psi: U1Basis) -> U1Basis:
+    new_coef: sy.Expr = psi.coef
+    new_base: Tuple[Any, ...] = tuple()
+    for rep in psi.base:
+        ret = o(rep) if o.allows(rep) else rep
+        if isinstance(ret, Multiple):
+            new_coef *= ret.coef
+            rep = ret.base
+        else:
+            rep = ret
+        new_base += (rep,)
+    return U1Basis(new_coef, new_base)
+
+
+@Opr.register(U1Span)
+def _(o: Opr, v: U1Span) -> U1Span:
+    new_span: Tuple[U1Basis, ...] = tuple(cast(U1Basis, o @ psi) for psi in v.span)
+    return U1Span(new_span)
+
+
+@Opr.register(HilbertSpace)
+def _(o: Opr, h: HilbertSpace) -> HilbertSpace:
+    new_h = HilbertSpace.new(cast(U1Basis, o @ el) for el in h)
+    return new_h
 
 
 @dispatch(U1Basis, U1Basis)  # type: ignore[no-redef]
@@ -1000,24 +1085,115 @@ def same_rays(a: U1Basis, b: U1Basis) -> bool:
     return a.rays() == b.rays()
 
 
+@dataclass(frozen=True)
+class FuncOpr(Generic[_IrrepType], Opr):
+    """
+    Symbolic operator induced by applying a Python callable to one irrep type.
+
+    `FuncOpr` lifts a plain callable acting on a single irrep/component into an
+    `Opr` that acts on the symbolic Hilbert-space objects defined in this module.
+    The operator is parameterized by:
+
+    - `T`: the concrete runtime type of the irrep/component to target
+    - `func`: a callable mapping `T -> T | Multiple[T]`
+
+    Registered actions
+    ------------------
+    `FuncOpr` defines a specialized registration on:
+
+    - `U1Basis`
+      Finds the unique irrep in `psi.base` whose exact runtime type is `T`,
+      applies `func` to it, and rebuilds the basis state with that component
+      replaced.
+
+    For `U1Span` and `HilbertSpace`, `FuncOpr` relies on the inherited generic
+    `Opr` lifting in this module, which maps the operator over contained
+    `U1Basis` elements.
+
+    Semantics
+    ---------
+    This class is intended for structure-preserving symbolic rewrites such as
+    "replace each `Offset` by `Offset.fractional()`" or "apply a transformation
+    to each irrep of a basis state". It is not a general-purpose map over
+    arbitrary Python objects: dispatch exists only for the symbolic container
+    types registered below.
+
+    The callable `func` is expected to return either:
+
+    - a transformed object of the same concrete type `T`, or
+    - `Multiple(coef, value)` where `value` has type `T`
+
+    Return plain `T` when the transformation only changes the irrep/component
+    itself. Return `Multiple` when the transformation also contributes an
+    explicit scalar factor, such as a phase or gauge coefficient, that should
+    be accumulated symbolically rather than absorbed into the object.
+
+    `FuncOpr` does not itself validate the semantic correctness of `func`, but
+    the surrounding symbolic code assumes the transformation stays within the
+    same representation family.
+
+    Interaction with `@`
+    --------------------
+    Because `FuncOpr` is an `Opr`, it participates in the overloaded `@`
+    syntax:
+
+    - `f @ x` applies the operator to an object `x`
+    - `f @ g` forms a `ComposedOpr`
+
+    With the current `ComposedOpr` semantics, operator composition follows the
+    standard algebraic order:
+
+    - `(f @ g) @ x == f(g(x))`
+
+    So `f @ g` means "apply `g`, then apply `f`".
+
+    Interaction with `Multiple`
+    ---------------------------
+    If `v` is `Multiple(coef, base)`, then `f(v)` applies `f` to `base`.
+
+    - If the result is a plain object `base'`, the output is
+      `Multiple(coef, base')`.
+    - If the result is `Multiple(coef', base')`, the coefficients are
+      multiplied and simplified, producing
+      `Multiple(simplify(coef * coef'), base')`.
+
+    This behavior is provided centrally by `Opr.invoke`, so `FuncOpr` inherits
+    the same coefficient-lifting semantics as every other operator subclass.
+
+    Interaction with Symbolic Containers
+    ------------------------------------
+    `FuncOpr` treats `U1Basis` specially: it targets the unique irrep of type
+    `T` via `psi.irrep_of(T)` rather than iterating over all components with
+    `allows(...)`. This is why `FuncOpr` keeps a dedicated `U1Basis`
+    registration even though `U1Span` and `HilbertSpace` can be handled by the
+    generic `Opr` lifting.
+
+    Examples
+    --------
+    Use `FuncOpr(Offset, Offset.fractional)` to normalize every `Offset`
+    appearing inside a `U1Basis`, `U1Span`, or `HilbertSpace`.
+
+    In particular:
+
+    - `fractional @ psi` rewrites one basis state
+    - `fractional @ space` rewrites every basis state in a Hilbert space
+    - `fractional @ t @ space` means `fractional(t(space))`
+    """
+
+    T: Type[_IrrepType]
+    func: Callable[[_IrrepType], Union[_IrrepType, Multiple[_IrrepType]]]
+
+
 @FuncOpr.register(U1Basis)
 def _(f: FuncOpr, psi: U1Basis) -> U1Basis:
     irrep = psi.irrep_of(f.T)
-    new_irrep = f.func(irrep)
+    ret = f.func(irrep)
+    if type(ret) is Multiple:
+        new_psi = psi.replace(ret.base)
+        return replace(new_psi, coef=(new_psi.coef * ret.coef).simplify())
+    new_irrep = ret
     new_psi = psi.replace(new_irrep)
     return new_psi
-
-
-@FuncOpr.register(U1Span)
-def _(f: FuncOpr, s: U1Span) -> U1Span:
-    new_s: U1Span = replace(s, span=tuple(f @ psi for psi in s.span))
-    return new_s
-
-
-@FuncOpr.register(HilbertSpace)
-def _(f: FuncOpr, h: HilbertSpace) -> HilbertSpace:
-    new_h = HilbertSpace.new(f @ el for el in h)
-    return new_h
 
 
 @dispatch(U1Span, U1Span)  # type: ignore[no-redef]
@@ -1093,3 +1269,122 @@ def operator_or(state: U1Basis, space: HilbertSpace) -> HilbertSpace:
     if state in space.structure:
         return space
     return HilbertSpace.new((state, *space.elements()))
+
+
+@dataclass(frozen=True)
+class ComposedOpr(Opr):
+    """
+    Finite composition of symbolic operators.
+
+    `ComposedOpr` stores an ordered tuple of `Opr` instances and represents
+    their algebraic composition. It is produced automatically by operator
+    multiplication between operators:
+
+    - `a @ b` returns `ComposedOpr((a, b))`
+
+    Application order
+    -----------------
+    Although the tuple is stored as `(a, b)`, application follows standard
+    operator-composition order rather than pipeline order:
+
+    - `(a @ b) @ x == a(b(x))`
+
+    More generally, if `ops == (o1, o2, ..., on)`, then applying the composed
+    operator to `x` yields:
+
+    - `o1(o2(...(on(x))...))`
+
+    Operationally, this is implemented by applying the stored operators in
+    reverse order at invocation time.
+
+    This matches the usual reading of matrix multiplication and function
+    composition, where the rightmost operator acts first.
+
+    Flattening behavior
+    -------------------
+    Repeated composition is flattened structurally:
+
+    - `(a @ b) @ c` stores `(a, b, c)`
+    - `a @ (b @ c)` stores `(a, b, c)`
+
+    so nested `ComposedOpr` objects are normalized into a single tuple of
+    operators instead of building a deep binary tree. This keeps composition
+    associative at the representation level as well as the semantic level.
+
+    Interaction with object application
+    ----------------------------------
+    As with every `Opr`, `composed @ x` applies the operator to `x`. Each step
+    is fed into the next one according to the order above.
+
+    For plain objects `x`, the intermediate values are passed directly from one
+    operator to the next.
+
+    Interaction with `Multiple`
+    ---------------------------
+    `ComposedOpr` also supports `Multiple(base, coef)` inputs. In that case the
+    composition acts on `base`, while scalar coefficients returned by
+    intermediate operators are accumulated multiplicatively.
+
+    Concretely, if an intermediate step returns:
+
+    - a plain object `y`, composition continues with `y`
+    - `Multiple(c, y)`, composition continues with `y` and multiplies the
+      running coefficient by `c`
+
+    The final result is returned as one `Multiple(total_coef, final_base)`.
+
+    This is essential for symbolic transformations where some operators carry
+    phase factors or representation coefficients.
+
+    Algebraic scope
+    ---------------
+    `ComposedOpr` is intended for endomorphism-like symbolic operators in this
+    module: operators that map supported symbolic objects back into the same
+    symbolic universe. It assumes that composing the stored operators is valid
+    on the given input type; if some step has no registered action for the
+    intermediate object, dispatch will fail with `NotImplementedError`.
+
+    Examples
+    --------
+    If `fractional = FuncOpr(Offset, Offset.fractional)` and `t` is an
+    `AbelianOpr`, then:
+
+    - `fractional @ t @ space`
+
+    means:
+
+    - `fractional(t(space))`
+
+    not:
+
+    - `t(fractional(space))`
+    """
+
+    ops: Tuple[Opr, ...]
+
+    @override
+    def invoke(self, v: _T, **kwargs) -> Union[_T, Multiple[_T]]:
+        result = v
+        for op in reversed(self.ops):
+            result = op(result, **kwargs)
+        return result
+
+
+@dispatch(Opr, Opr)  # type: ignore[no-redef]
+def operator_matmul(a: Opr, b: Opr) -> ComposedOpr:
+    return ComposedOpr((a, b))
+
+
+@dispatch(ComposedOpr, Opr)  # type: ignore[no-redef]
+def operator_matmul(a: ComposedOpr, b: Opr) -> ComposedOpr:
+    return ComposedOpr((*a.ops, b))
+
+
+@dispatch(Opr, ComposedOpr)  # type: ignore[no-redef]
+def operator_matmul(a: Opr, b: ComposedOpr) -> ComposedOpr:
+    return ComposedOpr((a, *b.ops))
+
+
+@dispatch(ComposedOpr, ComposedOpr)  # type: ignore[no-redef]
+def operator_matmul(a: ComposedOpr, b: ComposedOpr) -> ComposedOpr:
+    return ComposedOpr((*a.ops, *b.ops))

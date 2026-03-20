@@ -12,3 +12,4 @@ from .boundary import (
 )
 
 from .basis_transform import BasisTransform as BasisTransform
+from .ops import nearest_sites as nearest_sites

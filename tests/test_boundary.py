@@ -4,7 +4,7 @@ from sympy import ImmutableDenseMatrix
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice, Offset, AffineSpace
 from qten.pointgroups import pointgroup
-from qten.pointgroups.abelian import AffineTransform
+from qten.pointgroups.abelian import AbelianGroup, AbelianOpr
 import sympy as sy
 from qten.geometries.basis_transform import BasisTransform
 
@@ -24,6 +24,20 @@ def is_boundary_equivalent(
 ) -> bool:
     coeffs = basis.inv() @ (left - right)
     return all(value.is_integer for value in coeffs)
+
+
+def _affine(
+    *,
+    irrep: ImmutableDenseMatrix,
+    axes: tuple[sy.Symbol, ...],
+    offset: Offset | None = None,
+    basis_function_order: int | None = None,
+) -> AbelianOpr:
+    _ = basis_function_order
+    g = AbelianGroup(irrep=irrep, axes=axes)
+    if offset is None:
+        return AbelianOpr(g=g)
+    return AbelianOpr._from_parts(g=g, offset=offset)
 
 
 def test_periodic_boundary_rejects_non_square_basis():
@@ -108,6 +122,14 @@ def test_periodic_boundary_representatives_nondiagonal_basis_cover_all_classes()
     assert seen == rep_set
 
 
+def test_periodic_boundary_distance_uses_nearest_image():
+    boundary = PeriodicBoundary(ImmutableDenseMatrix.diag(4))
+    delta = ImmutableDenseMatrix([3])
+    lattice_basis = ImmutableDenseMatrix([[1]])
+
+    assert boundary.distance(delta, lattice_basis) == pytest.approx(1.0)
+
+
 def test_offset_constructor_wraps_using_boundary():
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(2),
@@ -163,11 +185,9 @@ def test_offset_with_affine_space():
 
 
 def test_pointgroup_with_affine_space():
-    # Test that pointgroup uses AffineSpace instead of Lattice
-    c3 = pointgroup("c3-xy:xy-o1")
-    assert isinstance(c3.offset.space, AffineSpace)
-    # Ensure it is not a Lattice (Lattice inherits from AffineSpace, so check type)
-    assert type(c3.offset.space) is AffineSpace
+    # Test that pointgroup returns the linear point-group element directly
+    c3 = pointgroup("c3-xy:xy")
+    assert c3.irrep.shape == (2, 2)
 
 
 def test_affine_group_element_rebase():
@@ -181,9 +201,7 @@ def test_affine_group_element_rebase():
     axes = (sy.Symbol("x"), sy.Symbol("y"))
     zero_offset = Offset(rep=sy.ImmutableDenseMatrix([0, 0]), space=affine_space)
 
-    op = AffineTransform(
-        irrep=irrep, axes=axes, offset=zero_offset, basis_function_order=1
-    )
+    op = _affine(irrep=irrep, axes=axes, offset=zero_offset, basis_function_order=1)
 
     # Construct a Lattice with boundaries
     lat_basis = sy.ImmutableDenseMatrix([[2, 0], [0, 2]])
@@ -389,7 +407,7 @@ def test_affine_transform_boundary_condition_3d():
     )
 
     x, y, z = sy.symbols("x y z")
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[0, 1, 0], [0, 0, 1], [1, 0, 0]]),
         axes=(x, y, z),
         offset=Offset(rep=ImmutableDenseMatrix([5, -4, 7]), space=lattice),
@@ -400,7 +418,7 @@ def test_affine_transform_boundary_condition_3d():
     transformed = t @ point
 
     # Unwrapped affine action in representation coordinates.
-    unwrapped_rep = t.irrep @ point.rep + t.offset.rep
+    unwrapped_rep = t.g.irrep @ point.rep + t.offset.rep
     unwrapped_phys = lattice.basis @ unwrapped_rep
     wrapped_phys = transformed.to_vec(ImmutableDenseMatrix)
 

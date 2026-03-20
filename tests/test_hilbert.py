@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 
 from qten.symbolics.hilbert_space import U1Basis, U1Span, HilbertSpace
+from qten.symbolics.ops import region_hilbert
 from qten.symbolics.state_space import MomentumSpace, brillouin_zone
 from qten.geometries.spatials import Lattice, Offset
 from qten.utils.collections_ext import FrozenDict
@@ -207,11 +208,23 @@ def test_statespace_getitem_variants():
     hs_range = hs[range(0, 2)]
     assert list(hs_range.structure.keys()) == [states[0], states[1]]
 
+    hs_seq = hs[[2, 0]]
+    assert list(hs_seq.structure.keys()) == [states[2], states[0]]
+
+    hs_tuple = hs[(1, -1)]
+    assert list(hs_tuple.structure.keys()) == [states[1], states[2]]
+
     with pytest.raises(IndexError):
         _ = hs[3]
 
     with pytest.raises(TypeError):
         _ = hs["bad"]
+
+    with pytest.raises(ValueError, match="unique"):
+        _ = hs[[0, 0]]
+
+    with pytest.raises(TypeError, match="integers"):
+        _ = hs[[0, "bad"]]  # type: ignore[list-item]
 
 
 def test_hilbert_space_gram_diagonal_for_identical_basis():
@@ -258,6 +271,50 @@ def test_hilbert_space_lookup_exact_query_match():
     hs = HilbertSpace.new([_state(r0, "s"), _state(r1, "p"), _state(r2, "s")])
     found = hs.lookup({Offset: r1, Orb: Orb("p")})
     assert found == _state(r1, "p")
+
+
+def test_region_hilbert_matches_region_fractional_offsets():
+    basis = ImmutableDenseMatrix([[1]])
+    lat = _lattice(basis, (4,))
+
+    uc_a = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
+    uc_b = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lat.affine)
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
+    r1 = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lat.affine)
+    r2 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
+    r3 = Offset(rep=ImmutableDenseMatrix([sy.Rational(3, 2)]), space=lat.affine)
+
+    bloch_space = HilbertSpace.new(
+        [
+            _state(uc_a, "s"),
+            _state(uc_a, "p"),
+            _state(uc_b, "d"),
+        ]
+    )
+
+    expanded = region_hilbert(bloch_space, [r0, r1, r2, r3])
+
+    assert tuple(expanded.elements()) == (
+        _state(r0, "s"),
+        _state(r0, "p"),
+        _state(r1, "d"),
+        _state(r2, "s"),
+        _state(r2, "p"),
+        _state(r3, "d"),
+    )
+
+
+def test_region_hilbert_raises_for_missing_fractional_offset():
+    basis = ImmutableDenseMatrix([[1]])
+    lat = _lattice(basis, (4,))
+
+    uc_a = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
+    missing = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lat.affine)
+
+    bloch_space = HilbertSpace.new([_state(uc_a, "s")])
+
+    with pytest.raises(ValueError, match="fractional part"):
+        region_hilbert(bloch_space, [missing])
 
 
 def test_hilbert_space_lookup_errors_for_no_or_multiple_matches():

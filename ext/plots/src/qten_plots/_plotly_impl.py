@@ -1,5 +1,6 @@
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Sequence, cast
 import colorsys
+import math
 
 import torch
 import numpy as np
@@ -7,9 +8,40 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from qten.geometries.spatials import Lattice
+from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
+from qten.symbolics.state_space import StateSpace, brillouin_zone
 from ._utils import compute_bonds
+from .plottables import PointCloud
+
+
+def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
+    if not obj.offsets:
+        return torch.empty((0, 0), dtype=torch.float64)
+
+    coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
+    return torch.tensor(coords, dtype=torch.float64)
+
+
+def _complex_phase_colors(values: np.ndarray) -> list[str]:
+    colors: list[str] = []
+    for value in values:
+        phase = np.angle(value)
+        hue = float((phase + np.pi) / (2 * np.pi))
+        r, g, b = colorsys.hsv_to_rgb(hue % 1.0, 0.95, 0.95)
+        colors.append(f"rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})")
+    return colors
+
+
+def _subplot_grid(n_items: int, ncols: int) -> tuple[int, int]:
+    cols = min(ncols, max(1, n_items))
+    rows = math.ceil(n_items / cols)
+    return rows, cols
+
+
+def _column_label(col_dim: StateSpace, index: int) -> str:
+    return str(col_dim.elements()[index])
 
 
 # --- Registered Plot Methods ---
@@ -23,6 +55,7 @@ def plot_structure(
     show: bool = True,
     fig: Optional[go.Figure] = None,
     color_by: str = "basis",
+    highlights: Sequence[PointCloud] | None = None,
     **kwargs,
 ) -> go.Figure:
     """
@@ -61,8 +94,7 @@ def plot_structure(
     if color_by not in valid_color_by:
         raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
-    # Use method on Lattice object
-    coords = obj.coords()
+    coords = obj.cartes(torch.Tensor)
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -221,11 +253,105 @@ def plot_structure(
             fig.add_traces(quiver.data)
 
     # Layout
+    if highlights:
+        fallback_colors = [
+            f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+            for r, g, b in (
+                colorsys.hsv_to_rgb((i * 0.38197 + 0.17) % 1.0, 0.95, 0.85)
+                for i in range(len(highlights))
+            )
+        ]
+        for idx, cloud in enumerate(highlights):
+            highlight_coords = _pointcloud_coords(cloud)
+            if highlight_coords.shape[1] != obj.dim:
+                raise ValueError(
+                    "Highlight PointCloud dimension does not match plotted lattice "
+                    f"dimension {obj.dim}."
+                )
+            if highlight_coords.shape[0] == 0:
+                continue
+
+            trace_color = cloud.color or fallback_colors[idx]
+            highlight_np = highlight_coords.numpy()
+            x_group = highlight_np[:, 0]
+            y_group = highlight_np[:, 1]
+            z_group = highlight_np[:, 2] if obj.dim == 3 else None
+            if obj.dim == 3:
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x_group,
+                        y=y_group,
+                        z=z_group,
+                        mode="markers",
+                        marker=dict(size=8, color=trace_color, symbol="diamond"),
+                        name=f"Highlight {idx}",
+                    )
+                )
+            else:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_group,
+                        y=y_group,
+                        mode="markers",
+                        marker=dict(size=13, color=trace_color, symbol="diamond"),
+                        name=f"Highlight {idx}",
+                    )
+                )
+
     if obj.dim == 3:
         fig.update_layout(title="3D Lattice System", scene=dict(aspectmode="data"))
     else:
         fig.update_layout(
             title="2D Lattice System", yaxis=dict(scaleanchor="x", scaleratio=1)
+        )
+
+    if show:
+        fig.show()
+    return fig
+
+
+@PointCloud.register_plot_method("scatter", backend="plotly")
+def plot_pointcloud(
+    obj: PointCloud,
+    show: bool = True,
+    fig: Optional[go.Figure] = None,
+    **kwargs,
+) -> go.Figure:
+    coords = _pointcloud_coords(obj)
+    if coords.shape[1] not in (2, 3):
+        raise ValueError(
+            f"PointCloud scatter supports only 2D or 3D points, got dimension {coords.shape[1]}."
+        )
+
+    coords_np = coords.numpy()
+    if fig is None:
+        fig = go.Figure()
+
+    trace_color = obj.color or kwargs.pop("color", "#d1495b")
+    if coords.shape[1] == 3:
+        fig.add_trace(
+            go.Scatter3d(
+                x=coords_np[:, 0],
+                y=coords_np[:, 1],
+                z=coords_np[:, 2],
+                mode="markers",
+                marker=dict(size=6, color=trace_color),
+                name="PointCloud",
+            )
+        )
+        fig.update_layout(title="3D Point Cloud", scene=dict(aspectmode="data"))
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=coords_np[:, 0],
+                y=coords_np[:, 1],
+                mode="markers",
+                marker=dict(size=10, color=trace_color, symbol="circle"),
+                name="PointCloud",
+            )
+        )
+        fig.update_layout(
+            title="2D Point Cloud", yaxis=dict(scaleanchor="x", scaleratio=1)
         )
 
     if show:
@@ -380,6 +506,164 @@ def plot_heatmap(
 
     fig.update_yaxes(autorange="reversed")
     fig.update_layout(title=title)
+
+    if show:
+        fig.show()
+    return fig
+
+
+@Tensor.register_plot_method("column_scatter", backend="plotly")
+def plot_tensor_scatter(
+    obj: Tensor,
+    title: str = "Tensor Scatter",
+    show: bool = True,
+    default_size: float = 16.0,
+    ncols: int = 3,
+    **kwargs,
+) -> go.Figure:
+    """
+    Plot a rank-2 tensor as one spatial scatter subplot per column.
+
+    The first axis must be a HilbertSpace containing `Offset` irreps, and the
+    second axis is treated as a pure column index.
+    """
+    if obj.rank() != 2:
+        raise ValueError(
+            "Tensor scatter requires a rank-2 tensor with dims "
+            f"(HilbertSpace, StateSpace), got rank {obj.rank()}."
+        )
+    if default_size <= 0:
+        raise ValueError(f"default_size must be positive, got {default_size}")
+    if ncols <= 0:
+        raise ValueError(f"ncols must be positive, got {ncols}")
+
+    row_dim, col_dim = obj.dims
+    if not isinstance(row_dim, HilbertSpace) or not isinstance(col_dim, StateSpace):
+        raise ValueError(
+            "Tensor scatter requires dims (HilbertSpace, StateSpace), got "
+            f"({type(row_dim).__name__}, {type(col_dim).__name__})."
+        )
+    if not row_dim.is_homogeneous():
+        raise ValueError(
+            "Tensor scatter requires the first HilbertSpace to be homogeneous."
+        )
+
+    row_basis = cast(tuple[U1Basis, ...], row_dim.elements())
+    if row_basis:
+        try:
+            row_basis[0].irrep_of(Offset)
+        except ValueError as exc:
+            raise ValueError(
+                "Tensor scatter requires the first HilbertSpace to contain Offset irreps."
+            ) from exc
+
+    row_offsets = [basis.irrep_of(Offset) for basis in row_basis]
+    if row_offsets:
+        coords = np.stack(
+            [offset.to_vec(np.ndarray).reshape(-1) for offset in row_offsets]
+        )
+        spatial_dim = coords.shape[1]
+    else:
+        coords = np.empty((0, 0), dtype=float)
+        spatial_dim = 0
+    if spatial_dim not in (1, 2, 3):
+        raise ValueError(
+            "Tensor scatter only supports Offset coordinates of dimension 1, 2, or 3; "
+            f"got {spatial_dim}."
+        )
+
+    tensor = obj.data.detach().cpu()
+    if not tensor.is_complex():
+        tensor = tensor.to(torch.complex128)
+    tensor_np = tensor.numpy()
+
+    n_columns = tensor_np.shape[1]
+    rows, cols = _subplot_grid(n_columns, ncols=ncols)
+    column_labels = [_column_label(col_dim, j) for j in range(n_columns)]
+    subplot_titles = column_labels
+
+    specs = None
+    if spatial_dim == 3:
+        specs = [[{"type": "scene"} for _ in range(cols)] for _ in range(rows)]
+
+    fig = make_subplots(
+        rows=rows,
+        cols=cols,
+        specs=specs,
+        subplot_titles=subplot_titles,
+    )
+
+    max_mag = float(np.abs(tensor_np).max()) if tensor_np.size > 0 else 0.0
+    for j in range(n_columns):
+        panel_row = j // cols + 1
+        panel_col = j % cols + 1
+        column_label = column_labels[j]
+
+        column = tensor_np[:, j]
+        magnitudes = np.abs(column)
+        if max_mag > 0:
+            sizes = default_size * magnitudes / max_mag
+        else:
+            sizes = np.full_like(magnitudes, fill_value=default_size, dtype=float)
+        colors = _complex_phase_colors(column)
+
+        marker = dict(size=sizes.tolist(), color=colors, opacity=0.9)
+        hovertext = [
+            (
+                f"row={i}<br>"
+                f"column={column_label}<br>"
+                f"value={value.real:.6g}{value.imag:+.6g}j<br>"
+                f"|value|={abs(value):.6g}<br>"
+                f"phase={np.angle(value):.6g}"
+            )
+            for i, value in enumerate(column)
+        ]
+
+        if spatial_dim == 3:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=coords[:, 0],
+                    y=coords[:, 1],
+                    z=coords[:, 2],
+                    mode="markers",
+                    marker=marker,
+                    name=column_label,
+                    hovertext=hovertext,
+                    hoverinfo="text",
+                    showlegend=False,
+                ),
+                row=panel_row,
+                col=panel_col,
+            )
+        else:
+            y = coords[:, 1] if spatial_dim == 2 else np.zeros(coords.shape[0])
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[:, 0],
+                    y=y,
+                    mode="markers",
+                    marker=marker,
+                    name=column_label,
+                    hovertext=hovertext,
+                    hoverinfo="text",
+                    showlegend=False,
+                ),
+                row=panel_row,
+                col=panel_col,
+            )
+            if spatial_dim == 2:
+                fig.update_yaxes(
+                    scaleanchor=f"x{j + 1}", scaleratio=1, row=panel_row, col=panel_col
+                )
+
+    fig.update_layout(title=title, **kwargs)
+    if spatial_dim == 3:
+        fig.update_layout(
+            **{
+                f"scene{'' if i == 0 else i + 1}": dict(aspectmode="data")
+                for i in range(n_columns)
+            }
+        )
 
     if show:
         fig.show()
@@ -551,6 +835,9 @@ def plot_bandstructure(
     title: str = "Band Structure",
     show: bool = True,
     fig: Optional[go.Figure] = None,
+    mode: str = "auto",
+    hide_nullspace: bool = False,
+    nullspace_tol: float = 1e-9,
     **kwargs,
 ) -> go.Figure:
     """
@@ -566,6 +853,11 @@ def plot_bandstructure(
         Whether to show the plot immediately.
     fig : plotly.graph_objects.Figure, optional
         Existing figure to add traces to.
+    hide_nullspace : bool, default False
+        If True, mask surface points with |E| <= nullspace_tol so the
+        band surface opens around the nullspace.
+    nullspace_tol : float, default 1e-9
+        Energy tolerance used when hide_nullspace is enabled.
     **kwargs
         Additional keyword arguments.
 
@@ -576,6 +868,11 @@ def plot_bandstructure(
     """
     if obj.rank() != 3:
         raise ValueError(f"Tensor must be rank 3, got {obj.rank()}")
+    if mode not in ("auto", "path", "surface"):
+        raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
+    if nullspace_tol < 0:
+        raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
+
     k_space = obj.dims[0]
     k_points = list(k_space)
 
@@ -584,18 +881,11 @@ def plot_bandstructure(
     eigvals_np = eigvals.detach().cpu().numpy()
     n_bands = eigvals_np.shape[1]
 
-    grid_shape = getattr(k_space, "shape", None)
-    if grid_shape is None and "shape" in kwargs:
-        grid_shape = kwargs["shape"]
-
-    is_2d_grid = False
-    if grid_shape is not None and len(grid_shape) == 2:
-        if grid_shape[0] * grid_shape[1] == len(k_points):
-            is_2d_grid = True
-
     if fig is None:
         fig = go.Figure()
 
+    recip = None
+    is_canonical_2d_bz = False
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
@@ -605,17 +895,39 @@ def plot_bandstructure(
         k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
         k_fracs_arr = np.stack(k_fracs)  # Shape: (K, 2)
 
-        k_cart = k_fracs_arr @ basis_mat
+        # `Momentum.rep` is stored as a column vector in the reciprocal basis,
+        # so batched row-wise conversion to Cartesian coordinates uses `B^T`.
+        k_cart = k_fracs_arr @ basis_mat.T
+
+        if (
+            isinstance(recip, ReciprocalLattice)
+            and recip.dim == 2
+            and all(k.space == recip for k in k_points)
+        ):
+            canonical_k_space = brillouin_zone(recip)
+            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
+                canonical_k_space.elements()
+            )
     else:
         k_cart = np.array([])
 
-    if is_2d_grid and grid_shape is not None:
+    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    if is_surface and not is_canonical_2d_bz:
+        raise ValueError(
+            "Surface bandstructure plotting requires the momentum axis to be the "
+            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+
+    if is_surface and recip is not None:
         # === 3D Surface Plot ===
-        nx, ny = grid_shape
+        nx, ny = recip.shape
 
         KX = k_cart[:, 0].reshape(nx, ny)
         KY = k_cart[:, 1].reshape(nx, ny)
         evals_grid = eigvals_np.reshape(nx, ny, n_bands)
+        if hide_nullspace:
+            evals_grid = evals_grid.copy()
+            evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
 
         for b in range(n_bands):
             fig.add_trace(
@@ -652,7 +964,7 @@ def plot_bandstructure(
             zaxis_title="Energy (eV)",
             aspectmode="data",
         )
-        if is_2d_grid
+        if is_surface
         else None,
     )
 

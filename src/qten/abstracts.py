@@ -19,6 +19,9 @@ from multipledispatch import dispatch
 
 @dataclass(frozen=True)
 class Operable(ABC):
+    def __contains__(self, other):
+        return operator_contains(self, other)
+
     def __add__(self, other):
         return operator_add(self, other)
 
@@ -75,6 +78,13 @@ class Operable(ABC):
 
     def __rtruediv__(self, other):
         return operator_truediv(other, self)
+
+
+@dispatch(Operable, Operable)
+def operator_contains(a, b):
+    raise NotImplementedError(
+        f"Containment of {type(b)} in {type(a)} is not supported!"
+    )
 
 
 @dispatch(Operable, Operable)
@@ -312,7 +322,7 @@ class Functional(ABC):
         stale_keys = [
             key
             for key in cls._resolved_methods
-            if key[1] is cls and issubclass(key[0], obj_type)
+            if issubclass(key[0], obj_type) and issubclass(key[1], cls)
         ]
         for key in stale_keys:
             del cls._resolved_methods[key]
@@ -321,8 +331,14 @@ class Functional(ABC):
     def register(cls, obj_type: type):
         """
         Register a function defining the action of the `Functional` on a specific object type.
-        Dispatch is resolved at call time via MRO, so only the exact `(obj_type, cls)`
-        key is stored here.
+        Dispatch is resolved at call time via MRO, so only the exact
+        `(obj_type, cls)` key is stored here. Resolution later searches both:
+
+        1. the MRO of the runtime object type, and
+        2. the MRO of the runtime functional type
+
+        This means registrations on a functional superclass are inherited by
+        subclass functionals unless a more specific registration overrides them.
 
         Parameters
         ----------
@@ -345,6 +361,22 @@ class Functional(ABC):
     def _resolve_method(
         cls, obj_class: type, functional_class: type
     ) -> Callable | None:
+        """
+        Resolve the most specific registered method for the given runtime types.
+
+        Resolution order is:
+
+        1. walk the MRO of `obj_class` from most specific to least specific
+        2. for each object type, walk the MRO of `functional_class` from most
+           specific to least specific
+
+        The first matching registration `(obj_super, functional_super)` is used
+        and cached under the exact runtime pair `(obj_class, functional_class)`.
+
+        As a consequence, subclass-specific functional registrations override
+        superclass registrations, but superclass registrations remain available
+        as inherited fallbacks.
+        """
         key = (obj_class, functional_class)
         method = cls._resolved_methods.get(key)
         if method is not None:
@@ -352,10 +384,13 @@ class Functional(ABC):
 
         table_get = cls._registered_methods.get
         for obj_super in obj_class.__mro__:
-            method = table_get((obj_super, functional_class))
-            if method is not None:
-                cls._resolved_methods[key] = method
-                return method
+            for functional_super in functional_class.__mro__:
+                if not issubclass(functional_super, Functional):
+                    continue
+                method = table_get((obj_super, functional_super))
+                if method is not None:
+                    cls._resolved_methods[key] = method
+                    return method
         return None
 
     @staticmethod
@@ -387,6 +422,12 @@ class Functional(ABC):
         -------
         bool
             True if this `Functional` can be applied on the object, False otherwise.
+
+        Notes
+        -----
+        Applicability is checked using the same inherited dispatch rules as
+        :meth:`invoke`: both the object's MRO and the functional-class MRO are
+        searched.
         """
         return self._resolve_method(type(obj), type(self)) is not None
 
@@ -410,7 +451,7 @@ class Functional(ABC):
 _ElementType = TypeVar("_ElementType")
 
 
-class Span(ABC, Generic[_ElementType]):
+class Span(Operable, ABC, Generic[_ElementType]):
     """
     An object representing the span of a set of elements.
 
@@ -419,8 +460,12 @@ class Span(ABC, Generic[_ElementType]):
     combinations of those vectors. In a topological space, the span of a set
     of points might be the smallest closed set containing those points.
 
-    Implementations should define what it means to be an element and how to
-    determine if an object is contained within the span.
+    Spans participate in `Operable` membership using Python's `in` protocol:
+    `x in span` dispatches to `operator_contains(span, x)`.
+
+    The default containment rules support:
+    - `Span` queries, compared by `elements()`.
+    - `Convertible` queries, converted to `type(self)` before comparison.
 
     The `_ElementType` type variable represents the type of elements that define the span.
     """
@@ -437,51 +482,18 @@ class Span(ABC, Generic[_ElementType]):
         """
         pass
 
-    def contains(self, v) -> bool:
-        """
-        Check whether this span contains `v`.
 
-        Supported input
-        ---------------
-        - `Span`: compared directly via `v.elements()`.
-        - `Convertible`: converted to `type(self)` by
-          `v.convert(type(self))`, then compared via elements.
+@dispatch(Span, Span)  # type: ignore[no-redef]
+def operator_contains(a: Span, b: Span):
+    base = set(a.elements())
+    return all(el in base for el in b.elements())
 
-        Unsupported input
-        -----------------
-        - Any non-`Span` object that is not `Convertible`.
-        - `Convertible` objects without a registered conversion to `type(self)`.
 
-        Parameters
-        ----------
-        `v` : `Any`
-            Membership query object.
-
-        Returns
-        -------
-        `bool`
-            `True` when all elements in the query span are contained in this span.
-
-        Raises
-        ------
-        `ValueError`
-            If `v` cannot be converted to `type(self)`.
-
-        Developer Note
-        --------------
-        To make a custom type supported by `contains`, implement `Convertible`
-        and register a conversion to the target span type:
-        `@YourType.add_conversion(TargetSpanType)`.
-        """
-        if not isinstance(v, Span):
-            if isinstance(v, Convertible):
-                v = cast(Convertible, v).convert(type(self))
-            else:
-                raise ValueError(
-                    f"Cannot convert {type(v).__name__} to {type(self).__name__}!"
-                )
-        base = set(self.elements())
-        return all(el in base for el in v.elements())
+@dispatch(Span, object)  # type: ignore[no-redef]
+def operator_contains(a: Span, b):
+    if isinstance(b, Convertible):
+        return operator_contains(a, cast(Convertible, b).convert(type(a)))
+    raise ValueError(f"Cannot convert {type(b).__name__} to {type(a).__name__}!")
 
 
 class HasRays(ABC):

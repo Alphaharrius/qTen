@@ -7,16 +7,20 @@ from collections import OrderedDict
 from qten.symbolics import state_space
 from qten.linalg.tensors import (
     Tensor,
+    abs as tensor_abs,
     all as tensor_all,
     align_all,
     allclose,
     astype,
     equal,
+    imag as tensor_imag,
+    isclose as tensor_isclose,
     kernel_tensor,
     matmul,
     nonzero,
     one_hot,
     ones,
+    real as tensor_real,
     union_dims,
     where,
     zeros,
@@ -26,6 +30,7 @@ from qten.symbolics.state_space import (
     BroadcastSpace,
     IndexSpace,
     MomentumSpace,
+    StateSpace,
 )
 from qten.utils.collections_ext import FrozenDict
 from qten.linalg.tensors import unsqueeze
@@ -1590,6 +1595,21 @@ def test_where_condition_only_returns_index_tensors():
         assert torch.equal(actual.data, exp)
 
 
+def test_where_condition_only_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = where(condition, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
 def test_where_rejects_non_bool_condition():
     mode_a = make_mode("a", 2)
     space_a = _space_from_modes(mode_a)
@@ -1640,6 +1660,34 @@ def test_tensor_nonzero_as_tuple_true_matches_torch():
     for actual, exp in zip(out, expected):
         assert actual.dims == (IndexSpace.linear(exp.numel()),)
         assert torch.equal(actual.data, exp)
+
+
+def test_nonzero_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = nonzero(condition, as_tuple=True, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
+def test_nonzero_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = nonzero(condition, as_tuple=True, index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
 
 
 def test_where_uses_symmetric_broadcast_dims():
@@ -1737,6 +1785,24 @@ def test_tensor_where_method_supports_condition_only_form():
         assert torch.equal(actual.data, exp.data)
 
 
+def test_tensor_where_method_supports_condition_only_tuple_index_output():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_a = _space_from_modes(mode_a)
+    space_b = _space_from_modes(mode_b)
+
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(space_a, space_b),
+    )
+
+    out = condition.where(index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
 def test_tensor_where_method_rejects_single_argument():
     mode_a = make_mode("a", 2)
     space_a = _space_from_modes(mode_a)
@@ -1748,6 +1814,78 @@ def test_tensor_where_method_rejects_single_argument():
 
     with pytest.raises(TypeError, match="where\\(\\) or where\\(input, other\\)"):
         _ = condition.where(input=input_tensor)
+
+
+def test_tensor_where_method_rejects_index_type_for_ternary_form():
+    mode_a = make_mode("a", 2)
+    space_a = _space_from_modes(mode_a)
+    condition = Tensor(
+        data=torch.tensor([True, False], dtype=torch.bool),
+        dims=(space_a,),
+    )
+    input_tensor = Tensor(data=torch.tensor([1.0, 2.0]), dims=(space_a,))
+    other_tensor = Tensor(data=torch.tensor([3.0, 4.0]), dims=(space_a,))
+
+    with pytest.raises(TypeError, match="index_type"):
+        _ = condition.where(input_tensor, other_tensor, index_type=tuple)
+
+
+def test_tensor_nonzero_supports_tuple_index_output():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    out = condition.nonzero(as_tuple=True, index_type=tuple)
+
+    assert out == ((0, 0), (0, 2), (1, 1))
+
+
+def test_tensor_where_method_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = condition.where(index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
+
+
+def test_tensor_nonzero_supports_statespace_index_output_for_rank_one():
+    space = IndexSpace.linear(5)
+    condition = Tensor(
+        data=torch.tensor([True, False, True, False, True], dtype=torch.bool),
+        dims=(space,),
+    )
+
+    out = condition.nonzero(as_tuple=True, index_type=StateSpace)
+
+    assert isinstance(out, StateSpace)
+    assert out == space[[0, 2, 4]]
+
+
+def test_statespace_index_output_rejects_rank_greater_than_one():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+    condition = Tensor(
+        data=torch.tensor(
+            [[True, False, True], [False, True, False]], dtype=torch.bool
+        ),
+        dims=(a, b),
+    )
+
+    with pytest.raises(ValueError, match="rank-1"):
+        _ = where(condition, index_type=StateSpace)
+
+    with pytest.raises(ValueError, match="rank-1"):
+        _ = nonzero(condition, as_tuple=True, index_type=StateSpace)
 
 
 def test_tensor_item_raises_for_non_scalar():
@@ -1888,6 +2026,288 @@ def test_all_over_tensor_equality_dim_and_keepdim():
     assert reduced_keepdim.dims[1] == right
     assert reduced_keepdim.data.shape == (1, right.dim)
     assert torch.equal(reduced_keepdim.data, torch.tensor([[True, False]]))
+
+
+def test_tensor_lt_returns_bool_mask_with_aligned_dims():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    left_data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
+    right_data_ba = torch.empty_like(left_data)
+    perm = torch.tensor([3, 4, 0, 1, 2], dtype=torch.long)
+    right_data_ba[perm] = torch.tensor([1.5, 1.5, 1.5, 1.5, 1.5], dtype=torch.float64)
+
+    left = Tensor(data=left_data, dims=(space_ab,))
+    right = Tensor(data=right_data_ba, dims=(space_ba,))
+
+    out = left < right
+
+    assert out.dims == (space_ab,)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, torch.tensor([True, True, False, False, False]))
+
+
+def test_tensor_comparisons_use_symmetric_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    left = Tensor(
+        data=torch.tensor([[1.0], [3.0]], dtype=torch.float64),
+        dims=(a, BroadcastSpace()),
+    )
+    right = Tensor(
+        data=torch.tensor([[0.0, 2.0, 1.0]], dtype=torch.float64),
+        dims=(BroadcastSpace(), b),
+    )
+
+    lt_out = left < right
+    ge_out = left >= right
+
+    expected_lt = torch.lt(left.data, right.data)
+    expected_ge = torch.ge(left.data, right.data)
+
+    assert lt_out.dims == (a, b)
+    assert ge_out.dims == (a, b)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, expected_lt)
+    assert torch.equal(ge_out.data, expected_ge)
+
+
+def test_tensor_le_and_gt_support_scalar_rank_promotion():
+    left = IndexSpace.linear(2)
+
+    vector = Tensor(data=torch.tensor([1.0, 3.0], dtype=torch.float64), dims=(left,))
+    scalar = Tensor(data=torch.tensor(2.0, dtype=torch.float64), dims=())
+
+    le_out = vector <= scalar
+    gt_out = vector > scalar
+
+    assert le_out.dims == (left,)
+    assert gt_out.dims == (left,)
+    assert torch.equal(le_out.data, torch.tensor([True, False]))
+    assert torch.equal(gt_out.data, torch.tensor([False, True]))
+
+
+def test_tensor_ordered_comparisons_reject_complex_dtype():
+    left = IndexSpace.linear(2)
+
+    a = Tensor(data=torch.tensor([1 + 1j, 2 + 0j], dtype=torch.complex64), dims=(left,))
+    b = Tensor(data=torch.tensor([0 + 1j, 3 + 0j], dtype=torch.complex64), dims=(left,))
+
+    with pytest.raises(RuntimeError, match="not implemented"):
+        _ = a < b
+
+
+def test_tensor_scalar_ordered_comparisons_return_bool_masks():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    lt_out = tensor < 2.5
+    ge_out = tensor >= 2.0
+
+    assert lt_out.dims == (left,)
+    assert ge_out.dims == (left,)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, torch.tensor([True, True, False]))
+    assert torch.equal(ge_out.data, torch.tensor([False, True, True]))
+
+
+def test_scalar_tensor_ordered_comparisons_return_bool_masks():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    lt_out = 2.5 < tensor
+    ge_out = 2.0 >= tensor
+
+    assert lt_out.dims == (left,)
+    assert ge_out.dims == (left,)
+    assert lt_out.data.dtype == torch.bool
+    assert ge_out.data.dtype == torch.bool
+    assert torch.equal(lt_out.data, torch.tensor([False, False, True]))
+    assert torch.equal(ge_out.data, torch.tensor([True, True, False]))
+
+
+def test_tensor_scalar_ordered_comparisons_support_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    tensor = Tensor(
+        data=torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float64),
+        dims=(a, b),
+    )
+
+    out = tensor <= 4.0
+
+    assert out.dims == (a, b)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(
+        out.data, torch.tensor([[True, True, True], [True, False, False]])
+    )
+
+
+def test_tensor_scalar_ordered_comparisons_reject_complex_scalar():
+    left = IndexSpace.linear(2)
+    tensor = Tensor(data=torch.tensor([1.0, 2.0], dtype=torch.float64), dims=(left,))
+
+    with pytest.raises(RuntimeError, match="not implemented"):
+        _ = tensor < (1 + 1j)
+
+
+def test_tensor_real_imag_abs_on_complex_tensor():
+    left = IndexSpace.linear(2)
+    tensor = Tensor(
+        data=torch.tensor([3 + 4j, 1 - 2j], dtype=torch.complex64),
+        dims=(left,),
+    )
+
+    real_out = tensor.real()
+    imag_out = tensor.imag()
+    abs_out = tensor.abs()
+
+    assert real_out.dims == (left,)
+    assert imag_out.dims == (left,)
+    assert abs_out.dims == (left,)
+    assert real_out.data.dtype == torch.float32
+    assert imag_out.data.dtype == torch.float32
+    assert abs_out.data.dtype == torch.float32
+    assert torch.equal(real_out.data, torch.tensor([3.0, 1.0], dtype=torch.float32))
+    assert torch.equal(imag_out.data, torch.tensor([4.0, -2.0], dtype=torch.float32))
+    assert torch.allclose(
+        abs_out.data, torch.tensor([5.0, 5**0.5], dtype=torch.float32)
+    )
+
+
+def test_tensor_real_imag_abs_module_functions_match_methods():
+    left = IndexSpace.linear(2)
+    tensor = Tensor(
+        data=torch.tensor([2 + 3j, -1 + 4j], dtype=torch.complex64),
+        dims=(left,),
+    )
+
+    assert torch.equal(tensor_real(tensor).data, tensor.real().data)
+    assert torch.equal(tensor_imag(tensor).data, tensor.imag().data)
+    assert torch.equal(tensor_abs(tensor).data, tensor.abs().data)
+
+
+def test_tensor_real_imag_abs_on_real_tensor():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([-2.0, 0.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    real_out = tensor.real()
+    imag_out = tensor.imag()
+    abs_out = tensor.abs()
+
+    assert real_out.dims == (left,)
+    assert imag_out.dims == (left,)
+    assert abs_out.dims == (left,)
+    assert real_out.data.dtype == torch.float64
+    assert imag_out.data.dtype == torch.float64
+    assert abs_out.data.dtype == torch.float64
+    assert torch.equal(
+        real_out.data, torch.tensor([-2.0, 0.0, 3.0], dtype=torch.float64)
+    )
+    assert torch.equal(imag_out.data, torch.zeros(3, dtype=torch.float64))
+    assert torch.equal(abs_out.data, torch.tensor([2.0, 0.0, 3.0], dtype=torch.float64))
+
+
+def test_isclose_returns_bool_mask_with_aligned_dims():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    a_data = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.float64)
+    b_data_ba = torch.empty_like(a_data)
+    perm = torch.tensor([3, 4, 0, 1, 2], dtype=torch.long)
+    target = torch.tensor([1.0, 2.0 + 1e-7, 2.9, 4.0, 5.0], dtype=torch.float64)
+    b_data_ba[perm] = target
+
+    a = Tensor(data=a_data, dims=(space_ab,))
+    b = Tensor(data=b_data_ba, dims=(space_ba,))
+
+    out = tensor_isclose(a, b, atol=1e-6)
+
+    assert out.dims == (space_ab,)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, torch.tensor([True, True, False, True, True]))
+
+
+def test_tensor_isclose_method_matches_module_function():
+    left = IndexSpace.linear(3)
+    a = Tensor(data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,))
+    b = Tensor(
+        data=torch.tensor([1.0, 2.0000001, 3.1], dtype=torch.float64), dims=(left,)
+    )
+
+    method_out = a.isclose(b, atol=1e-6)
+    function_out = tensor_isclose(a, b, atol=1e-6)
+
+    assert method_out.dims == function_out.dims
+    assert torch.equal(method_out.data, function_out.data)
+
+
+def test_isclose_supports_scalar_broadcast():
+    left = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64), dims=(left,)
+    )
+
+    out = tensor.isclose(2.0, atol=0.0, rtol=0.0)
+
+    assert out.dims == (left,)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, torch.tensor([False, True, False]))
+
+
+def test_isclose_uses_symmetric_broadcast_dims():
+    a = IndexSpace.linear(2)
+    b = IndexSpace.linear(3)
+
+    left = Tensor(
+        data=torch.tensor([[1.0], [3.0]], dtype=torch.float64),
+        dims=(a, BroadcastSpace()),
+    )
+    right = Tensor(
+        data=torch.tensor([[1.0, 2.0, 1.0 + 1e-7]], dtype=torch.float64),
+        dims=(BroadcastSpace(), b),
+    )
+
+    out = tensor_isclose(left, right, atol=1e-6)
+    expected = torch.isclose(left.data, right.data, atol=1e-6)
+
+    assert out.dims == (a, b)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, expected)
+
+
+def test_isclose_supports_complex_tensors_and_equal_nan():
+    left = IndexSpace.linear(3)
+    a = Tensor(
+        data=torch.tensor([1 + 1j, complex("nan+nanj"), 2 + 0j], dtype=torch.complex64),
+        dims=(left,),
+    )
+    b = Tensor(
+        data=torch.tensor(
+            [1 + 1.0000001j, complex("nan+nanj"), 3 + 0j], dtype=torch.complex64
+        ),
+        dims=(left,),
+    )
+
+    out = tensor_isclose(a, b, atol=1e-6, equal_nan=True)
+
+    assert out.dims == (left,)
+    assert out.data.dtype == torch.bool
+    assert torch.equal(out.data, torch.tensor([True, True, False]))
 
 
 def test_all_supports_tuple_dims_without_keepdim():

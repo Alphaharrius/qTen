@@ -1,9 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from itertools import product
+
+import numpy as np
 import sympy as sy
 from sympy import ImmutableDenseMatrix
 from sympy.matrices.normalforms import smith_normal_decomp  # type: ignore[import-untyped]
+
+from ..precision import get_precision_config
+
+
+def _matrix_to_ndarray(mat: ImmutableDenseMatrix) -> np.ndarray:
+    precision = get_precision_config()
+    return np.array(mat.evalf(), dtype=precision.np_float)
 
 
 class BoundaryCondition(ABC):
@@ -25,6 +34,13 @@ class BoundaryCondition(ABC):
     @abstractmethod
     def representatives(self) -> tuple[ImmutableDenseMatrix, ...]:
         """Return one canonical representative per boundary equivalence class."""
+        pass
+
+    @abstractmethod
+    def distance(
+        self, delta: ImmutableDenseMatrix, lattice_basis: ImmutableDenseMatrix
+    ) -> float:
+        """Measure distance for a lattice-coordinate displacement."""
         pass
 
 
@@ -107,6 +123,27 @@ class PeriodicBoundary(BoundaryCondition):
             )
             for el in elements
         )
+
+    def distance(
+        self, delta: ImmutableDenseMatrix, lattice_basis: ImmutableDenseMatrix
+    ) -> float:
+        expected_shape = (self.basis.rows, 1)
+        if delta.shape != expected_shape:
+            raise ValueError(
+                f"delta shape {delta.shape} does not match expected {expected_shape}."
+            )
+        coeffs = np.array(
+            tuple(product((-1, 0, 1), repeat=self.basis.rows)),
+            dtype=get_precision_config().np_float,
+        )
+        physical_boundaries = _matrix_to_ndarray(lattice_basis) @ _matrix_to_ndarray(
+            self.basis
+        )
+        delta_cart = _matrix_to_ndarray(lattice_basis) @ _matrix_to_ndarray(delta)
+        candidate_displacements = (
+            delta_cart.reshape(1, -1) + coeffs @ physical_boundaries.T
+        )
+        return float(np.linalg.norm(candidate_displacements, axis=1).min())
 
     @staticmethod
     def _snf_periods(S: ImmutableDenseMatrix) -> tuple[int, ...]:

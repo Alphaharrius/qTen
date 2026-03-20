@@ -8,9 +8,10 @@ from typing import cast
 from qten.pointgroups import pointgroup
 from qten.pointgroups.abelian import (
     AbelianBasis,
-    AffineTransform,
+    AbelianGroup,
+    AbelianOpr,
 )
-from qten.bands import bandaffine
+from qten.bands import bandtransform
 from qten.geometries.fourier import fourier_transform
 from qten.symbolics.state_space import MomentumSpace, brillouin_zone
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis, FuncOpr
@@ -37,6 +38,20 @@ def _space_and_offset(dim: int):
     return space, offset
 
 
+def _affine(
+    *,
+    irrep: ImmutableDenseMatrix,
+    axes: tuple[sy.Symbol, ...],
+    offset: Offset | None = None,
+    basis_function_order: int | None = None,
+) -> AbelianOpr:
+    _ = basis_function_order
+    g = AbelianGroup(irrep=irrep, axes=axes)
+    if offset is None:
+        return AbelianOpr(g=g)
+    return AbelianOpr._from_parts(g=g, offset=offset)
+
+
 def _transformed(op, obj):
     ret = op(obj)
     return ret.base if type(ret) is Multiple else ret
@@ -57,26 +72,26 @@ def test_affine_function_dim_and_str():
         rep=ImmutableDenseMatrix([1]),
     )
     assert f.dim == 1
-    assert "AbelianBasis(x)" in str(f)
-    assert "AbelianBasis(x)" in repr(f)
+    assert str(f) == "x"
+    assert repr(f) == "x"
 
 
 def test_affine_group_full_rep_kronecker_power():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[1, 2], [0, 1]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=2)
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=2)
     expected = sy.kronecker_product(irrep, irrep)
-    assert t.full_rep == expected
+    assert t.g._raw_euclidean_repr(2) == expected
 
 
 def test_affine_group_rep_shape_for_order_two():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=2)
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=2)
     # Monomials: x^2, x*y, y^2 -> 3 basis terms.
-    assert t.rep.shape == (3, 3)
+    assert t.g.euclidean_repr(2).shape == (3, 3)
 
 
 def test_affine_group_rejects_non_invertible_irrep():
@@ -84,7 +99,7 @@ def test_affine_group_rejects_non_invertible_irrep():
     _, offset = _space_and_offset(2)
 
     with pytest.raises(ValueError, match="non-zero determinant"):
-        AffineTransform(
+        _affine(
             irrep=ImmutableDenseMatrix([[1, 0], [0, 0]]),
             axes=(x, y),
             offset=offset,
@@ -98,7 +113,7 @@ def test_affine_group_rejects_non_numerical_irrep():
     _, offset = _space_and_offset(2)
 
     with pytest.raises(ValueError, match="contain only numerical entries"):
-        AffineTransform(
+        _affine(
             irrep=ImmutableDenseMatrix([[1, a], [0, 1]]),
             axes=(x, y),
             offset=offset,
@@ -111,9 +126,11 @@ def test_affine_group_affine_rep_identity_basis():
     space, offset = _space_and_offset(2)
     offset = Offset(rep=ImmutableDenseMatrix([1, 2]), space=space)
     irrep = ImmutableDenseMatrix([[2, 0], [0, 3]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
     expected = ImmutableDenseMatrix([[2, 0, 1], [0, 3, 2], [0, 0, 1]])
-    assert t.affine_rep == expected
+    actual = irrep.row_join(offset.rep).col_join(
+        sy.zeros(1, irrep.cols).row_join(sy.ones(1, 1))
+    )
+    assert actual == expected
 
 
 def test_affine_group_affine_rep_non_identity_basis():
@@ -122,39 +139,79 @@ def test_affine_group_affine_rep_non_identity_basis():
     space = AffineSpace(basis=basis)
     offset = Offset(rep=ImmutableDenseMatrix([1, 1]), space=space)
     irrep = ImmutableDenseMatrix([[1, 0], [0, 2]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
-    expected = ImmutableDenseMatrix([[1, 0, 2], [0, 2, 1], [0, 0, 1]])
-    assert t.affine_rep == expected
+    expected = ImmutableDenseMatrix([[1, 0, 1], [0, 2, 1], [0, 0, 1]])
+    actual = irrep.row_join(offset.rep).col_join(
+        sy.zeros(1, irrep.cols).row_join(sy.ones(1, 1))
+    )
+    assert actual == expected
 
 
-def test_affine_group_rebase_changes_space_only():
+def test_funcopr_supports_multiple_u1basis():
+    shift = FuncOpr(int, lambda x: x + 1)
+    psi = U1Basis.new(1)
+    weighted = Multiple(sy.Integer(3), psi)
+
+    out = shift(weighted)
+
+    assert type(out) is Multiple
+    assert out.coef == sy.Integer(3)
+    assert out.base == U1Basis.new(2)
+
+
+def test_composedopr_supports_multiple_u1basis():
+    shift = FuncOpr(int, lambda x: x + 1)
+    scale = FuncOpr(int, lambda x: 2 * x)
+    psi = U1Basis.new(1)
+    weighted = Multiple(sy.Integer(5), psi)
+
+    out = (shift @ scale)(weighted)
+
+    assert type(out) is Multiple
+    assert out.coef == sy.Integer(5)
+    assert out.base == U1Basis.new(3)
+
+
+def test_affine_group_rebase_changes_basis_consistently():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(2)
-    irrep = ImmutableDenseMatrix([[1, 0], [0, 1]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
+    irrep = ImmutableDenseMatrix([[1, 2], [0, 1]])
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
 
     new_space = AffineSpace(basis=ImmutableDenseMatrix([[2, 0], [0, 2]]))
     new_t = t.rebase(new_space)
 
-    assert new_t.irrep == t.irrep
-    assert new_t.axes == t.axes
-    assert new_t.basis_function_order == t.basis_function_order
+    assert new_t.g.irrep == irrep
+    assert new_t.g.axes == t.g.axes
     assert new_t.offset.space == new_space
+
+
+def test_affine_group_rebase_conjugates_irrep_for_nontrivial_basis_change():
+    x, y = sy.symbols("x y")
+    space, offset = _space_and_offset(2)
+    irrep = ImmutableDenseMatrix([[0, -1], [1, 0]])
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
+
+    new_space = AffineSpace(basis=ImmutableDenseMatrix([[2, 0], [0, 1]]))
+    new_t = t.rebase(new_space)
+
+    change = new_space.basis.inv() @ space.basis
+    expected = change @ irrep @ change.inv()
+    assert new_t.g.irrep == ImmutableDenseMatrix(expected)
 
 
 def test_affine_group_basis_keys_match_eigenvalues():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[1, 0], [0, -1]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
 
-    basis = t.basis
+    basis = t.g.basis(1)
     assert set(basis.keys()) == {1, -1}
     for val, func in basis.items():
         assert isinstance(func, AbelianBasis)
         assert func.axes == (x, y)
         assert func.order == 1
-        assert t.rep @ func.rep == val * func.rep
+        assert t.g.euclidean_repr(1) @ func.rep == val * func.rep
         gauge, _ = _split_result(t(func))
         assert gauge == val
 
@@ -163,18 +220,43 @@ def test_affine_transform_eigenfunction_phase():
     x = sy.symbols("x")
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[-1]])
-    t = AffineTransform(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
     f = AbelianBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
     gauge, out = _split_result(t(f))
     assert gauge == -1
     assert out == f
 
 
+def test_affine_transform_abelian_basis_ignores_offset():
+    x = sy.symbols("x")
+    space, _ = _space_and_offset(1)
+    irrep = ImmutableDenseMatrix([[-1]])
+    t0 = _affine(
+        irrep=irrep,
+        axes=(x,),
+        offset=Offset(rep=ImmutableDenseMatrix([0]), space=space),
+        basis_function_order=1,
+    )
+    t1 = _affine(
+        irrep=irrep,
+        axes=(x,),
+        offset=Offset(rep=ImmutableDenseMatrix([7]), space=space),
+        basis_function_order=1,
+    )
+    f = AbelianBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
+
+    gauge0, out0 = _split_result(t0(f))
+    gauge1, out1 = _split_result(t1(f))
+
+    assert gauge0 == gauge1 == -1
+    assert out0 == out1 == f
+
+
 def test_affine_transform_non_eigenfunction_raises():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[1, 0], [0, -1]])
-    t = AffineTransform(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
     f = AbelianBasis(
         expr=x + y,
         axes=(x, y),
@@ -192,7 +274,7 @@ def test_affine_transform_axes_mismatch_raises():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[1]])
-    t = AffineTransform(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
     f = AbelianBasis(expr=y, axes=(y,), order=1, rep=ImmutableDenseMatrix([1]))
     try:
         t(f)
@@ -205,7 +287,7 @@ def test_affine_transform_order_mismatch_rebuilds():
     x = sy.symbols("x")
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[2]])
-    t = AffineTransform(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
     f = AbelianBasis(expr=x**2, axes=(x,), order=2, rep=ImmutableDenseMatrix([1]))
     gauge, out = _split_result(t(f))
     assert gauge == 4
@@ -216,7 +298,7 @@ def test_affine_transform_zero_basis_vector_raises():
     x = sy.symbols("x")
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[1]])
-    t = AffineTransform(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
+    t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
     f = AbelianBasis(expr=0, axes=(x,), order=1, rep=ImmutableDenseMatrix([0]))
     try:
         t(f)
@@ -229,7 +311,7 @@ def test_affine_transform_offset_identity_same_space():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
     irrep = ImmutableDenseMatrix.eye(2)
-    t = AffineTransform(
+    t = _affine(
         irrep=irrep,
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
@@ -245,7 +327,7 @@ def test_affine_transform_offset_translation_only():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
     irrep = ImmutableDenseMatrix.eye(2)
-    t = AffineTransform(
+    t = _affine(
         irrep=irrep,
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([1, 2]), space=space),
@@ -260,7 +342,7 @@ def test_affine_transform_offset_linear_only():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[0, -1], [1, 0]])
-    t = AffineTransform(
+    t = _affine(
         irrep=irrep,
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
@@ -275,7 +357,7 @@ def test_affine_transform_offset_linear_and_translation():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[2, 0], [0, 3]])
-    t = AffineTransform(
+    t = _affine(
         irrep=irrep,
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([1, 2]), space=space),
@@ -292,7 +374,7 @@ def test_affine_transform_offset_rebase_transform_keeps_input_space():
     space_a = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
     space_b = AffineSpace(basis=ImmutableDenseMatrix([[2, 0], [0, 1]]))
 
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[2, 0], [0, 3]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([1, 2]), space=space_a),
@@ -301,92 +383,81 @@ def test_affine_transform_offset_rebase_transform_keeps_input_space():
     offset = Offset(rep=ImmutableDenseMatrix([1, 1]), space=space_b)
     result = _transformed(t, offset)
 
-    t_b = t.rebase(space_b)
-    hom = offset.rep.col_join(sy.ones(1, 1))
-    expected_hom = t_b.affine_rep @ hom
-    expected_rep = expected_hom[:-1, :]
+    native_offset = offset.rebase(space_a)
+    expected_native = t.g.irrep @ native_offset.rep + t.offset.rep
+    expected_rep = (
+        Offset(rep=ImmutableDenseMatrix(expected_native), space=space_a)
+        .rebase(space_b)
+        .rep
+    )
 
     assert result.space == space_b
     assert result.rep == ImmutableDenseMatrix(expected_rep)
 
 
-def test_affine_transform_with_nontrivial_origin_matches_original_action():
+def test_affine_transform_fixpoint_at_makes_target_offset_invariant():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
-    irrep = ImmutableDenseMatrix([[2, 1], [0, 3]])
-    t = AffineTransform(
-        irrep=irrep,
+    t = _affine(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
         axes=(x, y),
-        offset=Offset(rep=ImmutableDenseMatrix([1, -2]), space=space),
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
         basis_function_order=1,
     )
-    origin = Offset(rep=ImmutableDenseMatrix([4, -1]), space=space)
-    target = Offset(rep=ImmutableDenseMatrix([7, 5]), space=space)
+    fixed_point = Offset(rep=ImmutableDenseMatrix([2, -1]), space=space)
 
-    target_prime = Offset(rep=target.rep - origin.rep, space=space)
-    t_prime = t.with_origin(origin)
-    result_prime = _transformed(t_prime, target_prime)
-    result = Offset(rep=result_prime.rep + origin.rep, space=space)
+    t_fixed = t.fixpoint_at(fixed_point)
+    result = _transformed(t_fixed, fixed_point)
 
-    expected = _transformed(t, target)
-    assert result.rep == expected.rep
+    assert result.rep == fixed_point.rep
+    assert result.space == fixed_point.space
 
 
-def test_affine_transform_with_origin_at_fixed_point_keeps_origin_fixed():
+def test_affine_transform_fixpoint_at_default_rebases_point_to_transform_base():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
-    irrep = ImmutableDenseMatrix([[2, 0], [0, 3]])
-    t_offset = ImmutableDenseMatrix([1, -2])
-    t = AffineTransform(
-        irrep=irrep,
+    other_space = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    t = _affine(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
         axes=(x, y),
-        offset=Offset(rep=t_offset, space=space),
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
         basis_function_order=1,
     )
+    fixed_point_other = Offset(rep=ImmutableDenseMatrix([1, -2]), space=other_space)
 
-    R_minus_I = irrep - ImmutableDenseMatrix.eye(2)
-    origin_rep = R_minus_I.inv() @ (-t_offset)
-    origin = Offset(rep=ImmutableDenseMatrix(origin_rep), space=space)
-    t_prime = t.with_origin(origin)
+    t_fixed = t.fixpoint_at(fixed_point_other)
+    fixed_point_base = fixed_point_other.rebase(space)
+    result = _transformed(t_fixed, fixed_point_base)
 
-    target_prime = Offset(rep=ImmutableDenseMatrix([0, 0]), space=space)
-    result_prime = _transformed(t_prime, target_prime)
-    result = Offset(rep=result_prime.rep + origin.rep, space=space)
-    assert result.rep == origin.rep
+    assert t_fixed.base() == space
+    assert result.rep == fixed_point_base.rep
+    assert result.space == space
 
 
-def test_affine_group_element_order_c3_c4():
+def test_affine_transform_fixpoint_at_rebase_true_rebases_transform_to_point_space():
     x, y = sy.symbols("x y")
     space, _ = _space_and_offset(2)
-    zero = Offset(rep=ImmutableDenseMatrix([0, 0]), space=space)
-
-    # C4: 90-degree rotation.
-    irrep_c4 = ImmutableDenseMatrix([[0, -1], [1, 0]])
-    c4 = AffineTransform(
-        irrep=irrep_c4,
+    other_space = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    t = _affine(
+        irrep=ImmutableDenseMatrix([[2, 1], [0, 3]]),
         axes=(x, y),
-        offset=zero,
+        offset=Offset(rep=ImmutableDenseMatrix([5, -4]), space=space),
         basis_function_order=1,
     )
-    assert len(c4.group_elements(max_order=8)) == 4
+    fixed_point_other = Offset(rep=ImmutableDenseMatrix([1, -2]), space=other_space)
 
-    # C3: 120-degree rotation.
-    cos = sy.Rational(-1, 2)
-    sin = sy.sqrt(3) / 2
-    irrep_c3 = ImmutableDenseMatrix([[cos, -sin], [sin, cos]])
-    c3 = AffineTransform(
-        irrep=irrep_c3,
-        axes=(x, y),
-        offset=zero,
-        basis_function_order=1,
-    )
-    assert len(c3.group_elements(max_order=8)) == 3
+    t_fixed = t.fixpoint_at(fixed_point_other, rebase=True)
+    result = _transformed(t_fixed, fixed_point_other)
+
+    assert t_fixed.base() == other_space
+    assert result.rep == fixed_point_other.rep
+    assert result.space == other_space
 
 
 def test_affine_transform_offset_one_dimensional():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[3]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([2]), space=space),
@@ -402,7 +473,7 @@ def test_affine_transform_offset_fixed_point_invariant():
     space, _ = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[2, 0], [0, 3]])
     t_offset = ImmutableDenseMatrix([1, 2])
-    t = AffineTransform(
+    t = _affine(
         irrep=irrep,
         axes=(x, y),
         offset=Offset(rep=t_offset, space=space),
@@ -422,7 +493,7 @@ def test_affine_transform_direct_action_keeps_closed_values_and_transforms_open_
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
 
-    closed_op = AffineTransform(
+    closed_op = _affine(
         irrep=ImmutableDenseMatrix([[1]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([0]), space=space),
@@ -431,7 +502,7 @@ def test_affine_transform_direct_action_keeps_closed_values_and_transforms_open_
     v = Offset(rep=ImmutableDenseMatrix([2]), space=space)
     assert closed_op(v) == v
 
-    non_closed_op = AffineTransform(
+    non_closed_op = _affine(
         irrep=ImmutableDenseMatrix([[1]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([1]), space=space),
@@ -443,7 +514,7 @@ def test_affine_transform_direct_action_keeps_closed_values_and_transforms_open_
 def test_affine_transform_u1basis_preserves_nontransformable_and_marks_nonclosure():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[1]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([1]), space=space),
@@ -469,7 +540,7 @@ def test_affine_transform_u1basis_preserves_nontransformable_and_marks_nonclosur
 def test_affine_transform_u1state_updates_supported_irreps_and_preserves_coef():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[1]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([1]), space=space),
@@ -501,7 +572,7 @@ def test_u1span_gram_tracks_basis_order():
 def test_affine_transform_hilbert_matmul_matches_call_output_state():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[1]]),
         axes=(x,),
         offset=Offset(rep=ImmutableDenseMatrix([0]), space=space),
@@ -529,7 +600,7 @@ def test_affine_transform_momentum_c4_ignores_translation_and_wraps_fractional()
     recip = lattice.dual
 
     # Include non-zero translation; momentum transform should use only linear part.
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([2, -3]), space=lattice),
@@ -550,7 +621,7 @@ def test_affine_transform_u1state_transforms_supported_irreps_only():
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
         unit_cell={"r": ImmutableDenseMatrix([0, 0])},
     )
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
@@ -571,7 +642,7 @@ def test_affine_transform_hilbert_c4_u1state_mapping():
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2)),
         unit_cell={"r": ImmutableDenseMatrix([0, 0])},
     )
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
@@ -600,7 +671,7 @@ def test_affine_transform_hilbert_c4_u1state_mapping():
 def test_affine_transform_hilbert_applies_nontrivial_u1state_gauge_phase():
     x = sy.symbols("x")
     space, offset = _space_and_offset(1)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[-1]]),
         axes=(x,),
         offset=offset,
@@ -624,7 +695,7 @@ def test_affine_transform_hilbert_applies_nontrivial_u1state_gauge_phase():
 def test_affine_transform_hilbert_applies_matrix_gauge_block():
     x, y = sy.symbols("x y")
     space, offset = _space_and_offset(2)
-    t = AffineTransform(
+    t = _affine(
         irrep=ImmutableDenseMatrix([[-1, 0], [0, 1]]),
         axes=(x, y),
         offset=offset,
@@ -644,7 +715,7 @@ def test_affine_transform_hilbert_applies_matrix_gauge_block():
     assert torch.allclose(tmat.data, expected)
 
 
-def test_bandaffine_both_preserves_c4_symmetric_momentum_tensor_up_to_alignment():
+def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignment():
     x, y = sy.symbols("x y")
 
     # Square lattice with a 2x2 momentum grid: (0,0), (0,1/2), (1/2,0), (1/2,1/2).
@@ -679,20 +750,20 @@ def test_bandaffine_both_preserves_c4_symmetric_momentum_tensor_up_to_alignment(
     tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
 
     # C4 rotation in real space.
-    c4 = AffineTransform(
+    c4 = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
         basis_function_order=1,
     )
 
-    tensor_out = bandaffine(c4, tensor_in, opt="both")
+    tensor_out = bandtransform(c4, tensor_in, opt="both")
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
 
     assert torch.allclose(tensor_out.data, tensor_in.data)
 
 
-def test_bandaffine_both_matches_explicit_k_aligned_reference():
+def test_bandtransform_both_matches_explicit_k_aligned_reference():
     x, y = sy.symbols("x y")
 
     lattice = Lattice(
@@ -722,7 +793,7 @@ def test_bandaffine_both_matches_explicit_k_aligned_reference():
         data[n, 1, 0] = -0.6 + 0.3j * phase_y.conj() + 0.1 * phase_x.conj()
     tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
 
-    c4 = AffineTransform(
+    c4 = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
@@ -753,14 +824,14 @@ def test_bandaffine_both_matches_explicit_k_aligned_reference():
     )
     tensor_ref = cast(Tensor, (left_ref @ tensor_in @ right_ref.h(-2, -1)))
 
-    tensor_out = bandaffine(c4, tensor_in, opt="both")
+    tensor_out = bandtransform(c4, tensor_in, opt="both")
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
     tensor_ref = tensor_ref.align(0, k_space).align(1, h_space).align(2, h_space)
 
     assert torch.allclose(tensor_out.data, tensor_ref.data)
 
 
-def test_bandaffine_both_c4_fourfold_roundtrip_complex_tensor():
+def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
     x, y = sy.symbols("x y")
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(2),
@@ -779,7 +850,7 @@ def test_bandaffine_both_c4_fourfold_roundtrip_complex_tensor():
     )
     h_space = HilbertSpace.new([_state(r_x, p_minus), _state(r_y, p_minus)])
 
-    c4 = AffineTransform(
+    c4 = _affine(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine),
@@ -801,27 +872,50 @@ def test_bandaffine_both_c4_fourfold_roundtrip_complex_tensor():
 
     out = tensor_in
     for _ in range(4):
-        out = bandaffine(c4, out, opt="both")
+        out = bandtransform(c4, out, opt="both")
 
     out = out.align(0, k_space).align(1, h_space).align(2, h_space)
     assert torch.allclose(out.data, tensor_in.data)
 
 
 def test_affine_query_c3_xy_and_inverse_orientation():
-    t = pointgroup("c3-xy:xy-o2")
-    t_inv = pointgroup("c3-xy:yx-o2")
+    t = pointgroup("c3-xy:xy")
+    t_inv = pointgroup("c3-xy:yx")
 
     assert t.axes == sy.symbols("x y")
-    assert t.basis_function_order == 2
     assert t.irrep * t_inv.irrep == ImmutableDenseMatrix.eye(2)
 
 
+def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
+    triangular = ImmutableDenseMatrix(
+        [
+            [sy.sqrt(3) / 2, 0],
+            [-sy.Rational(1, 2), 1],
+        ]
+    )
+
+    honeycomb = Lattice(
+        basis=triangular,
+        unit_cell={
+            "a": triangular
+            @ ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": triangular
+            @ ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+        },
+        shape=(12, 12),
+    )
+
+    c6 = pointgroup("c6-xy:xy")
+    rotated = (AbelianOpr(g=c6) @ honeycomb.at("a")).fractional()
+
+    assert rotated.rep.applyfunc(sy.simplify) == honeycomb.unit_cell["b"].rep
+
+
 def test_affine_query_c3_xyz_on_yz_plane():
-    t = pointgroup("c3-xyz:yz-o2")
+    t = pointgroup("c3-xyz:yz")
     x, y, z = sy.symbols("x y z")
 
     assert t.axes == (x, y, z)
-    assert t.basis_function_order == 2
     assert t.irrep[0, 0] == 1
     assert t.irrep[0, 1] == 0
     assert t.irrep[0, 2] == 0
@@ -829,24 +923,23 @@ def test_affine_query_c3_xyz_on_yz_plane():
 
 def test_affine_query_cyclic_forbids_1d_rotation():
     try:
-        pointgroup("c3-x:x-o2")
+        pointgroup("c3-x:x")
         assert False, "Expected ValueError for 1D cyclic rotation."
     except ValueError:
         pass
 
 
 def test_affine_query_mirror_2d_fixed_axis():
-    t = pointgroup("m-xy:x-o1")
+    t = pointgroup("m-xy:x")
     expected = ImmutableDenseMatrix([[1, 0], [0, -1]])
     assert t.irrep == expected
 
 
 def test_affine_query_c6_2d_and_3d_examples():
-    t2 = pointgroup("c6-xy:xy-o2")
+    t2 = pointgroup("c6-xy:xy")
     assert t2.irrep.shape == (2, 2)
-    assert t2.basis_function_order == 2
 
-    t3 = pointgroup("c6-xyz:yz-o2")
+    t3 = pointgroup("c6-xyz:yz")
     assert t3.irrep.shape == (3, 3)
     assert t3.irrep[0, 0] == 1
     assert t3.irrep[0, 1] == 0
@@ -854,11 +947,11 @@ def test_affine_query_c6_2d_and_3d_examples():
 
 
 def test_affine_query_mirror_1d_2d_3d_examples():
-    t1 = pointgroup("m-x:x-o1")
+    t1 = pointgroup("m-x:x")
     assert t1.irrep == ImmutableDenseMatrix([[-1]])
 
-    t2 = pointgroup("m-xy:y-o1")
+    t2 = pointgroup("m-xy:y")
     assert t2.irrep == ImmutableDenseMatrix([[-1, 0], [0, 1]])
 
-    t3 = pointgroup("m-xyz:yz-o1")
+    t3 = pointgroup("m-xyz:yz")
     assert t3.irrep == ImmutableDenseMatrix([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])

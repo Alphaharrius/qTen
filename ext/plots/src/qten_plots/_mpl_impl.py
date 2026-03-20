@@ -1,16 +1,50 @@
 import colorsys
+import math
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Union, Any, cast, Tuple
-from qten.geometries.spatials import Lattice
+from typing import Optional, Union, Any, cast, Tuple, Sequence
+from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
 from qten.linalg.tensors import Tensor
-from qten.symbolics.state_space import MomentumSpace, same_rays
-from qten.symbolics.hilbert_space import HilbertSpace
+from qten.symbolics.state_space import (
+    MomentumSpace,
+    StateSpace,
+    same_rays,
+    brillouin_zone,
+)
+from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from ._utils import compute_bonds
+from .plottables import PointCloud
 
 
 # --- Registered Plot Methods (Matplotlib Backend) ---
+
+
+def _pointcloud_coords(obj: PointCloud) -> torch.Tensor:
+    if not obj.offsets:
+        return torch.empty((0, 0), dtype=torch.float64)
+
+    coords = np.stack([offset.to_vec(np.ndarray) for offset in obj.offsets])
+    return torch.tensor(coords, dtype=torch.float64)
+
+
+def _complex_phase_colors(values: np.ndarray) -> list[tuple[float, float, float]]:
+    colors: list[tuple[float, float, float]] = []
+    for value in values:
+        phase = np.angle(value)
+        hue = float((phase + np.pi) / (2 * np.pi))
+        colors.append(colorsys.hsv_to_rgb(hue % 1.0, 0.95, 0.95))
+    return colors
+
+
+def _subplot_grid(n_items: int, ncols: int) -> tuple[int, int]:
+    cols = min(ncols, max(1, n_items))
+    rows = math.ceil(n_items / cols)
+    return rows, cols
+
+
+def _column_label(col_dim: StateSpace, index: int) -> str:
+    return str(col_dim.elements()[index])
 
 
 @Lattice.register_plot_method("structure", backend="matplotlib")
@@ -23,6 +57,7 @@ def plot_structure_mpl(
     save_path: Optional[str] = None,
     ax: Optional[Any] = None,
     color_by: str = "basis",
+    highlights: Sequence[PointCloud] | None = None,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -63,7 +98,7 @@ def plot_structure_mpl(
     if color_by not in valid_color_by:
         raise ValueError(f"Invalid color_by '{color_by}'. Options: {valid_color_by}")
 
-    coords = obj.coords()
+    coords = obj.cartes(torch.Tensor)
     coords_np = coords.numpy()
 
     x = coords_np[:, 0]
@@ -126,6 +161,47 @@ def plot_structure_mpl(
     else:
         ax.scatter(x, y, c=colors, s=50, zorder=5, label="Sites")
 
+    if highlights:
+        fallback_colors = [
+            colorsys.hsv_to_rgb((i * 0.38197 + 0.17) % 1.0, 0.95, 0.85)
+            for i in range(len(highlights))
+        ]
+        for idx, cloud in enumerate(highlights):
+            highlight_coords = _pointcloud_coords(cloud)
+            if highlight_coords.shape[1] != obj.dim:
+                raise ValueError(
+                    "Highlight PointCloud dimension does not match plotted lattice "
+                    f"dimension {obj.dim}."
+                )
+            if highlight_coords.shape[0] == 0:
+                continue
+
+            highlight_np = highlight_coords.numpy()
+            x_group = highlight_np[:, 0]
+            y_group = highlight_np[:, 1]
+            trace_color = cloud.color or fallback_colors[idx]
+            if is_3d:
+                z_group = highlight_np[:, 2]
+                cast(Any, ax).scatter(
+                    x_group,
+                    y_group,
+                    z_group,
+                    c=[trace_color],
+                    s=55,
+                    marker="D",
+                    label=f"Highlight {idx}",
+                )
+            else:
+                ax.scatter(
+                    x_group,
+                    y_group,
+                    c=[trace_color],
+                    s=110,
+                    marker="D",
+                    zorder=6,
+                    label=f"Highlight {idx}",
+                )
+
     # Spins
     if spin_data is not None:
         if isinstance(spin_data, np.ndarray):
@@ -155,6 +231,52 @@ def plot_structure_mpl(
     ax.set_ylabel("Y")
     if is_3d:
         cast(Any, ax).set_zlabel("Z")
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+
+    return fig
+
+
+@PointCloud.register_plot_method("scatter", backend="matplotlib")
+def plot_pointcloud_mpl(
+    obj: PointCloud,
+    ax: Optional[Any] = None,
+    save_path: Optional[str] = None,
+    **kwargs,
+) -> plt.Figure:
+    coords = _pointcloud_coords(obj)
+    if coords.shape[1] not in (2, 3):
+        raise ValueError(
+            f"PointCloud scatter supports only 2D or 3D points, got dimension {coords.shape[1]}."
+        )
+
+    coords_np = coords.numpy()
+    is_3d = coords.shape[1] == 3
+
+    if ax is None:
+        fig = plt.figure(figsize=kwargs.get("figsize", (8, 6)))
+        if is_3d:
+            ax = fig.add_subplot(111, projection="3d")
+            ax.set_title("3D Point Cloud")
+        else:
+            ax = fig.add_subplot(111)
+            ax.set_title("2D Point Cloud")
+            ax.set_aspect("equal")
+    else:
+        fig = ax.get_figure()
+
+    trace_color = obj.color or kwargs.get("color", "#d1495b")
+    if is_3d:
+        cast(Any, ax).scatter(
+            coords_np[:, 0], coords_np[:, 1], coords_np[:, 2], c=trace_color, s=30
+        )
+        cast(Any, ax).set_zlabel("Z")
+    else:
+        ax.scatter(coords_np[:, 0], coords_np[:, 1], c=trace_color, s=60)
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
 
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
@@ -432,6 +554,114 @@ def plot_spectrum_mpl(
     return fig
 
 
+@Tensor.register_plot_method("column_scatter", backend="matplotlib")
+def plot_tensor_column_scatter_mpl(
+    obj: Tensor,
+    title: str = "Tensor Scatter",
+    save_path: Optional[str] = None,
+    default_size: float = 16.0,
+    ncols: int = 3,
+    **kwargs,
+) -> plt.Figure:
+    if obj.rank() != 2:
+        raise ValueError(
+            "Tensor scatter requires a rank-2 tensor with dims "
+            f"(HilbertSpace, StateSpace), got rank {obj.rank()}."
+        )
+    if default_size <= 0:
+        raise ValueError(f"default_size must be positive, got {default_size}")
+    if ncols <= 0:
+        raise ValueError(f"ncols must be positive, got {ncols}")
+
+    row_dim, col_dim = obj.dims
+    if not isinstance(row_dim, HilbertSpace) or not isinstance(col_dim, StateSpace):
+        raise ValueError(
+            "Tensor scatter requires dims (HilbertSpace, StateSpace), got "
+            f"({type(row_dim).__name__}, {type(col_dim).__name__})."
+        )
+    if not row_dim.is_homogeneous():
+        raise ValueError(
+            "Tensor scatter requires the first HilbertSpace to be homogeneous."
+        )
+
+    row_basis = cast(tuple[U1Basis, ...], row_dim.elements())
+    if row_basis:
+        try:
+            row_basis[0].irrep_of(Offset)
+        except ValueError as exc:
+            raise ValueError(
+                "Tensor scatter requires the first HilbertSpace to contain Offset irreps."
+            ) from exc
+
+    row_offsets = [basis.irrep_of(Offset) for basis in row_basis]
+    if row_offsets:
+        coords = np.stack(
+            [offset.to_vec(np.ndarray).reshape(-1) for offset in row_offsets]
+        )
+        spatial_dim = coords.shape[1]
+    else:
+        coords = np.empty((0, 0), dtype=float)
+        spatial_dim = 0
+    if spatial_dim not in (1, 2, 3):
+        raise ValueError(
+            "Tensor scatter only supports Offset coordinates of dimension 1, 2, or 3; "
+            f"got {spatial_dim}."
+        )
+
+    tensor = obj.data.detach().cpu()
+    if not tensor.is_complex():
+        tensor = tensor.to(torch.complex128)
+    tensor_np = tensor.numpy()
+
+    n_columns = tensor_np.shape[1]
+    nrows, ncols_actual = _subplot_grid(n_columns, ncols=ncols)
+    figsize = kwargs.pop("figsize", (5 * ncols_actual, 4 * nrows))
+    column_labels = [_column_label(col_dim, j) for j in range(n_columns)]
+
+    subplot_kwargs: dict[str, Any] = {"figsize": figsize, "squeeze": False}
+    if spatial_dim == 3:
+        subplot_kwargs["subplot_kw"] = {"projection": "3d"}
+
+    fig, axes = plt.subplots(nrows, ncols_actual, **subplot_kwargs)
+    fig.suptitle(title)
+
+    max_mag = float(np.abs(tensor_np).max()) if tensor_np.size > 0 else 0.0
+    for j in range(n_columns):
+        ax = axes[j // ncols_actual, j % ncols_actual]
+        column = tensor_np[:, j]
+        magnitudes = np.abs(column)
+        if max_mag > 0:
+            sizes = default_size * magnitudes / max_mag
+        else:
+            sizes = np.full_like(magnitudes, fill_value=default_size, dtype=float)
+        colors = _complex_phase_colors(column)
+
+        if spatial_dim == 3:
+            cast(Any, ax).scatter(
+                coords[:, 0], coords[:, 1], coords[:, 2], s=sizes, c=colors
+            )
+            cast(Any, ax).set_zlabel("Z")
+        else:
+            y = coords[:, 1] if spatial_dim == 2 else np.zeros(coords.shape[0])
+            ax.scatter(coords[:, 0], y, s=sizes, c=colors)
+            if spatial_dim == 2:
+                ax.set_aspect("equal")
+
+        ax.set_title(column_labels[j])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.grid(True, alpha=0.2)
+
+    for j in range(n_columns, nrows * ncols_actual):
+        axes[j // ncols_actual, j % ncols_actual].set_visible(False)
+
+    fig.tight_layout()
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+
+    return fig
+
+
 @Tensor.register_plot_method("bandstructure", backend="matplotlib")
 def plot_bandstructure_mpl(
     obj: Tensor,
@@ -439,6 +669,9 @@ def plot_bandstructure_mpl(
     save_path: Optional[str] = None,
     ax: Optional[Any] = None,
     data_aspect: bool = True,
+    mode: str = "auto",
+    hide_nullspace: bool = False,
+    nullspace_tol: float = 1e-9,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -452,12 +685,21 @@ def plot_bandstructure_mpl(
         the corresponding figure is returned via `ax.get_figure()`.
     data_aspect : bool, default True
         If True, keep the real physical kx:ky axis ratio in 3D surface mode.
+    hide_nullspace : bool, default False
+        If True, mask surface points with |E| <= nullspace_tol so the
+        band surface opens around the nullspace.
+    nullspace_tol : float, default 1e-9
+        Energy tolerance used when hide_nullspace is enabled.
     """
     # 1. Check Dimensions
     if obj.rank() != 3:
         raise ValueError(
             f"Tensor must be rank 3 (Momentum, Hilbert, Hilbert), got rank {obj.rank()}"
         )
+    if mode not in ("auto", "path", "surface"):
+        raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
+    if nullspace_tol < 0:
+        raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
 
     k_space = obj.dims[0]
     if not isinstance(k_space, MomentumSpace):
@@ -479,18 +721,9 @@ def plot_bandstructure_mpl(
     eigvals_np = eigvals.detach().cpu().numpy()
     n_bands = eigvals_np.shape[1]
 
-    # 3. Detect 2D grid shape (aligned with plotly backend logic)
-    grid_shape = getattr(k_space, "shape", None)
-    if grid_shape is None and "shape" in kwargs:
-        grid_shape = kwargs["shape"]
-
-    is_2d_grid = (
-        grid_shape is not None
-        and len(grid_shape) == 2
-        and grid_shape[0] * grid_shape[1] == len(k_points)
-    )
-
-    # 4. Build Cartesian reciprocal coordinates once for both modes.
+    # 3. Build Cartesian reciprocal coordinates once for both modes.
+    recip = None
+    is_canonical_2d_bz = False
     if len(k_points) > 0:
         recip = k_points[0].space
         basis_sym = recip.basis
@@ -501,11 +734,28 @@ def plot_bandstructure_mpl(
             rep = k.rep
             k_fracs.append(np.array(rep).astype(float).flatten())
         k_fracs_arr = np.stack(k_fracs)
-        k_cart = k_fracs_arr @ basis_mat
+        k_cart = k_fracs_arr @ basis_mat.T
+
+        if (
+            isinstance(recip, ReciprocalLattice)
+            and recip.dim == 2
+            and all(k.space == recip for k in k_points)
+        ):
+            canonical_k_space = brillouin_zone(recip)
+            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
+                canonical_k_space.elements()
+            )
     else:
         k_cart = np.array([])
 
-    if is_2d_grid and grid_shape is not None and len(k_cart) > 0:
+    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    if is_surface and not is_canonical_2d_bz:
+        raise ValueError(
+            "Surface bandstructure plotting requires the momentum axis to be the "
+            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+
+    if is_surface and recip is not None and len(k_cart) > 0:
         # 2D Surface Plot
         # Requires 3D projection
         if ax is None:
@@ -519,10 +769,13 @@ def plot_bandstructure_mpl(
                 )
 
         # Reshape eigenvalues
-        evals_grid = eigvals_np.reshape(grid_shape[0], grid_shape[1], n_bands)
+        evals_grid = eigvals_np.reshape(recip.shape[0], recip.shape[1], n_bands)
+        if hide_nullspace:
+            evals_grid = evals_grid.copy()
+            evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
 
-        KX = k_cart[:, 0].reshape(grid_shape[0], grid_shape[1])
-        KY = k_cart[:, 1].reshape(grid_shape[0], grid_shape[1])
+        KX = k_cart[:, 0].reshape(recip.shape[0], recip.shape[1])
+        KY = k_cart[:, 1].reshape(recip.shape[0], recip.shape[1])
 
         cmap = kwargs.get("cmap", "viridis")
         surface_alpha = kwargs.get("surface_alpha", 0.85)
@@ -545,7 +798,8 @@ def plot_bandstructure_mpl(
         if data_aspect:
             x_span = float(np.ptp(KX))
             y_span = float(np.ptp(KY))
-            z_span = float(np.ptp(evals_grid))
+            finite_evals = evals_grid[np.isfinite(evals_grid)]
+            z_span = float(np.ptp(finite_evals)) if finite_evals.size > 0 else 1.0
             # Keep real kx:ky scaling (plotly's aspectmode='data' equivalent).
             cast(Any, ax).set_box_aspect(
                 (

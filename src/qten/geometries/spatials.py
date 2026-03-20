@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from numbers import Number
 from typing import Tuple, Type, TypeVar, Union, cast, Mapping, Generic, Sequence
 from typing_extensions import override
 from abc import ABC, abstractmethod
@@ -52,6 +53,10 @@ class AffineSpace(Spatial):
         """Return the dimension induced by the basis matrix."""
         return self.basis.rows
 
+    def origin(self) -> "Offset":
+        """Return the zero offset in this affine space."""
+        return Offset(rep=ImmutableDenseMatrix([0] * self.dim), space=self)
+
     def __str__(self):
         data = [[str(sympify(x)) for x in row] for row in self.basis.tolist()]
         return f"AffineSpace(basis={data})"
@@ -75,7 +80,9 @@ class AbstractLattice(Generic[_O], AffineSpace, HasDual):
         return AffineSpace(basis=self.basis)
 
     @abstractmethod
-    def cartes(self) -> Tuple[_O, ...]:
+    def cartes(
+        self, T: Type[Union[_O, torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple[_O, ...], torch.Tensor, np.ndarray]:
         """Enumerate the canonical coordinates of the lattice."""
         raise NotImplementedError()
 
@@ -197,64 +204,119 @@ class Lattice(AbstractLattice["Offset"]):
 
     @lru_cache
     @override
-    def cartes(self) -> Tuple["Offset", ...]:
-        """Enumerate all canonical lattice offsets in the finite region."""
-        elements = product(*tuple(range(n) for n in self.shape))
+    def cartes(
+        self, T: Type[Union["Offset", torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple["Offset", ...], torch.Tensor, np.ndarray]:
+        """
+        Enumerate every site in the finite lattice.
+
+        Parameters
+        ----------
+        `T` : `Type[Union[Offset, torch.Tensor, np.ndarray]]`
+            Requested return type. `Offset` returns lattice-site objects,
+            while `torch.Tensor` and `np.ndarray` return Cartesian coordinates
+            with shape `(n_sites, dim)`.
+        """
+        if T == torch.Tensor:
+            return _lattice_coords(self)
+        if T == np.ndarray:
+            return cast(np.ndarray, _lattice_coords(self).detach().cpu().numpy())
+        if T not in (None, Offset):
+            raise TypeError(
+                f"Unsupported type {T} for cartes. Supported types: Offset, torch.Tensor, np.ndarray"
+            )
+
+        elements = self.boundaries.representatives()
+        unit_cell_sites = tuple(self.unit_cell.values())
         return tuple(
-            Offset(rep=ImmutableDenseMatrix(el), space=self) for el in elements
+            Offset(rep=ImmutableDenseMatrix(element + site.rep), space=self)
+            for element in elements
+            for site in unit_cell_sites
         )
 
-    def coords(
-        self,
-    ) -> torch.Tensor:
+    @lru_cache
+    def basis_vectors(self) -> Tuple["Offset", ...]:
         """
-        Compute Cartesian coordinates for every site in the finite lattice.
+        Return the primitive basis vectors as spatial `Offset`s.
 
-        Returns
-        -------
-        `torch.Tensor`
-            Tensor of shape `(n_sites, dim)` containing site coordinates in
-            Cartesian form.
+        If a primitive vector coincides with a valid lattice site modulo unit-cell
+        offsets, it is returned in `self`. Otherwise it is returned in
+        `self.affine`, since the translation vector is still a valid spatial
+        vector even when it is not itself a site of the lattice.
         """
-        precision = get_precision_config()
+        vectors = []
+        for j in range(self.dim):
+            rep = ImmutableDenseMatrix(
+                [sy.Integer(1) if i == j else sy.Integer(0) for i in range(self.dim)]
+            )
+            candidate = Offset(rep=rep, space=self.affine)
+            vectors.append(candidate.rebase(self) if candidate in self else candidate)
+        return tuple(vectors)
 
-        def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
-            return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
+    def at(
+        self, unit_cell: str = "r", cell_offset: Sequence[int] | None = None
+    ) -> "Offset[Lattice]":
+        """
+        Create a lattice offset from a unit-cell site and an integer cell offset.
 
-        cell_reps = self.boundaries.representatives()
-        if not cell_reps:
-            return torch.empty((0, self.dim), dtype=precision.torch_float)
+        Parameters
+        ----------
+        `unit_cell` : `str`
+            Label of the site within the unit cell.
+        `cell_offset` : `Sequence[int] | None`
+            Integer translation in lattice coordinates. If omitted, the origin
+            cell is used.
+        """
+        try:
+            site = self.unit_cell[unit_cell]
+        except KeyError as e:
+            raise KeyError(f"Unknown unit-cell site {unit_cell!r}.") from e
 
-        lat_reps = np.stack(
-            [_as_numeric_row(rep) for rep in cell_reps]
-        )  # (N_cells, dim)
+        if cell_offset is None:
+            cell_offset = (0,) * self.dim
+        elif len(cell_offset) != self.dim:
+            raise ValueError(
+                f"cell_offset must have length {self.dim}, got {len(cell_offset)}."
+            )
 
-        sorted_unit_cell = sorted(self.unit_cell.items(), key=lambda x: str(x[0]))
-        basis_reps = np.stack(
-            [_as_numeric_row(site_offset.rep) for _, site_offset in sorted_unit_cell]
-        )  # (N_basis, dim)
+        rep = ImmutableDenseMatrix(tuple(cell_offset)) + site.rep
+        return Offset(rep=ImmutableDenseMatrix(rep), space=self)
 
-        total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
-        total_fractional_flat = total_fractional.reshape(-1, self.dim)
 
-        # Vectorized wrapping of fractional coordinates modulo boundaries
-        # b = f @ N^{-T}
-        N_inv = np.array(self.boundaries.basis.inv().evalf(), dtype=precision.np_float)
-        b = total_fractional_flat @ N_inv.T
+def _lattice_coords(lattice: Lattice) -> torch.Tensor:
+    """Return Cartesian coordinates for every site in a finite lattice."""
+    precision = get_precision_config()
 
-        # Snap coordinates very close to integers to avoid floating point errors when applying modulo
-        b_rounded = np.round(b)
-        b_snapped = np.where(np.isclose(b, b_rounded, atol=1e-10), b_rounded, b)
-        b_wrapped = b_snapped % 1.0
+    def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
+        return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
 
-        # f_wrapped = b_wrapped @ N^T
-        N_mat = np.array(self.boundaries.basis.evalf(), dtype=precision.np_float)
-        wrapped_fractional_flat = b_wrapped @ N_mat.T
+    cell_reps = lattice.boundaries.representatives()
+    if not cell_reps:
+        return torch.empty((0, lattice.dim), dtype=precision.torch_float)
 
-        basis_mat = np.array(self.basis.evalf(), dtype=precision.np_float)
+    lat_reps = np.stack([_as_numeric_row(rep) for rep in cell_reps])
 
-        coords_np = wrapped_fractional_flat @ basis_mat.T
-        return torch.tensor(coords_np, dtype=precision.torch_float)
+    sorted_unit_cell = sorted(lattice.unit_cell.items(), key=lambda x: str(x[0]))
+    basis_reps = np.stack(
+        [_as_numeric_row(site_offset.rep) for _, site_offset in sorted_unit_cell]
+    )
+
+    total_fractional = lat_reps[:, np.newaxis, :] + basis_reps[np.newaxis, :, :]
+    total_fractional_flat = total_fractional.reshape(-1, lattice.dim)
+
+    N_inv = np.array(lattice.boundaries.basis.inv().evalf(), dtype=precision.np_float)
+    b = total_fractional_flat @ N_inv.T
+
+    b_rounded = np.round(b)
+    b_snapped = np.where(np.isclose(b, b_rounded, atol=1e-10), b_rounded, b)
+    b_wrapped = b_snapped % 1.0
+
+    N_mat = np.array(lattice.boundaries.basis.evalf(), dtype=precision.np_float)
+    wrapped_fractional_flat = b_wrapped @ N_mat.T
+
+    basis_mat = np.array(lattice.basis.evalf(), dtype=precision.np_float)
+    coords_np = wrapped_fractional_flat @ basis_mat.T
+    return torch.tensor(coords_np, dtype=precision.torch_float)
 
 
 @dataclass(frozen=True)
@@ -292,21 +354,100 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
 
     @lru_cache
     @override
-    def cartes(self) -> Tuple["Momentum", ...]:
-        """Enumerate canonical momentum points in fractional coordinates."""
+    def cartes(
+        self, T: Type[Union["Momentum", torch.Tensor, np.ndarray]] | None = None
+    ) -> Union[Tuple["Momentum", ...], torch.Tensor, np.ndarray]:
+        """
+        Enumerate canonical momentum points.
+
+        Parameters
+        ----------
+        `T` : `Type[Union[Momentum, torch.Tensor, np.ndarray]]`
+            Requested return type. `Momentum` returns momentum-point objects, while
+            `torch.Tensor` and `np.ndarray` return Cartesian coordinates with
+            shape `(n_points, dim)`.
+        """
         element_indices = product(*(range(n) for n in self.shape))
         sizes = ImmutableDenseMatrix(tuple(sy.Rational(1, n) for n in self.shape))
         scaled_elements = (
             ImmutableDenseMatrix(el).multiply_elementwise(sizes)
             for el in element_indices
         )
-        return tuple(
+        momenta = tuple(
             Momentum(rep=ImmutableDenseMatrix(el), space=self) for el in scaled_elements
         )
+        if T in (None, Momentum):
+            return momenta
+        if T == np.ndarray:
+            precision = get_precision_config()
+            return np.stack(
+                [
+                    np.array(momentum.to_vec(np.ndarray), dtype=precision.np_float)
+                    for momentum in momenta
+                ]
+            )
+        if T == torch.Tensor:
+            precision = get_precision_config()
+            return torch.tensor(self.cartes(np.ndarray), dtype=precision.torch_float)
+        raise TypeError(
+            f"Unsupported type {T} for cartes. Supported types: Momentum, torch.Tensor, np.ndarray"
+        )
+
+    @lru_cache
+    def basis_vectors(self) -> Tuple["Offset", ...]:
+        """
+        Return the primitive reciprocal basis vectors as spatial objects.
+
+        If a primitive reciprocal vector coincides with a sampled momentum point,
+        it is returned as a `Momentum` in `self`. Otherwise it is returned as an
+        `Offset` in `self.affine`.
+        """
+        vectors = []
+        for j in range(self.dim):
+            rep = ImmutableDenseMatrix(
+                [sy.Integer(1) if i == j else sy.Integer(0) for i in range(self.dim)]
+            )
+            candidate = Offset(rep=rep, space=self.affine)
+            momentum_candidate = Momentum(rep=rep, space=self)
+            vectors.append(
+                momentum_candidate
+                if _is_reciprocal_grid_point(self, momentum_candidate, canonical=True)
+                else candidate
+            )
+        return tuple(vectors)
 
 
 _VecType = TypeVar("_VecType", bound=Union[np.ndarray, ImmutableDenseMatrix])
 """Type variable for vector types that can be returned by `Offset.to_vec()`."""
+
+
+def _matrix_to_ndarray(mat: ImmutableDenseMatrix) -> np.ndarray:
+    precision = get_precision_config()
+    return np.array(mat.evalf(), dtype=precision.np_float)
+
+
+@lru_cache
+def _space_basis_as_ndarray(space: AffineSpace) -> np.ndarray:
+    return _matrix_to_ndarray(space.basis)
+
+
+def _cartesian_delta(a: "Offset", b: "Offset", target_space: AffineSpace) -> np.ndarray:
+    delta = a - b.rebase(target_space)
+    return _space_basis_as_ndarray(target_space) @ _matrix_to_ndarray(delta.rep)
+
+
+def _is_reciprocal_grid_point(
+    lattice: ReciprocalLattice, momentum: "Momentum", *, canonical: bool
+) -> bool:
+    if momentum.rep.shape != (lattice.dim, 1):
+        return False
+
+    rep = momentum.rep if canonical else momentum.fractional().rep
+    return all(
+        (not canonical or sy.simplify(coord - sy.floor(coord)) == coord)
+        and sy.nsimplify(coord * period).is_integer is True
+        for coord, period in zip(rep, lattice.shape)
+    )
 
 
 def _check_offset_matches_space(r: "Offset") -> None:
@@ -413,7 +554,7 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         new_rep = rebase_transform_mat @ self.rep
         return Offset(rep=ImmutableDenseMatrix(new_rep), space=space)
 
-    def to_vec(self, T: Type[_VecType]) -> _VecType:
+    def to_vec(self, T: Type[_VecType] = sy.ImmutableMatrix) -> _VecType:
         """Convert this Offset to a vector in Cartesian coordinates by applying
         the basis transformation of its affine space.
 
@@ -434,6 +575,27 @@ class Offset(Generic[S], Spatial, HasBase[S]):
             raise TypeError(
                 f"Unsupported type {T} for to_vec. Supported types: np.ndarray, ImmutableDenseMatrix"
             )
+
+    def distance(self, r: "Offset") -> float:
+        """
+        Return the distance to another offset using the ambient boundary condition.
+
+        If either offset is expressed on a lattice with periodic boundary
+        conditions, the distance is computed using the nearest periodic image
+        of the displacement in that lattice. Otherwise, the plain Euclidean
+        norm of the displacement in the current affine space is returned.
+        """
+        if isinstance(self.space, Lattice):
+            delta = self - r.rebase(self.space)
+            return self.space.boundaries.distance(delta.rep, self.space.basis)
+
+        if isinstance(r.space, Lattice):
+            delta = r - self.rebase(r.space)
+            return r.space.boundaries.distance(delta.rep, r.space.basis)
+
+        target_space = self.space
+        delta_cart = _cartesian_delta(self, r, target_space)
+        return float(np.linalg.norm(delta_cart.reshape(-1)))
 
     def __str__(self):
         # If it's a column vector, flatten to 1D python list
@@ -464,6 +626,14 @@ def operator_gt(a: Offset, b: Offset) -> bool:
     va = a.to_vec(np.ndarray)
     vb = b.to_vec(np.ndarray)
     return tuple(va) > tuple(vb)
+
+
+@dispatch(Lattice, Offset)  # type: ignore[no-redef]
+def operator_contains(lattice: Lattice, offset: Offset) -> bool:
+    rebased = offset.rebase(lattice)
+    fractional = rebased.fractional().rep
+    unit_cell_offsets = {site.rep for site in lattice.unit_cell.values()}
+    return fractional in unit_cell_offsets
 
 
 @dataclass(frozen=True)
@@ -517,6 +687,13 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
         return Momentum(rep=ImmutableDenseMatrix(new_rep), space=space)
 
 
+@dispatch(ReciprocalLattice, Momentum)  # type: ignore[no-redef]
+def operator_contains(lattice: ReciprocalLattice, momentum: Momentum) -> bool:
+    if momentum.space != lattice:
+        return False
+    return _is_reciprocal_grid_point(lattice, momentum, canonical=False)
+
+
 @dispatch(Offset, Offset)  # type: ignore[no-redef]
 def operator_add(a: Offset, b: Offset) -> Offset:
     if a.space != b.space:
@@ -551,3 +728,27 @@ def operator_sub(a: Offset, b: Offset) -> Offset:
 @dispatch(Momentum, Momentum)  # type: ignore[no-redef]
 def operator_sub(a: Momentum, b: Momentum) -> Momentum:
     return a + (-b)
+
+
+def _scale_offset(r: _O, scalar: Number | sy.Expr) -> _O:
+    return type(r)(rep=ImmutableDenseMatrix(r.rep * scalar), space=r.space)
+
+
+@dispatch(Number, Offset)  # type: ignore[no-redef]
+def operator_mul(left: Number, right: Offset) -> Offset:
+    return _scale_offset(right, left)
+
+
+@dispatch(Offset, Number)  # type: ignore[no-redef]
+def operator_mul(left: Offset, right: Number) -> Offset:
+    return _scale_offset(left, right)
+
+
+@dispatch(sy.Expr, Offset)  # type: ignore[no-redef]
+def operator_mul(left: sy.Expr, right: Offset) -> Offset:
+    return _scale_offset(right, left)
+
+
+@dispatch(Offset, sy.Expr)  # type: ignore[no-redef]
+def operator_mul(left: Offset, right: sy.Expr) -> Offset:
+    return _scale_offset(left, right)

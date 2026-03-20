@@ -1,6 +1,13 @@
 import pytest
 from dataclasses import dataclass
-from qten.abstracts import Functional, Operable, Updatable, operator_eq
+from qten.abstracts import (
+    Convertible,
+    Functional,
+    Operable,
+    Span,
+    Updatable,
+    operator_eq,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,29 @@ class _MockFunctional(Functional):
     pass
 
 
+@dataclass(frozen=True)
+class _DerivedFunctional(_MockFunctional):
+    pass
+
+
+@dataclass(frozen=True)
+class MockSpan(Span[int]):
+    values: tuple[int, ...]
+
+    def elements(self) -> tuple[int, ...]:
+        return self.values
+
+
+@dataclass(frozen=True)
+class MockConvertibleToSpan(Convertible):
+    values: tuple[int, ...]
+
+
+@MockConvertibleToSpan.add_conversion(MockSpan)
+def _mock_convertible_to_span(v: MockConvertibleToSpan) -> MockSpan:
+    return MockSpan(v.values)
+
+
 @_MockFunctional.register(_BaseInput)
 def _apply_mock_functional_base(functional: _MockFunctional, obj: _BaseInput) -> str:
     return "base"
@@ -46,6 +76,9 @@ def test_operable_unimplemented():
     b = MockOperable()
 
     # Test all default implementations raise NotImplementedError
+
+    with pytest.raises(NotImplementedError):
+        _ = b in a
 
     # Arithmetics
     with pytest.raises(NotImplementedError):
@@ -100,6 +133,26 @@ def test_operable_unimplemented():
         _ = a | b
 
 
+def test_span_contains_uses_operator_contains():
+    sup = MockSpan((1, 2, 3))
+    sub = MockSpan((1, 3))
+
+    assert sub in sup
+
+
+def test_span_contains_converts_convertible_queries():
+    sup = MockSpan((1, 2, 3))
+
+    assert MockConvertibleToSpan((2, 3)) in sup
+
+
+def test_span_contains_rejects_non_convertible_queries():
+    sup = MockSpan((1, 2, 3))
+
+    with pytest.raises(ValueError, match="Cannot convert str to MockSpan"):
+        _ = "x" in sup
+
+
 def test_updatable_correct():
     u = MockUpdatable(val=1)
     u2 = u.update(val=2)
@@ -132,3 +185,29 @@ def test_functional_targeted_cache_invalidation():
         return "derived"
 
     assert functional(obj) == "derived"
+
+
+def test_functional_inherits_superclass_registration():
+    functional = _DerivedFunctional()
+    obj = _BaseInput()
+
+    assert functional(obj) == "base"
+    assert (
+        Functional._resolved_methods[(type(obj), type(functional))](functional, obj)
+        == "base"
+    )
+
+
+def test_functional_inherited_cache_invalidation():
+    functional = _DerivedFunctional()
+    obj = _DerivedInput()
+
+    assert functional(obj) == "derived"
+
+    @_MockFunctional.register(_DerivedInput)
+    def _apply_mock_functional_derived_v2(
+        functional: _MockFunctional, obj: _DerivedInput
+    ) -> str:
+        return "derived-v2"
+
+    assert functional(obj) == "derived-v2"

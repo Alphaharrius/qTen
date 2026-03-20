@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import plotly.graph_objects as go
+import pytest
 import sympy as sy
 import torch
 
@@ -9,9 +10,11 @@ from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
 from qten.geometries.spatials import Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
 from qten.symbolics.state_space import brillouin_zone
+from qten.symbolics.state_space import IndexSpace
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
+from qten_plots.plottables import PointCloud
 
 
 @dataclass(frozen=True)
@@ -131,6 +134,71 @@ def test_plot_spectrum_hermitian_and_nonhermitian():
     assert nh_fig.layout.title.text == "Non-Hermitian Spectrum"
 
 
+def test_plot_column_scatter_uses_offset_positions_and_complex_encoding():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+
+    row_space = HilbertSpace.new(
+        [
+            U1Basis.new(
+                Offset(rep=sy.ImmutableDenseMatrix([[0], [0]]), space=lattice.affine)
+            ),
+            U1Basis.new(
+                Offset(rep=sy.ImmutableDenseMatrix([[1], [0]]), space=lattice.affine)
+            ),
+            U1Basis.new(
+                Offset(rep=sy.ImmutableDenseMatrix([[0], [1]]), space=lattice.affine)
+            ),
+        ]
+    )
+    col_space = IndexSpace.linear(2)
+    tensor = Tensor(
+        data=torch.tensor(
+            [
+                [1.0 + 0.0j, 0.0 + 1.0j],
+                [2.0 + 0.0j, -1.0 + 0.0j],
+                [0.5 - 0.5j, 1.0 - 1.0j],
+            ],
+            dtype=torch.complex128,
+        ),
+        dims=(row_space, col_space),
+    )
+
+    fig = tensor.plot(
+        "column_scatter",
+        title="Column Scatter",
+        show=False,
+        default_size=20.0,
+        ncols=2,
+    )
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 2
+    assert fig.layout.title.text == "Column Scatter"
+    assert [annotation.text for annotation in fig.layout.annotations] == ["0", "1"]
+    assert list(fig.data[0].x) == [0.0, 1.0, 0.0]
+    assert list(fig.data[0].y) == [0.0, 0.0, 1.0]
+    assert fig.data[0].name == "0"
+    assert max(fig.data[0].marker.size) == 20.0
+    assert all(str(color).startswith("rgb(") for color in fig.data[0].marker.color)
+
+
+def test_plot_column_scatter_requires_offset_on_first_hilbert_space():
+    row_space = _space(3, "row_")
+    col_space = _space(2, "col_")
+    tensor = Tensor(
+        data=torch.ones((3, 2), dtype=torch.complex128),
+        dims=(row_space, col_space),
+    )
+
+    with pytest.raises(ValueError, match="Offset"):
+        tensor.plot("column_scatter", show=False)
+
+
 def test_plot_structure_2d_and_3d():
     basis_2d = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
     lattice_2d = Lattice(
@@ -152,6 +220,65 @@ def test_plot_structure_2d_and_3d():
     assert isinstance(fig_3d, go.Figure)
     assert len(fig_2d.data) >= 1
     assert len(fig_3d.data) >= 1
+
+
+def test_plot_structure_accepts_pointcloud_highlights():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    highlights = [
+        PointCloud.of(
+            [lattice.at(cell_offset=(0, 0)), lattice.at(cell_offset=(1, 1))],
+            color="#ff0000",
+        )
+    ]
+
+    fig = lattice.plot("structure", show=False, highlights=highlights)
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) >= 2
+
+
+def test_plot_structure_uses_highlight_coordinates_without_wrapping():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(3, 3)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    outside_cell = Offset(rep=sy.ImmutableDenseMatrix([4, 1]), space=lattice.affine)
+
+    fig = lattice.plot(
+        "structure",
+        show=False,
+        highlights=[PointCloud.of([outside_cell], color="#ff0000")],
+    )
+
+    assert isinstance(fig, go.Figure)
+    highlight = fig.data[-1]
+    assert list(highlight.x) == [4.0]
+    assert list(highlight.y) == [1.0]
+
+
+def test_pointcloud_scatter_plot():
+    basis = sy.ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    cloud = PointCloud.of(
+        [lattice.at(cell_offset=(0, 0)), lattice.at(cell_offset=(1, 0))],
+        color="#00aa88",
+    )
+
+    fig = cloud.plot("scatter", show=False)
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 1
 
 
 def test_bandstructure_plot():
