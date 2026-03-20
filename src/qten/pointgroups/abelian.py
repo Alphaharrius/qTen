@@ -49,10 +49,12 @@ class AbelianBasis(Spatial):
         return len(self.axes)
 
     def __str__(self):
-        return f"AbelianBasis({str(self.expr)})"
+        if sy.simplify(self.expr - 1) == 0:
+            return "e"
+        return str(self.expr)
 
     def __repr__(self):
-        return f"AbelianBasis({repr(self.expr)})"
+        return self.__str__()
 
 
 @dispatch(AbelianBasis, AbelianBasis)
@@ -522,30 +524,15 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
             offset=fixed_offset,
         )
 
-    def irreps(self) -> FrozenDict:
-        return self.g.basis_table
-
 
 @AbelianOpr.register(AbelianBasis)
 def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
     """
-    Apply the linear part of an affine operator to a basis function and extract
-    its phase factor.
+    Apply an affine operator to an abelian basis function.
 
-    For `AbelianBasis`, the translation `offset` is intentionally ignored. Only
-    the linear representation `t.g` acts on the polynomial basis coefficients.
-    The result of applying `t.g.euclidean_repr(f.order)` to `f.rep` (the coefficient vector
-    of `f` in the monomial basis) must be a scalar multiple of the original vector
-    for `f` to be an eigenfunction of the transform. When that holds, the scalar is
-    the phase factor and we return it together with the original function `f`
-    (the basis function itself does not change, only its phase).
-
-    The procedure is as follows:
-    - Ignore the translation part and keep only the linear part `t.g`.
-    - Compute `transformed_rep = t.g.euclidean_repr(f.order) @ f.rep`.
-    - If `transformed_rep == phase * f.rep` for a single scalar `phase`, then
-      `f` is a basis function for this transform and `phase` is returned.
-    - If no such scalar exists (or the basis vector is zero), raise a ValueError.
+    For `AbelianBasis`, the affine translation is intentionally ignored, so
+    this action is exactly the same as applying the underlying linear
+    `AbelianGroup`.
 
     Parameters
     ----------
@@ -564,36 +551,9 @@ def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
     Raises
     ------
     `ValueError`
-        If the axes of `t` and `f` do not match, or if `f` is not an eigenfunction
-        of the transform represented by `t`.
+        Propagated from `t.g @ f`.
     """
-    if set(t.g.axes) != set(f.axes):
-        raise ValueError(
-            f"Axes of AbelianGroup and PointGroupBasis must match: {t.g.axes} != {f.axes}"
-        )
-
-    g_irrep = t.g.euclidean_repr(f.order)
-    basis_rep = f.rep
-    transformed_rep = g_irrep @ basis_rep
-
-    phase = None
-    for n in range(transformed_rep.rows):
-        basis_term = basis_rep[n]
-        transformed_term = transformed_rep[n]
-        if basis_term != 0:
-            if phase is None:
-                phase = sy.simplify(transformed_term / basis_term)
-            else:
-                if sy.simplify(transformed_term - phase * basis_term) != 0:
-                    raise ValueError(f"{f} is not a basis function!")
-        else:
-            if sy.simplify(transformed_term) != 0:
-                raise ValueError(f"{f} is not a basis function!")
-
-    if phase is None:
-        raise ValueError(f"{f} is a trivial basis function: zero")
-
-    return Multiple(phase, f)
+    return t.g @ f
 
 
 @AbelianOpr.register(Offset)

@@ -72,8 +72,8 @@ def test_affine_function_dim_and_str():
         rep=ImmutableDenseMatrix([1]),
     )
     assert f.dim == 1
-    assert "AbelianBasis(x)" in str(f)
-    assert "AbelianBasis(x)" in repr(f)
+    assert str(f) == "x"
+    assert repr(f) == "x"
 
 
 def test_affine_group_full_rep_kronecker_power():
