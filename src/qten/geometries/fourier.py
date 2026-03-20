@@ -16,6 +16,7 @@ from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby
 
 
+# TODO: Consider allow the creation of the tensor on a specified device.
 @dispatch(tuple, tuple)
 def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.Tensor:
     """
