@@ -7,6 +7,7 @@ from sympy import ImmutableDenseMatrix
 from .spatials import AffineSpace, Lattice, Offset
 
 
+# TODO: Optimize this function: very slow in 192x192 system.
 def nearest_sites(
     lattice: Lattice, center: Offset[AffineSpace] | Offset[Lattice], n_nearest: int
 ) -> tuple[Offset[Lattice], ...]:

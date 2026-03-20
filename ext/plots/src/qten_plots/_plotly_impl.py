@@ -47,6 +47,7 @@ def _column_label(col_dim: StateSpace, index: int) -> str:
 # --- Registered Plot Methods ---
 
 
+# TODO: Optimize this function: crashed in 192x192 system.
 @Lattice.register_plot_method("structure", backend="plotly")
 def plot_structure(
     obj: Lattice,

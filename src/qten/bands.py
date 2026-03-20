@@ -21,6 +21,7 @@ from .symbolics.hilbert_space import Opr
 from .utils.collections_ext import matchby
 
 
+# TODO: Optimize this function: very slow in 192x192 system.
 def bandtransform(
     t: Opr,
     tensor: Tensor,
@@ -141,6 +142,7 @@ def bandtransform(
     return tensor
 
 
+# TODO: Optimize this function: very slow in 192x192 system.
 def bandfold(
     transform: BasisTransform,
     tensor: Tensor,
