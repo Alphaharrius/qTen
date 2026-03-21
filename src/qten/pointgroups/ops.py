@@ -89,7 +89,7 @@ def abelian_column_symmetrize(
     else:
         raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
 
-    g_full = hilbert_opr_repr(opr, row_dim)
+    g_full = hilbert_opr_repr(opr, row_dim).to_device(w.device)
     order = opr.g.group_order()
     ident = Tensor(
         data=torch.eye(row_dim.dim, dtype=g_full.data.dtype, device=g_full.data.device),
@@ -148,7 +148,9 @@ def abelian_column_symmetrize(
 
     if not projected_cols:
         return Tensor(
-            data=torch.empty((row_dim.dim, 0), dtype=g_full.data.dtype),
+            data=torch.empty(
+                (row_dim.dim, 0), dtype=g_full.data.dtype, device=g_full.data.device
+            ),
             dims=(row_dim, IndexSpace.linear(0)),
         )
 
