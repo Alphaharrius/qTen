@@ -556,6 +556,32 @@ def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
     return t.g @ f
 
 
+@lru_cache
+def _apply_abelian_opr_to_offset_cached(t: AbelianOpr, offset: Offset) -> Offset:
+    if offset.space != t.offset.space:
+        t = t.rebase(offset.space)
+
+    linear_rep = t.g.irrep
+    if not isinstance(linear_rep, sy.ImmutableDenseMatrix):
+        linear_rep = sy.ImmutableDenseMatrix(linear_rep)
+
+    translation = t.offset.rep
+    if not isinstance(translation, sy.ImmutableDenseMatrix):
+        translation = sy.ImmutableDenseMatrix(translation)
+
+    top = linear_rep.row_join(translation)
+    bottom = sy.zeros(1, linear_rep.cols).row_join(sy.ones(1, 1))
+    affine_rep = sy.ImmutableDenseMatrix(top.col_join(bottom))
+
+    rep = offset.rep
+    if not isinstance(rep, sy.ImmutableDenseMatrix):
+        rep = sy.ImmutableDenseMatrix(rep)
+    hom = rep.col_join(sy.ones(1, 1))
+    new_hom = affine_rep @ hom
+    new_rep = new_hom[:-1, :]
+    return Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
+
+
 @AbelianOpr.register(Offset)
 def _(t: AbelianOpr, offset: Offset) -> Offset:
     """
@@ -584,28 +610,24 @@ def _(t: AbelianOpr, offset: Offset) -> Offset:
     all expressed in the same coordinate system, so the homogeneous affine
     action is valid directly.
     """
-    if offset.space != t.offset.space:
-        t = t.rebase(offset.space)
+    return _apply_abelian_opr_to_offset_cached(t, offset)
+
+
+@lru_cache
+def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentum:
+    real_space = k.base().dual
+    if t.base() != real_space:
+        t = t.rebase(real_space)
 
     linear_rep = t.g.irrep
     if not isinstance(linear_rep, sy.ImmutableDenseMatrix):
         linear_rep = sy.ImmutableDenseMatrix(linear_rep)
 
-    translation = t.offset.rep
-    if not isinstance(translation, sy.ImmutableDenseMatrix):
-        translation = sy.ImmutableDenseMatrix(translation)
-
-    top = linear_rep.row_join(translation)
-    bottom = sy.zeros(1, linear_rep.cols).row_join(sy.ones(1, 1))
-    affine_rep = sy.ImmutableDenseMatrix(top.col_join(bottom))
-
-    rep = offset.rep
+    rep = k.rep
     if not isinstance(rep, sy.ImmutableDenseMatrix):
         rep = sy.ImmutableDenseMatrix(rep)
-    hom = rep.col_join(sy.ones(1, 1))
-    new_hom = affine_rep @ hom
-    new_rep = new_hom[:-1, :]
-    return Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
+    new_rep = linear_rep.inv().T @ rep
+    return Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base())
 
 
 @AbelianOpr.register(Momentum)
@@ -637,17 +659,4 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
         The irrep of this transformation, `None` if `k` is not a fix point;
         and the transformed momentum in the same reciprocal lattice space as `k`.
     """
-    real_space = k.base().dual
-    if t.base() != real_space:
-        t = t.rebase(real_space)
-
-    linear_rep = t.g.irrep
-    if not isinstance(linear_rep, sy.ImmutableDenseMatrix):
-        linear_rep = sy.ImmutableDenseMatrix(linear_rep)
-
-    rep = k.rep
-    if not isinstance(rep, sy.ImmutableDenseMatrix):
-        rep = sy.ImmutableDenseMatrix(rep)
-    new_rep = linear_rep.inv().T @ rep
-    new_k = Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base())
-    return new_k
+    return _apply_abelian_opr_to_momentum_cached(t, k)
