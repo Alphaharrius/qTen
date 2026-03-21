@@ -274,7 +274,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             object.__setattr__(self, "data", cast(T, self.data.to(target)))
 
     @staticmethod
-    def scalar(number: Number) -> "Tensor":
+    def scalar(number: Number, *, device: Optional[Device] = None) -> "Tensor":
         """
         Create a 0-dimensional `Tensor` from a scalar number.
 
@@ -282,6 +282,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ----------
         number : `Number`
             The scalar value to convert into a tensor.
+        device : `Optional[Device]`, optional
+            Device to place the scalar on, by default None (CPU).
 
         Returns
         -------
@@ -294,7 +296,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             if isinstance(number, complex)
             else precision.torch_float
         )
-        data = torch.tensor(number, dtype=dtype)
+        torch_device = device.torch_device() if device is not None else None
+        data = torch.tensor(number, dtype=dtype, device=torch_device)
         return Tensor(data=data, dims=())
 
     def astype(self, dtype: torch.dtype) -> Self:
@@ -2539,6 +2542,8 @@ def mapping_matrix(
     to_space: StateSpace,
     mapping: Dict[Any, Any],
     factors: Optional[Dict[Tuple[Any, Any], int | float | complex]] = None,
+    *,
+    device: Optional[Device] = None,
 ) -> Tensor:
     """
     Create a sector-wise mapping matrix between two state spaces.
@@ -2578,7 +2583,12 @@ def mapping_matrix(
         factors = {}
 
     precision = get_precision_config()
-    mat = torch.zeros((from_space.dim, to_space.dim), dtype=precision.torch_complex)
+    torch_device = device.torch_device() if device is not None else None
+    mat = torch.zeros(
+        (from_space.dim, to_space.dim),
+        dtype=precision.torch_complex,
+        device=torch_device,
+    )
     for fm, tm in mapping.items():
         findex = from_space.structure[fm]
         tindex = to_space.structure[tm]
@@ -2588,7 +2598,7 @@ def mapping_matrix(
     return Tensor(data=mat, dims=(from_space, to_space))
 
 
-def eye(dims: Tuple[StateSpace, ...]) -> Tensor:
+def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create an identity tensor based on the last two dimensions.
     Returns a rank-2 Tensor corresponding to the identity of the matrix part.
@@ -2600,10 +2610,11 @@ def eye(dims: Tuple[StateSpace, ...]) -> Tensor:
     matrix_dims = dims[-2:]
     rows = matrix_dims[0].dim
     cols = matrix_dims[1].dim
-    return Tensor(data=torch.eye(rows, cols), dims=matrix_dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.eye(rows, cols, device=torch_device), dims=matrix_dims)
 
 
-def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
+def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create a zero-filled tensor with shape defined by `dims`.
 
@@ -2611,6 +2622,8 @@ def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
     ----------
     dims : `Tuple[StateSpace, ...]`
         StateSpace dimensions defining the tensor shape.
+    device : `Optional[Device]`, optional
+        Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
@@ -2618,10 +2631,11 @@ def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
         A tensor of zeros with `shape == tuple(dim.dim for dim in dims)`.
     """
     shape = tuple(dim.dim for dim in dims)
-    return Tensor(data=torch.zeros(shape), dims=dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.zeros(shape, device=torch_device), dims=dims)
 
 
-def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
+def ones(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create a one-filled tensor with shape defined by `dims`.
 
@@ -2629,6 +2643,8 @@ def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
     ----------
     dims : `Tuple[StateSpace, ...]`
         StateSpace dimensions defining the tensor shape.
+    device : `Optional[Device]`, optional
+        Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
@@ -2636,11 +2652,15 @@ def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
         A tensor of ones with `shape == tuple(dim.dim for dim in dims)`.
     """
     shape = tuple(dim.dim for dim in dims)
-    return Tensor(data=torch.ones(shape), dims=dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.ones(shape, device=torch_device), dims=dims)
 
 
 def kernel_tensor(
-    ker: Callable[..., Number], dims: Tuple[StateSpace, ...]
+    ker: Callable[..., Number],
+    dims: Tuple[StateSpace, ...],
+    *,
+    device: Optional[Device] = None,
 ) -> Tensor[torch.Tensor]:
     """
     Build a tensor by evaluating a scalar-valued kernel over StateSpace elements.
@@ -2662,8 +2682,9 @@ def kernel_tensor(
     `Tensor`
         Tensor with `dims` and values produced by `ker`.
     """
+    torch_device = device.torch_device() if device is not None else None
     if not dims:
-        return Tensor(data=torch.as_tensor(ker()), dims=dims)
+        return Tensor(data=torch.as_tensor(ker(), device=torch_device), dims=dims)
 
     element_axes = tuple(dim.elements() for dim in dims)
     for axis, dim in zip(element_axes, dims):
@@ -2674,7 +2695,9 @@ def kernel_tensor(
             )
 
     values = [ker(*args) for args in product(*element_axes)]
-    data = torch.as_tensor(values).reshape(*(len(axis) for axis in element_axes))
+    data = torch.as_tensor(values, device=torch_device).reshape(
+        *(len(axis) for axis in element_axes)
+    )
     return Tensor(data=data, dims=dims)
 
 

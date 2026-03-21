@@ -1,8 +1,9 @@
-from typing import Sequence
+from typing import Sequence, Optional
 
 from ..geometries import Offset
 from ..linalg.tensors import Tensor
 from . import HilbertSpace, Opr
+from ..utils.devices import Device
 
 
 def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> HilbertSpace:
@@ -73,7 +74,9 @@ def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> Hilbe
     return HilbertSpace.new(iter_region_basis())
 
 
-def hilbert_opr_repr(opr: Opr, space: HilbertSpace) -> Tensor:
+def hilbert_opr_repr(
+    opr: Opr, space: HilbertSpace, *, device: Optional[Device] = None
+) -> Tensor:
     """
     Return the matrix representation of an operator on a Hilbert-space basis.
 
@@ -115,4 +118,4 @@ def hilbert_opr_repr(opr: Opr, space: HilbertSpace) -> Tensor:
     new_space = opr @ space
     if not space.same_rays(new_space):
         raise ValueError("opr does not preserve the ray structure of space.")
-    return space.cross_gram(new_space).replace_dim(1, space)
+    return space.cross_gram(new_space, device=device).replace_dim(1, space)

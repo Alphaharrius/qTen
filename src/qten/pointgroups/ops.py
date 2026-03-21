@@ -88,7 +88,7 @@ def abelian_column_symmetrize(
     else:
         raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
 
-    g_full = hilbert_opr_repr(opr, row_dim)
+    g_full = hilbert_opr_repr(opr, row_dim).to_device(w.device)
     order = opr.g.group_order()
     ident = eye((row_dim, row_dim)).astype(g_full.data.dtype).to_device(g_full.device)
     single_col = IndexSpace.linear(1)
@@ -141,7 +141,7 @@ def abelian_column_symmetrize(
 
     if not projected_cols:
         return Tensor(
-            data=w.data[:, :0].clone(),
+            data=w.data.new_empty((row_dim.dim, 0), dtype=g_full.data.dtype),
             dims=(row_dim, IndexSpace.linear(0)),
         )
 

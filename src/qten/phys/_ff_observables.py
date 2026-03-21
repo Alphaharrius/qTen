@@ -1,8 +1,10 @@
-from typing import List
+from typing import List, Optional
 
 from multipledispatch import dispatch
 
 import sympy as sy
+from ..utils.devices import Device
+
 import torch
 
 from ..symbolics import HilbertSpace
@@ -69,7 +71,7 @@ class FFObservable:
         bond = Bond(coef, (src, dst))
         self.add_bond(bond)
 
-    def to_tensor(self) -> Tensor:
+    def to_tensor(self, *, device: Optional[Device] = None) -> Tensor:
         """
         Convert the accumulated bonds into a Hermitian matrix `Tensor`.
 
@@ -107,7 +109,10 @@ class FFObservable:
 
         space = HilbertSpace.new(basis_order)
         precision = get_precision_config()
-        data = torch.zeros((space.dim, space.dim), dtype=precision.torch_complex)
+        torch_device = device.torch_device() if device is not None else None
+        data = torch.zeros(
+            (space.dim, space.dim), dtype=precision.torch_complex, device=torch_device
+        )
 
         for i, j, value in bond_entries:
             if i == j:

@@ -116,8 +116,8 @@ def bandtransform(
             raise ValueError(
                 f"Hilbert space {space} is not closed under the transform {t}!"
             )
-        bloch_transform = cast(Tensor, space.cross_gram(new_space)).h(-2, -1)
-        f = fourier_transform(kspace, space, space)  # (K, B, B')
+        bloch_transform = cast(Tensor, space.cross_gram(new_space, device=tensor.device)).h(-2, -1)
+        f = fourier_transform(kspace, space, space,  device=tensor.device)  # (K, B, B')
         # Keep the transformed unit-cell labels explicit on the region leg so
         # StateSpace auto-alignment does not erase the site permutation.
         # (K, B, B) @ (B, B) @ (K, B, B)
@@ -246,8 +246,8 @@ def bandfold(
     )
     # # Transform both sides
     f = fourier_transform(
-        k_space, tensor.dims[switch_index], rebased_hilbert
-    ).to_device(tensor.device)
+        k_space, tensor.dims[switch_index], rebased_hilbert, device=tensor.device
+    )
     vratio = np.sqrt(len(enlarge_unit_cell) / len(lattice.unit_cell))
     f = f / vratio
     fh = f.h(-2, -1)  # (K, B', B)
@@ -263,11 +263,9 @@ def bandfold(
         if k.space == reciprocal_lattice
         else k.fractional(),
     )
-    k_map = (
-        mapping_matrix(k_space, new_k_space, mapping)
-        .transpose(0, 1)
-        .to_device(tensor.device)
-    )
+    k_map = mapping_matrix(
+        k_space, new_k_space, mapping, device=tensor.device
+    ).transpose(0, 1)
     transformed = (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
     for dim in (1, 2):
         if transformed.dims[dim] == rebased_hilbert:
