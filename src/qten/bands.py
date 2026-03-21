@@ -102,7 +102,6 @@ def bandtransform(
     kspace: MomentumSpace = cast(MomentumSpace, tensor.dims[0])
     transform_cache: Dict[HilbertSpace, Tensor] = {}
 
-    @at_device(tensor.device)
     def build_transform(space: HilbertSpace) -> Tensor:
         cached = transform_cache.get(space)
         if cached is not None:
