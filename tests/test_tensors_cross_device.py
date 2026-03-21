@@ -38,8 +38,19 @@ def _move(tensor: Tensor, device_name: str) -> Tensor:
     return tensor.to_device(Device(device_name))
 
 
+def _device(name: str) -> Device:
+    if name == "gpu" and HAS_GPU:
+        try:
+            td = Device("gpu").torch_device()
+            if td.type == "cuda":
+                return Device("gpu", td.index)
+        except RuntimeError:
+            pass
+    return Device(name)
+
+
 def _expected_device(*device_names: str) -> Device:
-    return Device("gpu") if "gpu" in device_names else Device("cpu")
+    return _device("gpu") if "gpu" in device_names else _device("cpu")
 
 
 def _case(*device_names: str):
@@ -247,13 +258,13 @@ class TestTensorDeviceContext:
         with at_device(Device(device_name)):
             tensor = Tensor(data=torch.tensor([1.0, 2.0, 3.0]), dims=VECTOR_DIM)
 
-        assert tensor.device == Device(device_name)
+        assert tensor.device == _device(device_name)
 
     def test_factories_inherit_requested_device(self, device_name: str):
         with at_device(device_name):
             tensor = zeros(VECTOR_DIM)
 
-        assert tensor.device == Device(device_name)
+        assert tensor.device == _device(device_name)
 
     def test_nested_scope_restores_outer_device(self, device_name: str):
         outer = Device(device_name)
@@ -273,7 +284,7 @@ class TestTensorDeviceContext:
                 dims=VECTOR_DIM,
             )
 
-        assert outer_tensor.device == outer
-        assert restored_tensor.device == outer
+        assert outer_tensor.device == _device(outer.name)
+        assert restored_tensor.device == _device(outer.name)
         expected_inner = inner if use_inner_scope else outer
-        assert inner_tensor.device == expected_inner
+        assert inner_tensor.device == _device(expected_inner.name)
