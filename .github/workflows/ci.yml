@@ -26,7 +26,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install the project
-        run: uv sync --extra cpu
+        run: uv sync --group dev
 
       - name: Run Lint
         run: uv run tox -e lint

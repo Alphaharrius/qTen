@@ -12,29 +12,8 @@ dependencies = [
     "multipledispatch>=1.0.0",
     "numpy>=2.0.0",
     "sympy>=1.14.0",
+    "torch>=2.7.0",
     "typing_extensions>=4.12.0",
-]
-
-[project.optional-dependencies]
-cpu = [
-  "torch>=2.7.0",
-  "torchvision~=0.22.0",
-]
-cu126 = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-]
-cu128 = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-]
-cu129 = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-]
-cu130 = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
 ]
 
 [dependency-groups]
@@ -55,59 +34,9 @@ dev = [
 [tool.uv]
 package = true
 
-conflicts = [
-  [ { extra = "cpu" }, { extra = "cu126" }, { extra = "cu128" }, { extra = "cu129" }, { extra = "cu130" } ],
-]
-
 [tool.uv.sources]
 qten = { workspace = true }
 qten_plots = { workspace = true }
-
-torch = [
-  { index = "pytorch-cu126", extra = "cu126"},
-  { index = "pytorch-cu128", extra = "cu128"},
-  { index = "pytorch-cu129", extra = "cu129"},
-  { index = "pytorch-cu130", extra = "cu130"},
-  { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux'" },
-  { index = "pypi", extra = "cpu", marker = "sys_platform != 'linux'" },
-]
-
-torchvision = [
-  { index = "pytorch-cu126", extra = "cu126"},
-  { index = "pytorch-cu128", extra = "cu128"},
-  { index = "pytorch-cu129", extra = "cu129"},
-  { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux'" },
-  { index = "pypi", extra = "cpu", marker = "sys_platform != 'linux'" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url  = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url  = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu129"
-url  = "https://download.pytorch.org/whl/cu129"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu130"
-url  = "https://download.pytorch.org/whl/cu130"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
 
 [tool.uv.workspace]
 members = [
