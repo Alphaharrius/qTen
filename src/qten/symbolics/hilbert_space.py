@@ -37,6 +37,7 @@ from ..geometries.spatials import Spatial
 from .state_space import StateSpace, StateSpaceFactorization
 from ..linalg.tensors import Tensor
 from ..precision import get_precision_config
+from ..utils.devices import Device
 from . import Multiple
 
 
@@ -869,7 +870,9 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         """Return the Hilbert space obtained by replacing each basis state by its ray representative."""
         return HilbertSpace.new(el.rays() for el in self)
 
-    def cross_gram(self, another: "HilbertSpace") -> Tensor:
+    def cross_gram(
+        self, another: "HilbertSpace", *, device: Optional[Device] = None
+    ) -> Tensor:
         """
         Build the cross-Gram overlap matrix between this basis and another basis.
 
@@ -892,9 +895,10 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         new_span = U1Span(cast(Tuple[U1Basis, ...], another.elements()))
         irrep = span.cross_gram(new_span)
         precision = get_precision_config()
+        torch_device = device.torch_device() if device is not None else None
         data = torch.from_numpy(
             np.asarray(irrep.tolist(), dtype=precision.np_complex)
-        ).to(dtype=precision.torch_complex)
+        ).to(device=torch_device, dtype=precision.torch_complex)
         return Tensor(data=data, dims=(self, another.rays()))
 
 

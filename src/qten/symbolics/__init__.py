@@ -20,3 +20,9 @@ from .hilbert_space import (
     U1Basis as U1Basis,
     U1Span as U1Span,
 )
+
+from .ops import (
+    hilbert_opr_repr as hilbert_opr_repr,
+    match_indices as match_indices,
+    region_hilbert as region_hilbert,
+)

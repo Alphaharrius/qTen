@@ -1,8 +1,13 @@
-from typing import Sequence
+from typing import Sequence, Optional, Callable, TypeVar, cast
+
+import torch
 
 from ..geometries import Offset
 from ..linalg.tensors import Tensor
-from . import HilbertSpace, Opr
+from . import HilbertSpace, Opr, StateSpace
+from ..utils.devices import Device
+
+T = TypeVar("T")
 
 
 def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> HilbertSpace:
@@ -73,7 +78,9 @@ def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> Hilbe
     return HilbertSpace.new(iter_region_basis())
 
 
-def hilbert_opr_repr(opr: Opr, space: HilbertSpace) -> Tensor:
+def hilbert_opr_repr(
+    opr: Opr, space: HilbertSpace, *, device: Optional[Device] = None
+) -> Tensor:
     """
     Return the matrix representation of an operator on a Hilbert-space basis.
 
@@ -115,4 +122,64 @@ def hilbert_opr_repr(opr: Opr, space: HilbertSpace) -> Tensor:
     new_space = opr @ space
     if not space.same_rays(new_space):
         raise ValueError("opr does not preserve the ray structure of space.")
-    return space.cross_gram(new_space).replace_dim(1, space)
+    return space.cross_gram(new_space, device=device).replace_dim(1, space)
+
+
+def match_indices(
+    src: StateSpace[T],
+    dest: StateSpace[T],
+    matching_func: Callable[[T], T],
+    *,
+    device: Optional[Device] = None,
+) -> Tensor[torch.LongTensor]:
+    """
+    Build destination indices for matching elements of `src` into `dest`.
+
+    This helper is intended for indexed accumulation patterns such as
+    `index_add`, where each element of `src` is matched to exactly one element
+    of `dest` and multiple source elements may map to the same destination.
+
+    Parameters
+    ----------
+    `src` : `StateSpace[T]`
+        Source state space whose element order defines the output index order.
+    `dest` : `StateSpace[T]`
+        Destination state space whose integer positions are used as the
+        returned indices.
+    `matching_func` : `Callable[[T], T]`
+        Function mapping each source element to its matching destination
+        element.
+    `device` : `Optional[Device]`, optional
+        Device to place the returned index tensor on, by default `None` (CPU).
+
+    Returns
+    -------
+    `Tensor[torch.LongTensor]`
+        Rank-1 integer tensor with dims `(src,)`, where each entry is the
+        destination index of the corresponding source element.
+
+    Raises
+    ------
+    `ValueError`
+        If any source element maps to an element that is not present in `dest`.
+    """
+    indices: list[int] = []
+    for source_element in src:
+        matched = matching_func(source_element)
+        if matched not in dest.structure:
+            raise ValueError(
+                f"Source element {source_element} maps to {matched}, which is not present in destination."
+            )
+        indices.append(dest.structure[matched])
+
+    return Tensor(
+        data=cast(
+            torch.LongTensor,
+            torch.tensor(
+                indices,
+                dtype=torch.long,
+                device=device.torch_device() if device is not None else None,
+            ),
+        ),
+        dims=(src,),
+    )

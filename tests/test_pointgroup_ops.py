@@ -1,4 +1,5 @@
 import sympy as sy
+import pytest
 import torch
 from sympy import ImmutableDenseMatrix
 
@@ -9,6 +10,28 @@ from qten.pointgroups.ops import abelian_column_symmetrize
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from qten.symbolics.ops import hilbert_opr_repr
 from qten.symbolics.state_space import IndexSpace
+from qten.utils.devices import Device
+
+
+def _has_gpu() -> bool:
+    try:
+        Device("gpu").torch_device()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _has_complex_gpu() -> bool:
+    try:
+        device = Device("gpu").torch_device()
+        torch.zeros(1, dtype=torch.complex128, device=device)
+        return True
+    except (RuntimeError, TypeError, NotImplementedError):
+        return False
+
+
+HAS_GPU = _has_gpu()
+HAS_COMPLEX_GPU = _has_complex_gpu()
 
 
 def _state(*irreps, irrep: sy.Expr = sy.Integer(1)) -> U1Basis:
@@ -159,3 +182,41 @@ def test_abelian_column_symmetrize_full_sector_expands_mixed_column():
     w_sym = abelian_column_symmetrize(mirror, w, full_sector=True)
 
     assert w_sym.data.shape == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "device_name",
+    [
+        "cpu",
+        pytest.param(
+            "gpu",
+            marks=pytest.mark.skipif(
+                not HAS_COMPLEX_GPU,
+                reason="requires GPU backend with complex tensor support",
+            ),
+        ),
+    ],
+)
+def test_abelian_column_symmetrize_preserves_device_for_empty_output(
+    device_name: str,
+):
+    x, y = sy.symbols("x y")
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+    mirror = _opr_with_offset(
+        irrep=ImmutableDenseMatrix([[-1, 0], [0, 1]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
+    )
+
+    fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+    h = HilbertSpace.new([_state(fx), _state(fy)])
+
+    w = Tensor(
+        data=torch.zeros((2, 1), dtype=torch.complex128),
+        dims=(h, IndexSpace.linear(1)),
+    ).to_device(Device(device_name))
+    w_sym = abelian_column_symmetrize(mirror, w, full_sector=True)
+
+    assert w_sym.device == w.device
+    assert w_sym.data.shape == (2, 0)

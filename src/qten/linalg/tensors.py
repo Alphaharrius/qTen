@@ -16,11 +16,15 @@ from typing import (
     get_origin,
 )
 from typing_extensions import override
+from contextlib import ContextDecorator
 from functools import wraps, reduce
 from itertools import product
 from numbers import Number
 from dataclasses import dataclass, replace
+from threading import local
 from types import EllipsisType
+from collections import OrderedDict
+import builtins
 
 from multipledispatch import dispatch  # type: ignore[import-untyped]
 import torch
@@ -50,6 +54,53 @@ such as `torch.FloatTensor`, `torch.DoubleTensor`, etc.
 """
 
 
+_TENSOR_DEVICE_STATE = local()
+
+
+def _tensor_device_stack() -> list[Device]:
+    stack = getattr(_TENSOR_DEVICE_STATE, "stack", None)
+    if stack is None:
+        stack = []
+        _TENSOR_DEVICE_STATE.stack = stack
+    return cast(list[Device], stack)
+
+
+def _forced_tensor_device() -> Optional[Device]:
+    stack = cast(tuple[Device, ...], tuple(getattr(_TENSOR_DEVICE_STATE, "stack", ())))
+    if not stack:
+        return None
+    return stack[-1]
+
+
+class at_device(ContextDecorator):
+    """
+    Temporarily force newly created QTen tensors onto a specific device.
+
+    This applies to `Tensor(...)` construction within the current thread,
+    including tensors created indirectly by helper functions in this module.
+    Nested scopes are supported; the innermost device takes precedence.
+    """
+
+    def __init__(self, device: Device | str):
+        self.device = Device.new(device) if isinstance(device, str) else device
+
+    def __enter__(self) -> "at_device":
+        self.device.torch_device()
+        _tensor_device_stack().append(self.device)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> None:
+        stack = _tensor_device_stack()
+        stack.pop()
+        if not stack:
+            delattr(_TENSOR_DEVICE_STATE, "stack")
+
+
 def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
     """
     Validator function to check that a tensor's data shape matches its dims.
@@ -64,6 +115,10 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
         )
 
 
+# TODO: Seems when we do torch.tensor(..., device=device) the tensor is created directly on the device
+# and thus takes only 1 allocation. Currently our workflow is to create the tensor on CPU and move it to
+# the target device, which involves 2 allocations and 1 copy. In future versions we should consider allowing
+# direct creation on the target device to optimize this workflow.
 @need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
 class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
@@ -199,9 +254,9 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     --------------------------------------------
     The module also exposes helpers that create or operate on `Tensor`:
     `matmul`, `permute`, `transpose`, `conj`, `unsqueeze`, `squeeze`,
-    `align`, `align_all`, `all`, `mean`, `argmax`, `argmin`, `astype`,
+    `align`, `align_all`, `all`, `mean`, `norm`, `argmax`, `argmin`, `astype`,
     `one_hot`, `equal`, `allclose`, `expand_to_union`, `union_dims`,
-    `mapping_matrix`, `eye`, `zeros`, `ones`, `kernel_tensor`,
+    `mapping_matrix`, `eye`, `zeros`, `ones`, `kernel_tensor`, `cat`,
     `replace_dim`, `factorize_dim`, `product_dims`, `promote_rank`,
     `where`, and `nonzero`.
     """
@@ -209,8 +264,17 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     data: T
     dims: Tuple[StateSpace, ...]
 
+    def __post_init__(self) -> None:
+        forced_device = _forced_tensor_device()
+        if forced_device is None:
+            return
+
+        target = forced_device.torch_device()
+        if self.data.device != target:
+            object.__setattr__(self, "data", cast(T, self.data.to(target)))
+
     @staticmethod
-    def scalar(number: Number) -> "Tensor":
+    def scalar(number: Number, *, device: Optional[Device] = None) -> "Tensor":
         """
         Create a 0-dimensional `Tensor` from a scalar number.
 
@@ -218,6 +282,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ----------
         number : `Number`
             The scalar value to convert into a tensor.
+        device : `Optional[Device]`, optional
+            Device to place the scalar on, by default None (CPU).
 
         Returns
         -------
@@ -230,7 +296,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             if isinstance(number, complex)
             else precision.torch_float
         )
-        data = torch.tensor(number, dtype=dtype)
+        torch_device = device.torch_device() if device is not None else None
+        data = torch.tensor(number, dtype=dtype, device=torch_device)
         return Tensor(data=data, dims=())
 
     def astype(self, dtype: torch.dtype) -> Self:
@@ -606,6 +673,72 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         return squeeze(self, dim)
 
+    def index_add(
+        self,
+        dim: int,
+        index: "Tensor[Any]",
+        source: "Tensor",
+        alpha: Union[int, float, complex] = 1,
+    ) -> Self:
+        """
+        Return a copy of this tensor with indexed additions applied along `dim`.
+
+        Parameters
+        ----------
+        `dim` : `int`
+            Dimension along which to accumulate updates.
+        `index` : `Tensor`
+            Rank-1 integer tensor of destination indices. Its single
+            `StateSpace` defines the symbolic order of the updates.
+        `source` : `Tensor`
+            Tensor of update values. It must have the same rank as `self`.
+        `alpha` : `Union[int, float, complex]`, optional
+            Scalar multiplier applied to `source` before accumulation.
+
+        Alignment rules
+        ---------------
+        - `index` must be a rank-1 integer tensor.
+        - `source` must have the same rank as `self`.
+        - On non-indexed axes, `source` is aligned to `self`.
+        - On the indexed axis, `source` is aligned to `index.dims[0]`, so the
+          source rows or blocks follow the same symbolic order as the index
+          list.
+
+        Returns
+        -------
+        `Self`
+            A new tensor with the same dimensions as `self`.
+        """
+        return index_add(self, dim=dim, index=index, source=source, alpha=alpha)
+
+    def index_add_(
+        self,
+        dim: int,
+        index: "Tensor[Any]",
+        source: "Tensor",
+        alpha: Union[int, float, complex] = 1,
+    ) -> Self:
+        """
+        In-place variant of `index_add`.
+
+        Parameters
+        ----------
+        `dim` : `int`
+            Dimension along which to accumulate updates.
+        `index` : `Tensor`
+            Rank-1 integer tensor of destination indices.
+        `source` : `Tensor`
+            Tensor of update values. It must have the same rank as `self`.
+        `alpha` : `Union[int, float, complex]`, optional
+            Scalar multiplier applied to `source` before accumulation.
+
+        Returns
+        -------
+        `Self`
+            This tensor after in-place accumulation.
+        """
+        return index_add_(self, dim=dim, index=index, source=source, alpha=alpha)
+
     def rank(self) -> int:
         """
         Get the rank (number of dimensions) of the tensor.
@@ -632,6 +765,28 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             A new tensor with the specified dimensions reduced.
         """
         return mean(self, dim)
+
+    def norm(
+        self,
+        ord: Optional[Union[int, float, str]] = None,
+        dim: Optional[Union[int, Tuple[int, int]]] = None,
+    ) -> Self:
+        """
+        Compute a vector or matrix norm over the specified dimension(s).
+
+        Parameters
+        ----------
+        ord : `Optional[Union[int, float, str]]`, optional
+            Order of the norm, passed through to `torch.linalg.norm`.
+        dim : `Optional[Union[int, Tuple[int, int]]]`, optional
+            Reduction axis or axes. If `None`, reduce over the whole tensor.
+
+        Returns
+        -------
+        `Self`
+            A new tensor with the specified dimensions reduced.
+        """
+        return norm(self, ord=ord, dim=dim)
 
     def argmax(self, dim: int) -> Self:
         """
@@ -919,7 +1074,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             key = (key,)
         compiled = TensorIndexing(self.dims, key).compile()
         if compiled.has_tensor_index:
-            data = self.data[compiled.indices]
+            indices = tuple(
+                idx.to(self.data.device) if isinstance(idx, torch.Tensor) else idx
+                for idx in compiled.indices
+            )
+            data = self.data[indices]
             return Tensor(data=data, dims=compiled.dims)
 
         data = self.data
@@ -1024,7 +1183,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     __str__ = __repr__  # Override str to use the same representation
 
 
-def auto_promote(func):
+def auto_promote_dtype(func):
     """Decorator to automatically promote input Tensors to a common dtype."""
 
     @wraps(func)
@@ -1038,6 +1197,41 @@ def auto_promote(func):
         return func(left, right, *args, **kwargs)
 
     return wrapper
+
+
+def _common_device(*tensors: Tensor) -> Device:
+    """Return the common execution device for a group of tensors."""
+    for tensor in tensors:
+        if tensor.device.name == "gpu":
+            return tensor.device
+    return tensors[0].device
+
+
+def _promote_to_device(*tensors: Tensor) -> Tuple[Tensor, ...]:
+    """Move tensors to a common execution device when needed."""
+    target_device = _common_device(*tensors)
+    return tuple(
+        tensor if tensor.device == target_device else tensor.to_device(target_device)
+        for tensor in tensors
+    )
+
+
+def auto_promote_device(func):
+    """Decorator to automatically promote input Tensors to a common device."""
+
+    @wraps(func)
+    def wrapper(left, right, *args, **kwargs):
+        if isinstance(left, Tensor) and isinstance(right, Tensor):
+            left, right = _promote_to_device(left, right)
+        return func(left, right, *args, **kwargs)
+
+    return wrapper
+
+
+def auto_promote(func):
+    """Decorator to automatically promote input Tensors to a common dtype/device."""
+
+    return auto_promote_device(auto_promote_dtype(func))
 
 
 def _match_dims_for_matmul(left: Tensor, right: Tensor) -> Tuple[Tensor, Tensor]:
@@ -1222,6 +1416,10 @@ def _tensor_comparison_op(
     Perform an element-wise comparison between two tensors using symmetric
     StateSpace-aware alignment and broadcasting.
     """
+    promoted_left, promoted_right = _promote_to_device(left, right)
+    left = cast(TensorType, promoted_left)
+    right = promoted_right
+
     target_rank = max(left.rank(), right.rank())
     left = cast(TensorType, promote_rank(left, target_rank))
     right = promote_rank(right, target_rank)
@@ -1260,6 +1458,10 @@ def _binary_elementwise_mask_op(
     Apply a boolean-mask-producing binary tensor op with symmetric StateSpace
     alignment and broadcasting.
     """
+    promoted_left, promoted_right = _promote_to_device(left, right)
+    left = cast(TensorType, promoted_left)
+    right = promoted_right
+
     target_rank = max(left.rank(), right.rank())
     left = cast(TensorType, promote_rank(left, target_rank))
     right = promote_rank(right, target_rank)
@@ -1705,6 +1907,122 @@ def squeeze(tensor: TensorType, dim: int) -> TensorType:
     return replace(tensor, data=new_data, dims=new_dims)
 
 
+def _normalize_dim(dim: int, rank: int) -> int:
+    if dim < 0:
+        dim += rank
+    if dim < 0 or dim >= rank:
+        raise IndexError(f"Dimension index {dim} out of range for rank {rank}")
+    return dim
+
+
+def _prepare_index_add_operands(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+) -> Tuple[int, TensorType, Tensor[Any], Tensor]:
+    dim = _normalize_dim(dim, tensor.rank())
+
+    if index.rank() != 1:
+        raise ValueError(
+            f"index_add requires rank-1 index tensor, got rank {index.rank()}"
+        )
+    if index.data.dtype not in (torch.int32, torch.int64):
+        raise TypeError(
+            "index_add requires index tensor with dtype torch.int32 or torch.int64"
+        )
+    if source.rank() != tensor.rank():
+        raise ValueError(
+            f"index_add requires source rank {tensor.rank()}, got rank {source.rank()}"
+        )
+
+    index_dim = index.dims[0]
+    target_dims = tensor.dims[:dim] + (index_dim,) + tensor.dims[dim + 1 :]
+
+    promoted_tensor, promoted_index, promoted_source = cast(
+        Tuple[TensorType, Tensor[Any], Tensor],
+        _promote_to_device(tensor, index, source),
+    )
+    try:
+        aligned_source = promoted_source.align_all(target_dims)
+    except (IndexError, TypeError, ValueError) as e:
+        raise ValueError(
+            "index_add could not align source to tensor/index dimensions on "
+            "non-indexed axes: "
+            f"source={_format_dims(promoted_source.dims)}, "
+            f"target={_format_dims(target_dims)}"
+        ) from e
+
+    if aligned_source.data.shape[dim] != promoted_index.data.numel():
+        raise ValueError(
+            "index_add requires source size along dim to match index length: "
+            f"source={aligned_source.data.shape[dim]}, index={promoted_index.data.numel()}"
+        )
+
+    expected_shape = list(promoted_tensor.data.shape)
+    expected_shape[dim] = promoted_index.data.numel()
+    if tuple(aligned_source.data.shape) != tuple(expected_shape):
+        raise ValueError(
+            "index_add requires source shape to match tensor shape on non-indexed axes: "
+            f"source={tuple(aligned_source.data.shape)}, expected={tuple(expected_shape)}"
+        )
+
+    return dim, promoted_tensor, promoted_index, aligned_source
+
+
+def index_add(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+    alpha: Union[int, float, complex] = 1,
+) -> TensorType:
+    """
+    Return a copy of `tensor` with `source` accumulated into positions `index`.
+
+    This is a metadata-aware wrapper over `torch.index_add`. It preserves the
+    dimensions of `tensor`, requires a rank-1 integer `index`, and aligns
+    `source` to `tensor` on all non-indexed axes before dispatch.
+    """
+    dim, promoted_tensor, promoted_index, aligned_source = _prepare_index_add_operands(
+        tensor, dim, index, source
+    )
+    out = torch.index_add(
+        promoted_tensor.data,
+        dim,
+        promoted_index.data,
+        aligned_source.data,
+        alpha=alpha,
+    )
+    return replace(promoted_tensor, data=out)
+
+
+def index_add_(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+    alpha: Union[int, float, complex] = 1,
+) -> TensorType:
+    """
+    In-place metadata-aware wrapper over `torch.Tensor.index_add_`.
+
+    The returned object is `tensor` itself.
+    """
+    dim = _normalize_dim(dim, tensor.rank())
+
+    if tensor.device != index.device:
+        index = index.to_device(tensor.device)
+    if tensor.device != source.device:
+        source = source.to_device(tensor.device)
+
+    _, _, prepared_index, aligned_source = _prepare_index_add_operands(
+        tensor, dim, index, source
+    )
+    tensor.data.index_add_(dim, prepared_index.data, aligned_source.data, alpha=alpha)
+    return tensor
+
+
 def align(tensor: TensorType, dim: int, target_dim: StateSpace) -> TensorType:
     """
     Align the specified dimension of the tensor to the target StateSpace.
@@ -1939,6 +2257,59 @@ def mean(
     return replace(tensor, data=reduced, dims=new_dims)
 
 
+def norm(
+    tensor: TensorType,
+    ord: Optional[Union[int, float, str]] = None,
+    dim: Optional[Union[int, Tuple[int, int]]] = None,
+) -> TensorType:
+    """
+    Compute a vector or matrix norm, matching `torch.linalg.norm` dim forms.
+
+    Parameters
+    ----------
+    tensor : `Tensor`
+        The tensor to reduce.
+    ord : `Optional[Union[int, float, str]]`, optional
+        Order of the norm, forwarded to `torch.linalg.norm`.
+    dim : `Optional[Union[int, Tuple[int, int]]]`, optional
+        Reduction axis or axes. If `None`, reduce over the whole tensor.
+
+    Returns
+    -------
+    `TensorType`
+        A new tensor with the specified dimensions reduced, preserving the input wrapper type.
+    """
+    reduced = torch.linalg.norm(tensor.data, ord=ord, dim=dim)
+    if dim is None:
+        return replace(tensor, data=reduced, dims=())
+
+    rank_ = tensor.rank()
+    dims_tuple: Tuple[int, ...]
+    if isinstance(dim, int):
+        dims_tuple = (dim,)
+    else:
+        dims_tuple = dim
+
+    normalized_dims: list[int] = []
+    for d in dims_tuple:
+        nd = d
+        if nd < 0:
+            nd += rank_
+        if nd < 0 or nd >= rank_:
+            raise IndexError(f"Dimension index {d} out of range for rank {rank_}")
+        if nd in normalized_dims:
+            raise ValueError("norm dim entries must be unique")
+        normalized_dims.append(nd)
+
+    reduced_dims_set = set(normalized_dims)
+    new_dims = tuple(
+        current_dim
+        for idx, current_dim in enumerate(tensor.dims)
+        if idx not in reduced_dims_set
+    )
+    return replace(tensor, data=reduced, dims=new_dims)
+
+
 def argmax(tensor: TensorType, dim: int) -> TensorType:
     """
     Compute the indices of the maximum values over a specified dimension.
@@ -2090,6 +2461,8 @@ def allclose(
         `True` if values are close after successful alignment; `False` if
         alignment fails or values are not close.
     """
+    a, b = _promote_to_device(a, b)
+
     try:
         aligned_b = b.align_all(a.dims)
     except (IndexError, TypeError, ValueError, RuntimeError):
@@ -2151,6 +2524,8 @@ def equal(a: Tensor, b: Tensor) -> bool:
         `True` if values are exactly equal after successful alignment; `False`
         if alignment fails or values are not equal.
     """
+    a, b = _promote_to_device(a, b)
+
     try:
         aligned_b = b.align_all(a.dims)
     except (IndexError, TypeError, ValueError, RuntimeError):
@@ -2259,11 +2634,98 @@ def union_dims(
     return tuple(merged)
 
 
+def _cat_dim(dims: Sequence[StateSpace]) -> StateSpace:
+    if not dims:
+        raise ValueError("cat requires at least one dimension to concatenate")
+
+    first = dims[0]
+    if isinstance(first, BroadcastSpace):
+        raise ValueError("cat does not support concatenation along BroadcastSpace")
+
+    if builtins.all(isinstance(dim, IndexSpace) for dim in dims):
+        return IndexSpace.linear(sum(dim.dim for dim in dims))
+
+    if not builtins.all(type(dim) is type(first) for dim in dims):
+        raise ValueError("cat dimension types must match across all tensors")
+
+    elements: list[Any] = []
+    seen: set[Any] = set()
+    for dim in dims:
+        for element in dim.elements():
+            if element in seen:
+                raise ValueError(
+                    "cat requires concatenated structured dimensions to be disjoint"
+                )
+            seen.add(element)
+            elements.append(element)
+
+    return type(first)(
+        structure=OrderedDict((element, i) for i, element in enumerate(elements))
+    )
+
+
+def cat(tensors: Sequence[TensorType], dim: int = 0) -> TensorType:
+    """
+    Concatenate tensors along an existing dimension with metadata-aware alignment.
+
+    Non-concatenated dimensions must represent the same rays and are aligned to
+    the ordering of the first tensor before concatenation. The concatenated
+    output dimension is rebuilt by ordered append. `IndexSpace` dimensions are
+    resized linearly; structured dimensions require disjoint labels.
+    """
+    if not tensors:
+        raise ValueError("cat expects at least one tensor")
+
+    first = tensors[0]
+    rank_ = first.rank()
+    if dim < 0:
+        dim += rank_
+    if dim < 0 or dim >= rank_:
+        raise IndexError(f"Dimension index {dim} out of range for rank {rank_}")
+
+    for tensor in tensors[1:]:
+        if tensor.rank() != rank_:
+            raise ValueError("All tensors passed to cat must have the same rank")
+
+    common_dtype = first.data.dtype
+    for tensor in tensors[1:]:
+        common_dtype = torch.promote_types(common_dtype, tensor.data.dtype)
+
+    promoted = tuple(
+        tensor
+        if tensor.data.dtype == common_dtype
+        else replace(tensor, data=tensor.data.to(common_dtype))
+        for tensor in _promote_to_device(*tensors)
+    )
+
+    aligned: list[TensorType] = []
+    for tensor in promoted:
+        current = tensor
+        for axis in range(rank_):
+            if axis == dim:
+                continue
+            target_dim = first.dims[axis]
+            if not same_rays(current.dims[axis], target_dim):
+                raise ValueError(
+                    f"All non-concatenated dims must have the same rays; "
+                    f"axis {axis} differs between {current.dims[axis]} and {target_dim}"
+                )
+            current = current.align(axis, target_dim)
+        aligned.append(current)
+
+    out_dim = _cat_dim([tensor.dims[dim] for tensor in aligned])
+    out_dims = first.dims[:dim] + (out_dim,) + first.dims[dim + 1 :]
+    out_data = torch.cat([tensor.data for tensor in aligned], dim=dim)
+    return replace(first, data=out_data, dims=out_dims)
+
+
 def mapping_matrix(
     from_space: StateSpace,
     to_space: StateSpace,
     mapping: Dict[Any, Any],
     factors: Optional[Dict[Tuple[Any, Any], int | float | complex]] = None,
+    *,
+    device: Optional[Device] = None,
 ) -> Tensor:
     """
     Create a sector-wise mapping matrix between two state spaces.
@@ -2303,7 +2765,12 @@ def mapping_matrix(
         factors = {}
 
     precision = get_precision_config()
-    mat = torch.zeros((from_space.dim, to_space.dim), dtype=precision.torch_complex)
+    torch_device = device.torch_device() if device is not None else None
+    mat = torch.zeros(
+        (from_space.dim, to_space.dim),
+        dtype=precision.torch_complex,
+        device=torch_device,
+    )
     for fm, tm in mapping.items():
         findex = from_space.structure[fm]
         tindex = to_space.structure[tm]
@@ -2313,7 +2780,7 @@ def mapping_matrix(
     return Tensor(data=mat, dims=(from_space, to_space))
 
 
-def eye(dims: Tuple[StateSpace, ...]) -> Tensor:
+def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create an identity tensor based on the last two dimensions.
     Returns a rank-2 Tensor corresponding to the identity of the matrix part.
@@ -2325,10 +2792,11 @@ def eye(dims: Tuple[StateSpace, ...]) -> Tensor:
     matrix_dims = dims[-2:]
     rows = matrix_dims[0].dim
     cols = matrix_dims[1].dim
-    return Tensor(data=torch.eye(rows, cols), dims=matrix_dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.eye(rows, cols, device=torch_device), dims=matrix_dims)
 
 
-def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
+def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create a zero-filled tensor with shape defined by `dims`.
 
@@ -2336,6 +2804,8 @@ def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
     ----------
     dims : `Tuple[StateSpace, ...]`
         StateSpace dimensions defining the tensor shape.
+    device : `Optional[Device]`, optional
+        Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
@@ -2343,10 +2813,11 @@ def zeros(dims: Tuple[StateSpace, ...]) -> Tensor:
         A tensor of zeros with `shape == tuple(dim.dim for dim in dims)`.
     """
     shape = tuple(dim.dim for dim in dims)
-    return Tensor(data=torch.zeros(shape), dims=dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.zeros(shape, device=torch_device), dims=dims)
 
 
-def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
+def ones(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
     Create a one-filled tensor with shape defined by `dims`.
 
@@ -2354,6 +2825,8 @@ def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
     ----------
     dims : `Tuple[StateSpace, ...]`
         StateSpace dimensions defining the tensor shape.
+    device : `Optional[Device]`, optional
+        Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
@@ -2361,11 +2834,15 @@ def ones(dims: Tuple[StateSpace, ...]) -> Tensor:
         A tensor of ones with `shape == tuple(dim.dim for dim in dims)`.
     """
     shape = tuple(dim.dim for dim in dims)
-    return Tensor(data=torch.ones(shape), dims=dims)
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(data=torch.ones(shape, device=torch_device), dims=dims)
 
 
 def kernel_tensor(
-    ker: Callable[..., Number], dims: Tuple[StateSpace, ...]
+    ker: Callable[..., Number],
+    dims: Tuple[StateSpace, ...],
+    *,
+    device: Optional[Device] = None,
 ) -> Tensor[torch.Tensor]:
     """
     Build a tensor by evaluating a scalar-valued kernel over StateSpace elements.
@@ -2387,8 +2864,9 @@ def kernel_tensor(
     `Tensor`
         Tensor with `dims` and values produced by `ker`.
     """
+    torch_device = device.torch_device() if device is not None else None
     if not dims:
-        return Tensor(data=torch.as_tensor(ker()), dims=dims)
+        return Tensor(data=torch.as_tensor(ker(), device=torch_device), dims=dims)
 
     element_axes = tuple(dim.elements() for dim in dims)
     for axis, dim in zip(element_axes, dims):
@@ -2399,7 +2877,9 @@ def kernel_tensor(
             )
 
     values = [ker(*args) for args in product(*element_axes)]
-    data = torch.as_tensor(values).reshape(*(len(axis) for axis in element_axes))
+    data = torch.as_tensor(values, device=torch_device).reshape(
+        *(len(axis) for axis in element_axes)
+    )
     return Tensor(data=data, dims=dims)
 
 
@@ -2708,6 +3188,8 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
     """
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
+
+    condition, input, other = _promote_to_device(condition, input, other)
 
     target_rank = max(condition.rank(), input.rank(), other.rank())
     condition = promote_rank(condition, target_rank)

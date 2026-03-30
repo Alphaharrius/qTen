@@ -1,10 +1,9 @@
 from typing import cast
 
 import sympy as sy
-import torch
 
 from .abelian import AbelianBasis, AbelianOpr
-from ..linalg.tensors import Tensor
+from ..linalg.tensors import Tensor, cat, eye
 from ..symbolics.hilbert_space import HilbertSpace, U1Basis
 from ..symbolics.ops import hilbert_opr_repr
 from ..symbolics.state_space import IndexSpace
@@ -89,66 +88,60 @@ def abelian_column_symmetrize(
     else:
         raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
 
-    g_full = hilbert_opr_repr(opr, row_dim)
+    g_full = hilbert_opr_repr(opr, row_dim).to_device(w.device)
     order = opr.g.group_order()
-    ident = Tensor(
-        data=torch.eye(row_dim.dim, dtype=g_full.data.dtype, device=g_full.data.device),
-        dims=(row_dim, row_dim),
-    )
+    ident = eye((row_dim, row_dim)).astype(g_full.data.dtype).to_device(g_full.device)
     single_col = IndexSpace.linear(1)
     tol = 1e-10
 
-    projected_cols: list[torch.Tensor] = []
+    g_powers: list[Tensor] = [ident]
+    for _ in range(1, order):
+        g_powers.append(g_powers[-1] @ g_full)
+
+    sector_projectors: list[tuple[AbelianBasis, Tensor]] = []
+    for m in range(order):
+        phase_exact = sy.simplify(sy.exp(2 * sy.pi * sy.I * m / order))
+        sector_basis = _phase_basis(opr, phase_exact)
+        phase_scalar = complex(sy.N(phase_exact))
+
+        projector = 0 * ident
+        for k, g_power in enumerate(g_powers):
+            projector = projector + (phase_scalar ** (-k)) * g_power
+        sector_projectors.append((sector_basis, projector / order))
+
+    projected_cols: list[Tensor] = []
     raw_labels: list[U1Basis] = []
     for j, seed in enumerate(seeds):
-        col = Tensor(
-            data=w.data[:, j : j + 1].clone(),
-            dims=(row_dim, single_col),
-        )
-        candidates: list[tuple[float, torch.Tensor, U1Basis]] = []
-        for m in range(order):
-            phase_exact = sy.simplify(sy.exp(2 * sy.pi * sy.I * m / order))
-            sector_basis = _phase_basis(opr, phase_exact)
-            phase = torch.exp(
-                torch.tensor(
-                    2j * torch.pi * m / order,
-                    dtype=g_full.data.dtype,
-                    device=g_full.data.device,
-                )
-            )
-            phase_scalar = complex(phase.item())
+        col = w[:, j : j + 1].clone().replace_dim(1, single_col)
+        candidates: list[tuple[float, Tensor, U1Basis]] = []
+        for sector_basis, projector in sector_projectors:
+            projected = projector @ col
 
-            projected = Tensor(data=torch.zeros_like(col.data), dims=col.dims)
-            g_power = ident
-            for k in range(order):
-                projected = projected + (phase_scalar ** (-k)) * (g_power @ col)
-                g_power = g_power @ g_full
-            projected = projected / order
-
-            norm = torch.linalg.norm(projected.data)
-            if float(norm.item()) <= tol:
+            projected_norm = projected.norm()
+            norm_value = float(projected_norm.item())
+            if norm_value <= tol:
                 continue
 
             candidates.append(
                 (
-                    float(norm.item()),
-                    projected.data / norm,
+                    norm_value,
+                    projected / norm_value,
                     _attach_basis_label(seed, sector_basis),
                 )
             )
 
         if full_sector:
-            for _, proj_data, label in candidates:
-                projected_cols.append(proj_data)
+            for _, projected, label in candidates:
+                projected_cols.append(projected)
                 raw_labels.append(label)
         elif candidates:
-            _, proj_data, label = max(candidates, key=lambda item: item[0])
-            projected_cols.append(proj_data)
+            _, projected, label = max(candidates, key=lambda item: item[0])
+            projected_cols.append(projected)
             raw_labels.append(label)
 
     if not projected_cols:
         return Tensor(
-            data=torch.empty((row_dim.dim, 0), dtype=g_full.data.dtype),
+            data=w.data.new_empty((row_dim.dim, 0), dtype=g_full.data.dtype),
             dims=(row_dim, IndexSpace.linear(0)),
         )
 
@@ -166,6 +159,5 @@ def abelian_column_symmetrize(
         else:
             labels.append(label)
 
-    out_data = torch.cat(projected_cols, dim=-1)
     out_dim = HilbertSpace.new(labels)
-    return Tensor(data=out_data, dims=(row_dim, out_dim))
+    return cat(projected_cols, dim=-1).replace_dim(-1, out_dim)

@@ -1,6 +1,16 @@
 from dataclasses import dataclass, field
 from numbers import Number
-from typing import Tuple, Type, TypeVar, Union, cast, Mapping, Generic, Sequence
+from typing import (
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    Mapping,
+    Generic,
+    Sequence,
+    Optional,
+)
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from multipledispatch import dispatch  # type: ignore[import-untyped]
@@ -13,6 +23,7 @@ from sympy import ImmutableDenseMatrix, sympify
 from sympy.matrices.normalforms import smith_normal_form  # type: ignore[import-untyped]
 
 from ..utils.collections_ext import FrozenDict
+from ..utils.devices import Device
 from ..abstracts import Operable, HasDual, HasBase, Convertible
 from ..plottings import Plottable
 from .boundary import BoundaryCondition, PeriodicBoundary
@@ -68,6 +79,13 @@ class AffineSpace(Spatial):
 _O = TypeVar("_O", bound="Offset")
 
 
+@lru_cache(maxsize=None)
+def _rebase_transform_matrix(
+    src: AffineSpace, dest: AffineSpace
+) -> ImmutableDenseMatrix:
+    return ImmutableDenseMatrix(dest.basis.inv() @ src.basis)
+
+
 @dataclass(frozen=True)
 class AbstractLattice(Generic[_O], AffineSpace, HasDual):
     """
@@ -81,7 +99,10 @@ class AbstractLattice(Generic[_O], AffineSpace, HasDual):
 
     @abstractmethod
     def cartes(
-        self, T: Type[Union[_O, torch.Tensor, np.ndarray]] | None = None
+        self,
+        T: Type[Union[_O, torch.Tensor, np.ndarray]] | None = None,
+        *,
+        device: Optional[Device] = None,
     ) -> Union[Tuple[_O, ...], torch.Tensor, np.ndarray]:
         """Enumerate the canonical coordinates of the lattice."""
         raise NotImplementedError()
@@ -200,7 +221,10 @@ class Lattice(AbstractLattice["Offset"]):
     @lru_cache
     @override
     def cartes(
-        self, T: Type[Union["Offset", torch.Tensor, np.ndarray]] | None = None
+        self,
+        T: Type[Union["Offset", torch.Tensor, np.ndarray]] | None = None,
+        *,
+        device: Optional[Device] = None,
     ) -> Union[Tuple["Offset", ...], torch.Tensor, np.ndarray]:
         """
         Enumerate every site in the finite lattice.
@@ -213,7 +237,7 @@ class Lattice(AbstractLattice["Offset"]):
             with shape `(n_sites, dim)`.
         """
         if T == torch.Tensor:
-            return _lattice_coords(self)
+            return _lattice_coords(self, device=device)
         if T == np.ndarray:
             return cast(np.ndarray, _lattice_coords(self).detach().cpu().numpy())
         if T not in (None, Offset):
@@ -278,16 +302,21 @@ class Lattice(AbstractLattice["Offset"]):
         return Offset(rep=ImmutableDenseMatrix(rep), space=self)
 
 
-def _lattice_coords(lattice: Lattice) -> torch.Tensor:
+def _lattice_coords(
+    lattice: Lattice, *, device: Optional[Device] = None
+) -> torch.Tensor:
     """Return Cartesian coordinates for every site in a finite lattice."""
     precision = get_precision_config()
+    torch_device = device.torch_device() if device is not None else None
 
     def _as_numeric_row(mat: ImmutableDenseMatrix) -> np.ndarray:
         return np.array(mat.evalf(), dtype=precision.np_float).reshape(-1)
 
     cell_reps = lattice.boundaries.representatives()
     if not cell_reps:
-        return torch.empty((0, lattice.dim), dtype=precision.torch_float)
+        return torch.empty(
+            (0, lattice.dim), dtype=precision.torch_float, device=torch_device
+        )
 
     lat_reps = np.stack([_as_numeric_row(rep) for rep in cell_reps])
 
@@ -311,7 +340,7 @@ def _lattice_coords(lattice: Lattice) -> torch.Tensor:
 
     basis_mat = np.array(lattice.basis.evalf(), dtype=precision.np_float)
     coords_np = wrapped_fractional_flat @ basis_mat.T
-    return torch.tensor(coords_np, dtype=precision.torch_float)
+    return torch.tensor(coords_np, dtype=precision.torch_float, device=torch_device)
 
 
 @dataclass(frozen=True)
@@ -350,7 +379,10 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
     @lru_cache
     @override
     def cartes(
-        self, T: Type[Union["Momentum", torch.Tensor, np.ndarray]] | None = None
+        self,
+        T: Type[Union["Momentum", torch.Tensor, np.ndarray]] | None = None,
+        *,
+        device: Optional[Device] = None,
     ) -> Union[Tuple["Momentum", ...], torch.Tensor, np.ndarray]:
         """
         Enumerate canonical momentum points.
@@ -362,6 +394,7 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
             `torch.Tensor` and `np.ndarray` return Cartesian coordinates with
             shape `(n_points, dim)`.
         """
+        torch_device = device.torch_device() if device is not None else None
         element_indices = product(*(range(n) for n in self.shape))
         sizes = ImmutableDenseMatrix(tuple(sy.Rational(1, n) for n in self.shape))
         scaled_elements = (
@@ -383,7 +416,11 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
             )
         if T == torch.Tensor:
             precision = get_precision_config()
-            return torch.tensor(self.cartes(np.ndarray), dtype=precision.torch_float)
+            return torch.tensor(
+                self.cartes(np.ndarray),
+                dtype=precision.torch_float,
+                device=torch_device,
+            )
         raise TypeError(
             f"Unsupported type {T} for cartes. Supported types: Momentum, torch.Tensor, np.ndarray"
         )
@@ -545,7 +582,7 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         `Offset`
             New Offset expressed in the given affine space.
         """
-        rebase_transform_mat = space.basis.inv() @ self.space.basis
+        rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Offset(rep=ImmutableDenseMatrix(new_rep), space=space)
 
@@ -676,8 +713,7 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
         `Momentum`
             New Momentum expressed in the given reciprocal lattice.
         """
-
-        rebase_transform_mat = space.basis.inv() @ self.space.basis
+        rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Momentum(rep=ImmutableDenseMatrix(new_rep), space=space)
 

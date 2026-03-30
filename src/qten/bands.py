@@ -1,6 +1,8 @@
 from typing import Callable, Dict, Literal, Tuple, Union, cast
 
 import numpy as np
+
+# TODO: Avoid using torch explicitly here.
 import torch
 
 from .geometries.spatials import Offset, Momentum
@@ -11,12 +13,12 @@ from .symbolics.hilbert_space import (
     FuncOpr,
 )
 from .linalg.decompose import eigh
-from .linalg.tensors import Tensor, mapping_matrix
+from .linalg.tensors import Tensor, zeros
 from .geometries.spatials import ReciprocalLattice
 from .geometries.basis_transform import BasisTransform
 from .geometries.fourier import fourier_transform
 from .symbolics.hilbert_space import Opr
-from .utils.collections_ext import matchby
+from .symbolics.ops import match_indices
 
 
 def bandtransform(
@@ -98,8 +100,13 @@ def bandtransform(
         raise ValueError("Third dimension of tensor must be a HilbertSpace.")
 
     kspace: MomentumSpace = cast(MomentumSpace, tensor.dims[0])
+    transform_cache: Dict[HilbertSpace, Tensor] = {}
 
     def build_transform(space: HilbertSpace) -> Tensor:
+        cached = transform_cache.get(space)
+        if cached is not None:
+            return cached
+
         fractional = FuncOpr(Offset, Offset.fractional)
         new_space = cast(HilbertSpace, fractional @ t @ space)
         # The transformation will distort the unit-cell of the Hilbert space,
@@ -108,36 +115,34 @@ def bandtransform(
             raise ValueError(
                 f"Hilbert space {space} is not closed under the transform {t}!"
             )
-        bloch_transform = cast(Tensor, space.cross_gram(new_space)).h(-2, -1)
-        left_fourier = fourier_transform(kspace, space, space)  # (K, B, B')
-        right_fourier = fourier_transform(kspace, space, space)  # (K, B, B)
+        bloch_transform = cast(
+            Tensor, space.cross_gram(new_space, device=tensor.device)
+        ).h(-2, -1)
+        f = fourier_transform(kspace, space, space, device=tensor.device)  # (K, B, B')
         # Keep the transformed unit-cell labels explicit on the region leg so
         # StateSpace auto-alignment does not erase the site permutation.
-        # (K, B, B') @ (B', B) @ (B, B)
-        transform = (
-            left_fourier @ bloch_transform @ right_fourier.h(-2, -1)
-        )  # (K, B, B)
+        # (K, B, B) @ (B, B) @ (K, B, B)
+        transform = f @ bloch_transform @ f.h(-2, -1)  # (K, B, B)
+        transform_cache[space] = transform
         return transform
 
+    # TODO: This call is a huge hotspot of this function, contributing nearly 90% of the runtime.
     mapped_kspace = kspace.map(lambda k: cast(Momentum, t @ k).fractional())
 
     if opt in ("both", "left"):
         left_fourier = build_transform(cast(HilbertSpace, tensor.dims[1]))  # (K, B, B)
-        left_fourier = left_fourier.replace_dim(0, mapped_kspace).align(
-            0, kspace
-        )  # (K, B, B)
+        left_fourier = left_fourier.replace_dim(0, mapped_kspace)  # (K, B, B)
         tensor = cast(Tensor, (left_fourier @ tensor))  # (K, B, B)
 
     if opt in ("both", "right"):
         right_fourier = build_transform(cast(HilbertSpace, tensor.dims[2]))  # (K, B, B)
-        right_fourier = right_fourier.replace_dim(0, mapped_kspace).align(
-            0, kspace
-        )  # (K, B, B)
+        right_fourier = right_fourier.replace_dim(0, mapped_kspace)  # (K, B, B)
         tensor = cast(Tensor, (tensor @ right_fourier.h(-2, -1)))  # (K, B, B)
 
     return tensor
 
 
+# TODO: Optimize this function: very slow in 192x192 system.
 def bandfold(
     transform: BasisTransform,
     tensor: Tensor,
@@ -241,24 +246,29 @@ def bandfold(
         for r_lookup, r_out in zip(enlarge_unit_cell, transformed_unit_cell)
     )
     # # Transform both sides
-    f = fourier_transform(k_space, tensor.dims[switch_index], rebased_hilbert)
+    f = fourier_transform(
+        k_space, tensor.dims[switch_index], rebased_hilbert, device=tensor.device
+    )
     vratio = np.sqrt(len(enlarge_unit_cell) / len(lattice.unit_cell))
     f = f / vratio
     fh = f.h(-2, -1)  # (K, B', B)
     transformed = fh @ tensor @ f  # (K, B', B')
-    transformed = transformed.permute(1, 2, 0).unsqueeze(-1)  # (B', B', K, 1)
 
     # k-mapping
     new_k_space = brillouin_zone(scaled_reciprocal_lattice)
-    mapping = matchby(
+    k_indices = match_indices(
         k_space,
         new_k_space,
-        base_func=lambda k: transform(k).fractional()
+        matching_func=lambda k: transform(k).fractional()
         if k.space == reciprocal_lattice
         else k.fractional(),
+        device=tensor.device,
     )
-    k_map = mapping_matrix(k_space, new_k_space, mapping).transpose(0, 1)
-    transformed = (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
+    transformed = (
+        zeros((new_k_space, rebased_hilbert, rebased_hilbert), device=tensor.device)
+        .astype(transformed.data.dtype)
+        .index_add(0, k_indices, transformed)
+    )
     for dim in (1, 2):
         if transformed.dims[dim] == rebased_hilbert:
             transformed = transformed.replace_dim(dim, transformed_hilbert)
