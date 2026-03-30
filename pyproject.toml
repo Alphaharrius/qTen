@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qten"
 version = "0.1.0"
-description = "A torch-based tensor library for quantum related computations."
+description = "Torch-based tensors, lattices, symmetries, and band-structure tools for quantum lattice models."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "matplotlib>=3.10.7",
     "multipledispatch>=1.0.0",
+    "numpy>=2.0.0",
     "sympy>=1.14.0",
-    "plotly>=6.5.0",
+    "typing_extensions>=4.12.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +48,8 @@ dev = [
     "mypy>=1.14.0",
     "pandas-stubs>=2.0.0",
     "qten_plots",
+    "build>=1.2.2",
+    "twine>=6.1.0",
 ]
 
 [tool.uv]
@@ -128,3 +130,9 @@ disable_error_code = ["import-untyped"]
 [tool.setuptools.package-data]
 qten = ["py.typed"]
 "*" = ["*.pyi"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
