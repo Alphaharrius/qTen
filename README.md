@@ -128,6 +128,34 @@ print(len(lattice.cartes()))         # 9
 print(lattice.cartes(torch.Tensor))  # Cartesian coordinates
 ```
 
+### Boundary Conditions
+
+Finite `Lattice` objects use periodic boundary conditions. When you pass
+`shape=(Lx, Ly, ...)`, QTen treats lattice indices modulo those extents, so a site
+at `(Lx, y)` is identified with `(0, y)`.
+
+That means:
+
+- `shape=(3, 3)` creates a `3 x 3` torus, not an open patch.
+- Distances are measured using the nearest periodic image.
+- `shape` is shorthand for a diagonal `PeriodicBoundary`.
+
+If you want to specify the periodic identifications explicitly, pass
+`boundaries=PeriodicBoundary(...)`:
+
+```python
+import sympy as sy
+
+from qten.geometries import Lattice, PeriodicBoundary
+
+lattice = Lattice(
+    basis=sy.ImmutableDenseMatrix([[1, 0], [0, 1]]),
+    boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix([[3, 0], [0, 3]])),
+)
+
+print(lattice.shape)  # (3, 3)
+```
+
 For a unit cell with more than one site:
 
 ```python
