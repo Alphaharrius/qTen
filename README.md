@@ -6,31 +6,43 @@ A torch-based tensor library for quantum related computations.
 
 QTen requires Python 3.11 or newer.
 
-Install the package from the project root with `pip`:
+Install PyTorch first. For CPU or CUDA-specific builds, use the official
+PyTorch installation command for your platform and accelerator setup.
+
+Then install the core package from PyPI:
 
 ```bash
-pip install '.[cpu]'
+pip install qten
 ```
 
-If you want a CUDA-enabled PyTorch build, choose one of the CUDA extras declared in `pyproject.toml`:
+If you want the plotting backends, install the extension package as well:
 
 ```bash
-pip install '.[cu126]'
-pip install '.[cu128]'
-pip install '.[cu129]'
-pip install '.[cu130]'
+pip install qten-plots
 ```
 
-If you use `uv`, install the package rather than syncing a developer environment:
+If you use `uv`:
 
 ```bash
-uv pip install '.[cpu]'
+uv add torch
+uv add qten
+uv add qten-plots
 ```
 
-For development:
+For development from this repository:
 
 ```bash
 uv sync --extra cpu --group dev
+```
+
+If you want a CUDA-specific PyTorch build in this repository, choose one of the
+defined extras when syncing:
+
+```bash
+uv sync --extra cu126 --group dev
+uv sync --extra cu128 --group dev
+uv sync --extra cu129 --group dev
+uv sync --extra cu130 --group dev
 ```
 
 ## Quick Start
@@ -39,7 +51,8 @@ The package root exports tensor helpers such as `Tensor`, `zeros`, `ones`, `eye`
 
 ## Build And Plot A Lattice
 
-This example builds a square lattice with two sites in the unit cell and plots it.
+This example builds a square lattice with two sites in the unit cell and plots
+it. Plotting requires `qten-plots` to be installed.
 
 ```python
 import sympy as sy
