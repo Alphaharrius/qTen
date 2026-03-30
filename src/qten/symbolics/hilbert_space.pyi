@@ -11,6 +11,7 @@ from ..abstracts import (
 from ..geometries.spatials import Spatial as Spatial
 from ..linalg.tensors import Tensor as Tensor
 from ..precision import get_precision_config as get_precision_config
+from ..utils.devices import Device as Device
 from ..utils.collections_ext import FrozenDict as FrozenDict
 from ..utils.types_ext import full_typename as full_typename
 from ..validations import need_validation as need_validation
@@ -91,7 +92,9 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
     def tensor_product(self, other: HilbertSpace) -> HilbertSpace: ...
     @override
     def rays(self) -> HilbertSpace: ...
-    def cross_gram(self, another: HilbertSpace) -> Tensor: ...
+    def cross_gram(
+        self, another: HilbertSpace, *, device: Device | None = None
+    ) -> Tensor: ...
 
 def same_rays(a: HilbertSpace, b: HilbertSpace) -> bool: ...
 

@@ -104,8 +104,6 @@ class Device:
                 self.index if self.index is not None else torch.cuda.current_device()
             )
             return torch.device("cuda", index)
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return torch.device("mps")
         raise RuntimeError("The current system does not have GPU devices!")
 
     def __str__(self) -> str:

@@ -50,6 +50,7 @@ def affine_space_transform(t: BasisTransform, space: AffineSpace) -> AffineSpace
 
 
 @BasisTransform.register(Lattice)
+@lru_cache(maxsize=None)
 def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
     """
     Generates a Supercell based on the scaling matrix M.

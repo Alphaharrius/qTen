@@ -6,3 +6,4 @@ from .decompose import (
     qr as qr,
     svd as svd,
 )
+from .tensors import norm as norm

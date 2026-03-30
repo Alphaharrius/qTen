@@ -1,4 +1,5 @@
-from typing import Dict, Tuple, overload
+from ..utils.devices import Device
+from typing import Dict, Tuple, overload, Optional
 from typing import cast
 
 from multipledispatch import dispatch
@@ -16,8 +17,11 @@ from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby
 
 
+# TODO: Consider allow the creation of the tensor on a specified device.
 @dispatch(tuple, tuple)
-def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.Tensor:
+def fourier_transform(
+    K: Tuple[Momentum, ...], R: Tuple[Offset, ...], *, device: Optional[Device] = None
+) -> torch.Tensor:
     """
     Compute Fourier phase factors between momentum and real-space offsets.
 
@@ -44,6 +48,7 @@ def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.T
         coordinates).
     """
     precision = get_precision_config()
+    torch_device = device.torch_device() if device is not None else None
     ten_K = torch.from_numpy(  # (K, d)
         np.stack(
             [
@@ -52,7 +57,7 @@ def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.T
             ],
             axis=0,
         )
-    )
+    ).to(device=torch_device)
     ten_R = torch.from_numpy(  # (d, R)
         np.stack(
             [
@@ -63,7 +68,7 @@ def fourier_transform(K: Tuple[Momentum, ...], R: Tuple[Offset, ...]) -> torch.T
             ],
             axis=1,
         )
-    )
+    ).to(device=torch_device)
     # `ten_K` is already in Cartesian reciprocal coordinates (includes 2π),
     # so multiplying by `2π` here would double count the phase.
     exponent = -1j * torch.matmul(ten_K, ten_R)  # (K, R)
@@ -75,6 +80,8 @@ def fourier_transform(
     k_space: MomentumSpace,
     bloch_space: HilbertSpace,
     region_space: HilbertSpace,
+    *,
+    device: Optional[Device] = None,
 ) -> Tensor:
     """
     Build the Fourier transform tensor between `k_space` and `region_space`.
@@ -98,11 +105,11 @@ def fourier_transform(
         Tensor with data shape `(K, B, R)` and dims
         `(k_space, bloch_space, region_space)`.
     """
-    K: Tuple[Momentum] = k_space.elements()
-    R: Tuple[Offset] = tuple(
+    K: Tuple[Momentum, ...] = k_space.elements()
+    R: Tuple[Offset, ...] = tuple(
         cast(U1Basis, el).irrep_of(Offset) for el in region_space.elements()
     )
-    f = fourier_transform(K, R)  # (K, R)
+    f = fourier_transform(K, R, device=device)  # (K, R)
 
     region_to_bloch: Dict[U1Basis, U1Basis] = matchby(
         region_space,
@@ -110,16 +117,18 @@ def fourier_transform(
         lambda psi: cast(U1Basis, psi).irrep_of(Offset).fractional(),
     )
 
-    map = mapping_matrix(region_space, bloch_space, region_to_bloch).transpose(
-        0, 1
-    )  # (B, R)
+    map = mapping_matrix(
+        region_space, bloch_space, region_to_bloch, device=device
+    ).transpose(0, 1)  # (B, R)
     # (K, 1, R) * (1, B, R)
-    f = f.unsqueeze(1) * map.data.unsqueeze(0)
+    f = f.to(map.data.device).unsqueeze(1) * map.data.unsqueeze(0)
     return Tensor(data=f, dims=(k_space, bloch_space, region_space))  # (K, B, R)
 
 
 @overload
-def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
+def region_restrict(
+    tensor: Tensor, R: HilbertSpace, *, device: Optional[Device] = None
+) -> Tensor:
     """
     Rebuild a Fourier transform tensor on a different real-space region.
 
@@ -159,11 +168,15 @@ def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
 
 
 @overload
-def region_restrict(tensor: Tensor, region: Tuple[Offset, ...]) -> Tensor: ...
+def region_restrict(
+    tensor: Tensor, region: Tuple[Offset, ...], *, device: Optional[Device] = None
+) -> Tensor: ...
 
 
 @dispatch(Tensor, HilbertSpace)  # type: ignore[no-redef,misc]
-def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
+def region_restrict(
+    tensor: Tensor, R: HilbertSpace, *, device: Optional[Device] = None
+) -> Tensor:
     K, B, _ = tensor.dims
     if not isinstance(K, MomentumSpace):
         raise TypeError(
@@ -173,15 +186,17 @@ def region_restrict(tensor: Tensor, R: HilbertSpace) -> Tensor:
         raise TypeError(
             f"Expected second dim to be HilbertSpace, got {type(B).__name__}"
         )
-    return fourier_transform(K, B, R)
+    return fourier_transform(K, B, R, device=device)
 
 
 @dispatch(Tensor, tuple)  # type: ignore[no-redef]
-def region_restrict(tensor: Tensor, region: Tuple[Offset, ...]) -> Tensor:
+def region_restrict(
+    tensor: Tensor, region: Tuple[Offset, ...], *, device: Optional[Device] = None
+) -> Tensor:
     B = tensor.dims[1]
     if not isinstance(B, HilbertSpace):
         raise TypeError(
             f"Expected second dim to be HilbertSpace, got {type(B).__name__}"
         )
     R = region_hilbert(B, region)
-    return region_restrict(tensor, R)
+    return region_restrict(tensor, R, device=device)

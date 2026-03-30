@@ -12,6 +12,7 @@ from qten.linalg.tensors import (
     align_all,
     allclose,
     astype,
+    cat,
     equal,
     imag as tensor_imag,
     isclose as tensor_isclose,
@@ -26,12 +27,14 @@ from qten.linalg.tensors import (
     zeros,
 )
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
+from qten.symbolics.ops import match_indices
 from qten.symbolics.state_space import (
     BroadcastSpace,
     IndexSpace,
     MomentumSpace,
     StateSpace,
 )
+from qten.utils.devices import Device
 from qten.utils.collections_ext import FrozenDict
 from qten.linalg.tensors import unsqueeze
 
@@ -126,6 +129,23 @@ class TestMatmul:
         expected_data = torch.matmul(data_left, data_right)
         assert torch.allclose(result.data, expected_data)
         assert result.dims == (matmul_ctx.space2, matmul_ctx.space2)
+
+    def test_cat_rejects_overlapping_structured_concat_dim(self, matmul_ctx):
+        left_space = _space_from_modes(matmul_ctx.mode_a, matmul_ctx.mode_b)
+        right_space = _space_from_modes(matmul_ctx.mode_b, matmul_ctx.mode_c)
+        batch_dim = IndexSpace.linear(1)
+
+        left = Tensor(
+            data=torch.randn(batch_dim.dim, left_space.dim),
+            dims=(batch_dim, left_space),
+        )
+        right = Tensor(
+            data=torch.randn(batch_dim.dim, right_space.dim),
+            dims=(batch_dim, right_space),
+        )
+
+        with pytest.raises(ValueError, match="disjoint"):
+            cat([left, right], dim=1)
 
     def test_matmul_with_alignment(self, matmul_ctx):
         # Test where contraction dimensions have different internal order (space1 vs space3)
@@ -2483,3 +2503,90 @@ def test_all_matches_torch_behavior_negative_tuple_dims():
 
     assert out.dims == (left,)
     assert torch.equal(out.data, expected)
+
+
+def test_index_add_aligns_non_indexed_axes_and_index_axis():
+    target = _simple_hilbert("target", 3)
+    right = _space_from_modes(make_mode("a", 2), make_mode("b", 3))
+    right_perm = _space_from_modes(make_mode("b", 3), make_mode("a", 2))
+    sel = IndexSpace.linear(2)
+    sel_perm = IndexSpace(OrderedDict(((sel[1], 0), (sel[0], 1))))
+
+    tensor = Tensor(data=torch.zeros(3, right.dim), dims=(target, right))
+    index = Tensor(data=torch.tensor([2, 0], dtype=torch.long), dims=(sel_perm,))
+    source = Tensor(
+        data=torch.arange(sel.dim * right.dim, dtype=torch.float32).reshape(
+            sel.dim, right.dim
+        ),
+        dims=(sel, right_perm),
+    )
+
+    out = tensor.index_add(0, index, source)
+
+    expected_source = source.align_all((sel_perm, right))
+    expected = torch.zeros_like(tensor.data)
+    expected.index_add_(0, index.data, expected_source.data)
+
+    assert out.dims == tensor.dims
+    assert torch.equal(out.data, expected)
+
+
+def test_index_add_in_place_updates_tensor_and_returns_self():
+    target = IndexSpace.linear(4)
+    feat = IndexSpace.linear(2)
+    sel = IndexSpace.linear(3)
+
+    tensor = Tensor(data=torch.zeros(4, 2), dims=(target, feat))
+    index = Tensor(data=torch.tensor([1, 3, 1], dtype=torch.long), dims=(sel,))
+    source = Tensor(
+        data=torch.tensor([[1.0, 2.0], [3.0, 4.0], [10.0, 20.0]]),
+        dims=(sel, feat),
+    )
+
+    returned = tensor.index_add_(0, index, source)
+
+    expected = torch.zeros(4, 2)
+    expected.index_add_(0, index.data, source.data)
+
+    assert returned is tensor
+    assert torch.equal(tensor.data, expected)
+
+
+def test_index_add_rejects_non_integer_index_dtype():
+    target = IndexSpace.linear(3)
+    feat = IndexSpace.linear(2)
+    sel = IndexSpace.linear(2)
+
+    tensor = Tensor(data=torch.zeros(3, 2), dims=(target, feat))
+    index = Tensor(data=torch.tensor([0.0, 1.0]), dims=(sel,))
+    source = Tensor(data=torch.ones(2, 2), dims=(sel, feat))
+
+    with pytest.raises(TypeError, match="dtype"):
+        tensor.index_add(0, index, source)
+
+
+def test_index_add_rejects_shape_mismatch_on_non_indexed_axes():
+    target = IndexSpace.linear(3)
+    feat = IndexSpace.linear(2)
+    bad_feat = IndexSpace.linear(3)
+    sel = IndexSpace.linear(2)
+
+    tensor = Tensor(data=torch.zeros(3, 2), dims=(target, feat))
+    index = Tensor(data=torch.tensor([0, 1], dtype=torch.long), dims=(sel,))
+    source = Tensor(data=torch.ones(2, 3), dims=(sel, bad_feat))
+
+    with pytest.raises(ValueError, match="non-indexed axes"):
+        tensor.index_add(0, index, source)
+
+
+def test_match_indices_returns_destination_indices_in_source_order():
+    src = IndexSpace.linear(4)
+    dest = IndexSpace.linear(2)
+
+    out = match_indices(
+        src, dest, matching_func=lambda i: dest[i % 2], device=Device("cpu")
+    )
+
+    assert out.dims == (src,)
+    assert out.device == Device("cpu")
+    assert torch.equal(out.data, torch.tensor([0, 1, 0, 1], dtype=torch.long))
