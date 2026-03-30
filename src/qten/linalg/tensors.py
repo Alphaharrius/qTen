@@ -673,6 +673,72 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         return squeeze(self, dim)
 
+    def index_add(
+        self,
+        dim: int,
+        index: "Tensor[Any]",
+        source: "Tensor",
+        alpha: Union[int, float, complex] = 1,
+    ) -> Self:
+        """
+        Return a copy of this tensor with indexed additions applied along `dim`.
+
+        Parameters
+        ----------
+        `dim` : `int`
+            Dimension along which to accumulate updates.
+        `index` : `Tensor`
+            Rank-1 integer tensor of destination indices. Its single
+            `StateSpace` defines the symbolic order of the updates.
+        `source` : `Tensor`
+            Tensor of update values. It must have the same rank as `self`.
+        `alpha` : `Union[int, float, complex]`, optional
+            Scalar multiplier applied to `source` before accumulation.
+
+        Alignment rules
+        ---------------
+        - `index` must be a rank-1 integer tensor.
+        - `source` must have the same rank as `self`.
+        - On non-indexed axes, `source` is aligned to `self`.
+        - On the indexed axis, `source` is aligned to `index.dims[0]`, so the
+          source rows or blocks follow the same symbolic order as the index
+          list.
+
+        Returns
+        -------
+        `Self`
+            A new tensor with the same dimensions as `self`.
+        """
+        return index_add(self, dim=dim, index=index, source=source, alpha=alpha)
+
+    def index_add_(
+        self,
+        dim: int,
+        index: "Tensor[Any]",
+        source: "Tensor",
+        alpha: Union[int, float, complex] = 1,
+    ) -> Self:
+        """
+        In-place variant of `index_add`.
+
+        Parameters
+        ----------
+        `dim` : `int`
+            Dimension along which to accumulate updates.
+        `index` : `Tensor`
+            Rank-1 integer tensor of destination indices.
+        `source` : `Tensor`
+            Tensor of update values. It must have the same rank as `self`.
+        `alpha` : `Union[int, float, complex]`, optional
+            Scalar multiplier applied to `source` before accumulation.
+
+        Returns
+        -------
+        `Self`
+            This tensor after in-place accumulation.
+        """
+        return index_add_(self, dim=dim, index=index, source=source, alpha=alpha)
+
     def rank(self) -> int:
         """
         Get the rank (number of dimensions) of the tensor.
@@ -1839,6 +1905,122 @@ def squeeze(tensor: TensorType, dim: int) -> TensorType:
     new_dims = tensor.dims[:dim] + tensor.dims[dim + 1 :]
 
     return replace(tensor, data=new_data, dims=new_dims)
+
+
+def _normalize_dim(dim: int, rank: int) -> int:
+    if dim < 0:
+        dim += rank
+    if dim < 0 or dim >= rank:
+        raise IndexError(f"Dimension index {dim} out of range for rank {rank}")
+    return dim
+
+
+def _prepare_index_add_operands(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+) -> Tuple[int, TensorType, Tensor[Any], Tensor]:
+    dim = _normalize_dim(dim, tensor.rank())
+
+    if index.rank() != 1:
+        raise ValueError(
+            f"index_add requires rank-1 index tensor, got rank {index.rank()}"
+        )
+    if index.data.dtype not in (torch.int32, torch.int64):
+        raise TypeError(
+            "index_add requires index tensor with dtype torch.int32 or torch.int64"
+        )
+    if source.rank() != tensor.rank():
+        raise ValueError(
+            f"index_add requires source rank {tensor.rank()}, got rank {source.rank()}"
+        )
+
+    index_dim = index.dims[0]
+    target_dims = tensor.dims[:dim] + (index_dim,) + tensor.dims[dim + 1 :]
+
+    promoted_tensor, promoted_index, promoted_source = cast(
+        Tuple[TensorType, Tensor[Any], Tensor],
+        _promote_to_device(tensor, index, source),
+    )
+    try:
+        aligned_source = promoted_source.align_all(target_dims)
+    except (IndexError, TypeError, ValueError) as e:
+        raise ValueError(
+            "index_add could not align source to tensor/index dimensions on "
+            "non-indexed axes: "
+            f"source={_format_dims(promoted_source.dims)}, "
+            f"target={_format_dims(target_dims)}"
+        ) from e
+
+    if aligned_source.data.shape[dim] != promoted_index.data.numel():
+        raise ValueError(
+            "index_add requires source size along dim to match index length: "
+            f"source={aligned_source.data.shape[dim]}, index={promoted_index.data.numel()}"
+        )
+
+    expected_shape = list(promoted_tensor.data.shape)
+    expected_shape[dim] = promoted_index.data.numel()
+    if tuple(aligned_source.data.shape) != tuple(expected_shape):
+        raise ValueError(
+            "index_add requires source shape to match tensor shape on non-indexed axes: "
+            f"source={tuple(aligned_source.data.shape)}, expected={tuple(expected_shape)}"
+        )
+
+    return dim, promoted_tensor, promoted_index, aligned_source
+
+
+def index_add(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+    alpha: Union[int, float, complex] = 1,
+) -> TensorType:
+    """
+    Return a copy of `tensor` with `source` accumulated into positions `index`.
+
+    This is a metadata-aware wrapper over `torch.index_add`. It preserves the
+    dimensions of `tensor`, requires a rank-1 integer `index`, and aligns
+    `source` to `tensor` on all non-indexed axes before dispatch.
+    """
+    dim, promoted_tensor, promoted_index, aligned_source = _prepare_index_add_operands(
+        tensor, dim, index, source
+    )
+    out = torch.index_add(
+        promoted_tensor.data,
+        dim,
+        promoted_index.data,
+        aligned_source.data,
+        alpha=alpha,
+    )
+    return replace(promoted_tensor, data=out)
+
+
+def index_add_(
+    tensor: TensorType,
+    dim: int,
+    index: Tensor[Any],
+    source: Tensor,
+    alpha: Union[int, float, complex] = 1,
+) -> TensorType:
+    """
+    In-place metadata-aware wrapper over `torch.Tensor.index_add_`.
+
+    The returned object is `tensor` itself.
+    """
+    dim = _normalize_dim(dim, tensor.rank())
+
+    if tensor.device != index.device:
+        index = index.to_device(tensor.device)
+    if tensor.device != source.device:
+        source = source.to_device(tensor.device)
+
+    _, _, prepared_index, aligned_source = _prepare_index_add_operands(
+        tensor, dim, index, source
+    )
+    tensor.data.index_add_(dim, prepared_index.data, aligned_source.data, alpha=alpha)
+    return tensor
 
 
 def align(tensor: TensorType, dim: int, target_dim: StateSpace) -> TensorType:

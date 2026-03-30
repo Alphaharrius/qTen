@@ -13,12 +13,12 @@ from .symbolics.hilbert_space import (
     FuncOpr,
 )
 from .linalg.decompose import eigh
-from .linalg.tensors import Tensor, mapping_matrix
+from .linalg.tensors import Tensor, zeros
 from .geometries.spatials import ReciprocalLattice
 from .geometries.basis_transform import BasisTransform
 from .geometries.fourier import fourier_transform
 from .symbolics.hilbert_space import Opr
-from .utils.collections_ext import matchby
+from .symbolics.ops import match_indices
 
 
 def bandtransform(
@@ -253,21 +253,22 @@ def bandfold(
     f = f / vratio
     fh = f.h(-2, -1)  # (K, B', B)
     transformed = fh @ tensor @ f  # (K, B', B')
-    transformed = transformed.permute(1, 2, 0).unsqueeze(-1)  # (B', B', K, 1)
 
     # k-mapping
     new_k_space = brillouin_zone(scaled_reciprocal_lattice)
-    mapping = matchby(
+    k_indices = match_indices(
         k_space,
         new_k_space,
-        base_func=lambda k: transform(k).fractional()
+        matching_func=lambda k: transform(k).fractional()
         if k.space == reciprocal_lattice
         else k.fractional(),
+        device=tensor.device,
     )
-    k_map = mapping_matrix(
-        k_space, new_k_space, mapping, device=tensor.device
-    ).transpose(0, 1)
-    transformed = (k_map @ transformed).squeeze(-1).permute(2, 0, 1)
+    transformed = (
+        zeros((new_k_space, rebased_hilbert, rebased_hilbert), device=tensor.device)
+        .astype(transformed.data.dtype)
+        .index_add(0, k_indices, transformed)
+    )
     for dim in (1, 2):
         if transformed.dims[dim] == rebased_hilbert:
             transformed = transformed.replace_dim(dim, transformed_hilbert)
