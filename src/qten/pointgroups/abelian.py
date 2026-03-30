@@ -443,6 +443,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
         """
         return self.offset.space
 
+    @lru_cache(maxsize=None)
     def rebase(self, new_base: AffineSpace) -> "AbelianOpr":
         """
         Re-express this transform in a different affine space basis.
@@ -615,11 +616,10 @@ def _(t: AbelianOpr, offset: Offset) -> Offset:
     return _apply_abelian_opr_to_offset_cached(t, offset)
 
 
-@lru_cache(
-    maxsize=None
-)  # The maximum number of Momentum is restricted by the current system.
-def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentum:
-    real_space = k.base().dual
+@lru_cache(maxsize=None)
+def _abelian_momentum_action_matrix(
+    t: AbelianOpr, real_space: AffineSpace
+) -> sy.ImmutableDenseMatrix:
     if t.base() != real_space:
         t = t.rebase(real_space)
 
@@ -627,10 +627,20 @@ def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentu
     if not isinstance(linear_rep, sy.ImmutableDenseMatrix):
         linear_rep = sy.ImmutableDenseMatrix(linear_rep)
 
+    return sy.ImmutableDenseMatrix(linear_rep.inv().T)
+
+
+@lru_cache(
+    maxsize=None
+)  # The maximum number of Momentum is restricted by the current system.
+def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentum:
+    real_space = k.base().dual
+    action = _abelian_momentum_action_matrix(t, real_space)
+
     rep = k.rep
     if not isinstance(rep, sy.ImmutableDenseMatrix):
         rep = sy.ImmutableDenseMatrix(rep)
-    new_rep = linear_rep.inv().T @ rep
+    new_rep = action @ rep
     return Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base())
 
 

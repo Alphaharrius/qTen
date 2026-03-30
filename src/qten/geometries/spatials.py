@@ -79,6 +79,13 @@ class AffineSpace(Spatial):
 _O = TypeVar("_O", bound="Offset")
 
 
+@lru_cache(maxsize=None)
+def _rebase_transform_matrix(
+    src: AffineSpace, dest: AffineSpace
+) -> ImmutableDenseMatrix:
+    return ImmutableDenseMatrix(dest.basis.inv() @ src.basis)
+
+
 @dataclass(frozen=True)
 class AbstractLattice(Generic[_O], AffineSpace, HasDual):
     """
@@ -575,7 +582,7 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         `Offset`
             New Offset expressed in the given affine space.
         """
-        rebase_transform_mat = space.basis.inv() @ self.space.basis
+        rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Offset(rep=ImmutableDenseMatrix(new_rep), space=space)
 
@@ -706,8 +713,7 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
         `Momentum`
             New Momentum expressed in the given reciprocal lattice.
         """
-
-        rebase_transform_mat = space.basis.inv() @ self.space.basis
+        rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Momentum(rep=ImmutableDenseMatrix(new_rep), space=space)
 
