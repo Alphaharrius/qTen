@@ -47,7 +47,6 @@ def _column_label(col_dim: StateSpace, index: int) -> str:
 # --- Registered Plot Methods ---
 
 
-# TODO: Optimize this function: crashed in 192x192 system.
 @Lattice.register_plot_method("structure", backend="plotly")
 def plot_structure(
     obj: Lattice,
@@ -102,36 +101,27 @@ def plot_structure(
     y = coords_np[:, 1]
     z = coords_np[:, 2] if obj.dim == 3 else None
 
+    is_3d = obj.dim == 3
+    _Scatter = go.Scatter3d if is_3d else go.Scattergl
+
     if fig is None:
         fig = go.Figure()
 
     # Bonds (Only for 'edge-and-node')
     if plot_type == "edge-and-node":
         x_lines, y_lines, z_lines = compute_bonds(coords, obj.dim)
-        if x_lines:
-            if obj.dim == 3:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x_lines,
-                        y=y_lines,
-                        z=z_lines,
-                        mode="lines",
-                        line=dict(color="black", width=1),
-                        name="Bonds",
-                        showlegend=False,
-                    )
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_lines,
-                        y=y_lines,
-                        mode="lines",
-                        line=dict(color="black", width=2),
-                        name="Bonds",
-                        showlegend=False,
-                    )
-                )
+        if len(x_lines) > 0:
+            bond_kwargs: dict = dict(
+                x=x_lines,
+                y=y_lines,
+                mode="lines",
+                line=dict(color="black", width=1 if is_3d else 2),
+                name="Bonds",
+                showlegend=False,
+            )
+            if is_3d:
+                bond_kwargs["z"] = z_lines
+            fig.add_trace(_Scatter(**bond_kwargs))
 
     # Sites
     num_basis = len(obj.unit_cell) if obj.unit_cell else 1
@@ -145,71 +135,41 @@ def plot_structure(
             colorsys.hsv_to_rgb((i * 0.61803) % 1.0, 0.8, 0.9) for i in range(n_colors)
         )
     ]
+    marker_size = 5 if is_3d else 10
+
     if color_by == "basis":
         for b in range(num_basis):
-            indices = [c * num_basis + b for c in range(num_cells)]
-            x_group = x[indices]
-            y_group = y[indices]
-            z_group = z[indices] if z is not None else None
-
-            trace_name = f"Basis {b}"
-            trace_color = basis_colors[b]
-
-            if obj.dim == 3:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x_group,
-                        y=y_group,
-                        z=z_group,
-                        mode="markers",
-                        marker=dict(size=5, color=trace_color),
-                        name=trace_name,
-                    )
-                )
+            idx = np.arange(b, coords.shape[0], num_basis)
+            scatter_kw: dict = dict(
+                x=x[idx],
+                y=y[idx],
+                mode="markers",
+                marker=dict(size=marker_size, color=basis_colors[b]),
+                name=f"Basis {b}",
+            )
+            if is_3d:
+                scatter_kw["z"] = z[idx]  # type: ignore[index]
             else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_group,
-                        y=y_group,
-                        mode="markers",
-                        marker=dict(size=10, color=trace_color, symbol="circle"),
-                        name=trace_name,
-                    )
-                )
+                scatter_kw["marker"]["symbol"] = "circle"
+            fig.add_trace(_Scatter(**scatter_kw))
 
-    else:  # color_by == "unit_cell"
+    else:  # color_by == "unit_cell" — single trace to avoid O(num_cells) trace overhead
+        color_per_site = np.empty(coords.shape[0], dtype=object)
         for c in range(num_cells):
-            start_idx = c * num_basis
-            end_idx = start_idx + num_basis
+            color_per_site[c * num_basis : (c + 1) * num_basis] = basis_colors[c]
 
-            x_group = x[start_idx:end_idx]
-            y_group = y[start_idx:end_idx]
-            z_group = z[start_idx:end_idx] if z is not None else None
-
-            trace_name = f"Cell {c}"
-            trace_color = basis_colors[c]
-
-            if obj.dim == 3:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x_group,
-                        y=y_group,
-                        z=z_group,
-                        mode="markers",
-                        marker=dict(size=5, color=trace_color),
-                        name=trace_name,
-                    )
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_group,
-                        y=y_group,
-                        mode="markers",
-                        marker=dict(size=10, color=trace_color, symbol="circle"),
-                        name=trace_name,
-                    )
-                )
+        scatter_kw = dict(
+            x=x,
+            y=y,
+            mode="markers",
+            marker=dict(size=marker_size, color=color_per_site.tolist()),
+            name="Sites",
+        )
+        if is_3d:
+            scatter_kw["z"] = z
+        else:
+            scatter_kw["marker"]["symbol"] = "circle"  # type: ignore[index]
+        fig.add_trace(_Scatter(**scatter_kw))
 
     # Spins (Optional)
     if spin_data is not None:
@@ -276,28 +236,20 @@ def plot_structure(
             highlight_np = highlight_coords.numpy()
             x_group = highlight_np[:, 0]
             y_group = highlight_np[:, 1]
-            z_group = highlight_np[:, 2] if obj.dim == 3 else None
-            if obj.dim == 3:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x_group,
-                        y=y_group,
-                        z=z_group,
-                        mode="markers",
-                        marker=dict(size=8, color=trace_color, symbol="diamond"),
-                        name=f"Highlight {idx}",
-                    )
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_group,
-                        y=y_group,
-                        mode="markers",
-                        marker=dict(size=13, color=trace_color, symbol="diamond"),
-                        name=f"Highlight {idx}",
-                    )
-                )
+            hl_kw: dict = dict(
+                x=x_group,
+                y=y_group,
+                mode="markers",
+                marker=dict(
+                    size=8 if is_3d else 13,
+                    color=trace_color,
+                    symbol="diamond",
+                ),
+                name=f"Highlight {idx}",
+            )
+            if is_3d:
+                hl_kw["z"] = highlight_np[:, 2]
+            fig.add_trace(_Scatter(**hl_kw))
 
     if obj.dim == 3:
         fig.update_layout(title="3D Lattice System", scene=dict(aspectmode="data"))

@@ -123,18 +123,11 @@ def plot_structure_mpl(
     # Bonds
     if plot_type == "edge-and-node":
         x_lines, y_lines, z_lines = compute_bonds(coords, obj.dim)
-        if x_lines:
-            # Remove None values for matplotlib plot if needed, but plot handles nan/None usually by breaking line
-            # Matplotlib handles np.nan as break. None might cause issues.
-            # Convert None to np.nan in lists
-            x_l = [val if val is not None else np.nan for val in x_lines]
-            y_l = [val if val is not None else np.nan for val in y_lines]
-
+        if len(x_lines) > 0:
             if is_3d and z_lines is not None:
-                z_l = [val if val is not None else np.nan for val in z_lines]
-                ax.plot(x_l, y_l, z_l, color="black", linewidth=1, label="Bonds")
+                ax.plot(x_lines, y_lines, z_lines, color="black", linewidth=1, label="Bonds")
             else:
-                ax.plot(x_l, y_l, color="black", linewidth=1.5, label="Bonds")
+                ax.plot(x_lines, y_lines, color="black", linewidth=1.5, label="Bonds")
 
     # Sites
     num_basis = len(obj.unit_cell) if obj.unit_cell else 1

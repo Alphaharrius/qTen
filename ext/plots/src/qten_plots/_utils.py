@@ -1,52 +1,53 @@
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 
+import numpy as np
 import torch
+from scipy.spatial import cKDTree
 
 
 def compute_bonds(
     coords: torch.Tensor, dim: int
-) -> Tuple[
-    List[Optional[float]], List[Optional[float]], Optional[List[Optional[float]]]
-]:
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
-    Generate bond lines connecting nearest neighbors using PyTorch.
-    Returns (x_lines, y_lines, z_lines) where lists contain coordinates separated by None.
-    z_lines is None if dim != 3.
+    Generate bond lines connecting nearest neighbors.
+
+    Uses a KDTree for O(N log N) neighbor search instead of O(N²) pairwise
+    distances, making this feasible for large lattices (100k+ sites).
+
+    Returns (x_lines, y_lines, z_lines) where arrays contain coordinates
+    separated by NaN (line-break sentinel for both Plotly and Matplotlib).
+    z_lines is None when *dim* != 3.
     """
-    if coords.size(0) < 2:
-        return [], [], None if dim != 3 else None
+    _empty = np.empty(0, dtype=np.float64)
+    n = coords.size(0)
+    if n < 2:
+        return _empty, _empty.copy(), (_empty.copy() if dim == 3 else None)
 
-    diff = coords.unsqueeze(1) - coords.unsqueeze(0)
-    dists = torch.norm(diff, dim=-1)
+    pts = coords.numpy().astype(np.float64)
+    tree = cKDTree(pts)
 
-    dists.fill_diagonal_(float("inf"))
+    dd, _ = tree.query(pts, k=2)
+    min_dist = float(dd[:, 1].min())
+    if np.isinf(min_dist):
+        return _empty, _empty.copy(), (_empty.copy() if dim == 3 else None)
 
-    min_dist = torch.min(dists)
-    if torch.isinf(min_dist):
-        return [], [], None if dim != 3 else None
+    pairs = tree.query_pairs(r=min_dist + 1e-4, output_type="ndarray")
+    if len(pairs) == 0:
+        return _empty, _empty.copy(), (_empty.copy() if dim == 3 else None)
 
-    tol = 1e-4
-    pairs = torch.nonzero(dists <= min_dist + tol)
-    pairs = pairs[pairs[:, 0] < pairs[:, 1]]
+    p1 = pts[pairs[:, 0]]
+    p2 = pts[pairs[:, 1]]
+    n_bonds = len(pairs)
+    n_cols = pts.shape[1]
 
-    if pairs.size(0) == 0:
-        return [], [], None if dim != 3 else None
+    segments = np.empty((n_bonds, 3, n_cols), dtype=np.float64)
+    segments[:, 0, :] = p1
+    segments[:, 1, :] = p2
+    segments[:, 2, :] = np.nan
+    flat = segments.reshape(-1, n_cols)
 
-    p1 = coords[pairs[:, 0]]
-    p2 = coords[pairs[:, 1]]
-
-    p1_np = p1.numpy()
-    p2_np = p2.numpy()
-
-    x_lines: List[Optional[float]] = []
-    y_lines: List[Optional[float]] = []
-    z_lines: Optional[List[Optional[float]]] = [] if dim == 3 else None
-    nan = None
-
-    for i in range(len(p1_np)):
-        x_lines.extend([p1_np[i, 0], p2_np[i, 0], nan])
-        y_lines.extend([p1_np[i, 1], p2_np[i, 1], nan])
-        if dim == 3 and z_lines is not None:
-            z_lines.extend([p1_np[i, 2], p2_np[i, 2], nan])
+    x_lines = flat[:, 0]
+    y_lines = flat[:, 1]
+    z_lines = flat[:, 2] if dim == 3 and n_cols >= 3 else None
 
     return x_lines, y_lines, z_lines

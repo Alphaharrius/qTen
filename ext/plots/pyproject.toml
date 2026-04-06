@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "nbformat>=4.2.0",
     "plotly>=6.5.0",
+    "scipy>=1.11.0",
 ]
 
 [dependency-groups]
