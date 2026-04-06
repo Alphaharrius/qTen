@@ -1,13 +1,58 @@
-from typing import Sequence, Optional, Callable, TypeVar, cast
+from typing import Callable, Dict, Optional, Sequence, Tuple, TypeVar, Union, cast
+from collections import OrderedDict
 
+import numpy as np
+import sympy as sy
+from sympy import ImmutableDenseMatrix
 import torch
 
 from ..geometries import Offset
+from ..geometries.spatials import Momentum, ReciprocalLattice
 from ..linalg.tensors import Tensor
 from . import HilbertSpace, Opr, StateSpace
+from .state_space import MomentumSpace, restructure
 from ..utils.devices import Device
 
 T = TypeVar("T")
+
+
+def _probe_affine(
+    raw_opr: Callable[[Momentum], Momentum],
+    recip_lat: ReciprocalLattice,
+) -> Tuple[np.ndarray, np.ndarray, ReciprocalLattice]:
+    """
+    Probe *raw_opr* with ``d + 1`` reference momenta to extract its affine
+    decomposition ``output_frac = input_frac @ M.T + c``.
+
+    Returns ``(M, c, result_space)`` where *result_space* is the reciprocal
+    lattice carried by the output momenta.
+    """
+    dim = recip_lat.dim
+    zero_k = Momentum(rep=ImmutableDenseMatrix([sy.Integer(0)] * dim), space=recip_lat)
+    zero_out = raw_opr(zero_k)
+    result_space = zero_out.space
+    c = np.array([float(zero_out.rep[j, 0]) for j in range(dim)])
+
+    M = np.zeros((dim, dim))
+    for i in range(dim):
+        e_rep: list[sy.Expr] = [sy.Integer(0)] * dim
+        e_rep[i] = sy.Integer(1)
+        e_k = Momentum(rep=ImmutableDenseMatrix(e_rep), space=recip_lat)
+        e_out = raw_opr(e_k)
+        for j in range(dim):
+            M[j, i] = float(e_out.rep[j, 0]) - c[j]
+
+    return M, c, result_space
+
+
+def _kspace_frac(kspace: MomentumSpace) -> np.ndarray:
+    """Return the fractional coordinates of *kspace* as an ``(N, d)`` array."""
+    elements = kspace.elements()
+    dim = elements[0].space.dim
+    return np.array(
+        [[float(k.rep[j, 0]) for j in range(dim)] for k in elements],
+        dtype=np.float64,
+    )
 
 
 def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> HilbertSpace:
@@ -183,3 +228,139 @@ def match_indices(
         ),
         dims=(src,),
     )
+
+
+def momentum_match_indices(
+    src: MomentumSpace,
+    dest: MomentumSpace,
+    transform: Union[np.ndarray, Callable[[Momentum], Momentum]],
+    *,
+    device: Optional[Device] = None,
+) -> Tensor[torch.LongTensor]:
+    """
+    Batch-compute destination indices for a momentum-space mapping via
+    integer grid lookup.
+
+    This is the ``MomentumSpace``-specialised counterpart of
+    `match_indices`.  Instead of evaluating *transform* per element, the
+    transformation is applied as a single matrix multiply over all source
+    k-points, followed by fractional wrapping and grid snapping.
+
+    Parameters
+    ----------
+    `src` : `MomentumSpace`
+        Source momentum space.
+    `dest` : `MomentumSpace`
+        Destination momentum space.
+    `transform` : `Union[np.ndarray, Callable[[Momentum], Momentum]]`
+        Either an ``(d, d)`` numpy matrix that maps source fractional
+        coordinates to destination fractional coordinates, or a callable
+        (probed with ``d + 1`` reference momenta to extract the affine
+        decomposition automatically).  Fractional wrapping is applied
+        after the transformation.
+    `device` : `Optional[Device]`
+        Device for the output tensor.
+
+    Returns
+    -------
+    `Tensor[torch.LongTensor]`
+        Rank-1 integer tensor with dims ``(src,)``, where each entry is
+        the destination index of the corresponding source k-point.
+
+    Raises
+    ------
+    `ValueError`
+        If a transformed source k-point does not land on a destination
+        grid point.
+    """
+    if callable(transform):
+        recip_lat = next(iter(src.structure)).space
+        M, c, _ = _probe_affine(transform, recip_lat)
+    else:
+        M, c = transform, None
+
+    src_frac = _kspace_frac(src)
+    mapped = src_frac @ M.T
+    if c is not None:
+        mapped = mapped + c
+    mapped_wrapped = mapped - np.floor(mapped)
+
+    first_dest_k = next(iter(dest.structure))
+    dim = first_dest_k.space.dim
+    grid = np.array(first_dest_k.space.shape, dtype=np.int64)
+    mapped_grid = np.rint(mapped_wrapped * grid).astype(np.int64) % grid
+
+    lookup: Dict[Tuple[int, ...], int] = {}
+    for k, idx in dest.structure.items():
+        gcoord = tuple(
+            int(round(float(k.rep[j, 0]) * grid[j])) % int(grid[j]) for j in range(dim)
+        )
+        lookup[gcoord] = idx
+
+    indices: list[int] = []
+    for i in range(mapped_grid.shape[0]):
+        gcoord = tuple(int(mapped_grid[i, j]) for j in range(dim))
+        if gcoord not in lookup:
+            raise ValueError(
+                f"Source momentum maps to grid {gcoord}, not in destination BZ."
+            )
+        indices.append(lookup[gcoord])
+
+    torch_device = device.torch_device() if device is not None else None
+    return Tensor(
+        data=cast(
+            torch.LongTensor,
+            torch.tensor(indices, dtype=torch.long, device=torch_device),
+        ),
+        dims=(src,),
+    )
+
+
+def momentum_map(
+    kspace: MomentumSpace,
+    raw_opr: Callable[[Momentum], Momentum],
+) -> MomentumSpace:
+    """
+    Batch-compute ``kspace.map(lambda k: raw_opr(k).fractional())``.
+
+    *raw_opr* must be the **unwrapped** operator (e.g. ``lambda k: t @ k``).
+    Fractional wrapping is applied in bulk via numpy after the linear
+    transformation matrix has been determined by probing with ``d + 1``
+    reference momenta.
+
+    Parameters
+    ----------
+    `kspace` : `MomentumSpace`
+        Source momentum space to transform.
+    `raw_opr` : `Callable[[Momentum], Momentum]`
+        Affine momentum operator **without** fractional wrapping.
+
+    Returns
+    -------
+    `MomentumSpace`
+        New momentum space with transformed (and fractionally wrapped)
+        k-points, preserving the original index assignment.
+    """
+    k_elements = kspace.elements()
+    if not k_elements:
+        return kspace
+
+    recip_lat = k_elements[0].space
+    dim = recip_lat.dim
+    M, c, result_space = _probe_affine(raw_opr, recip_lat)
+
+    k_frac = _kspace_frac(kspace)
+    new_frac = k_frac @ M.T + c
+    new_frac_wrapped = new_frac - np.floor(new_frac)
+
+    grid_shape = np.array(result_space.shape, dtype=np.int64)
+    grid_ints = np.rint(new_frac_wrapped * grid_shape).astype(np.int64) % grid_shape
+
+    new_structure: OrderedDict[Momentum, int] = OrderedDict()
+    for i, (k, idx) in enumerate(kspace.structure.items()):
+        rep = ImmutableDenseMatrix(
+            [sy.Rational(int(grid_ints[i, j]), int(grid_shape[j])) for j in range(dim)]
+        )
+        new_structure[Momentum(rep=rep, space=result_space)] = idx
+
+    return MomentumSpace(structure=restructure(new_structure))
