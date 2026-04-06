@@ -4,6 +4,7 @@ from collections import OrderedDict
 import numpy as np
 import sympy as sy
 from sympy import ImmutableDenseMatrix
+from typing import Callable, Optional, Sequence, TypeVar, cast
 import torch
 
 from ..geometries import Momentum, Offset, ReciprocalLattice
