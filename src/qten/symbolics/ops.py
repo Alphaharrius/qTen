@@ -6,11 +6,9 @@ import sympy as sy
 from sympy import ImmutableDenseMatrix
 import torch
 
-from ..geometries import Offset
-from ..geometries.spatials import Momentum, ReciprocalLattice
+from ..geometries import Momentum, Offset, ReciprocalLattice
 from ..linalg.tensors import Tensor
-from . import HilbertSpace, Opr, StateSpace
-from .state_space import MomentumSpace, restructure
+from . import HilbertSpace, MomentumSpace, Opr, StateSpace, restructure
 from ..utils.devices import Device
 
 T = TypeVar("T")

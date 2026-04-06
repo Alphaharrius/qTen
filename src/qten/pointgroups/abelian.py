@@ -8,8 +8,9 @@ from multipledispatch import dispatch  # type: ignore[import-untyped]
 import sympy as sy
 
 from ..abstracts import HasBase
-from ..geometries.spatials import AffineSpace, Spatial, Offset, Momentum
-from ..symbolics.hilbert_space import Opr
+from ..geometries import AffineSpace, Momentum, Offset
+from ..geometries.spatials import Spatial
+from ..symbolics import Opr
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict

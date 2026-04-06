@@ -34,7 +34,7 @@ from ..abstracts import (
     HasRays,
 )
 from ..geometries.spatials import Spatial
-from .state_space import StateSpace, StateSpaceFactorization
+from . import StateSpace, StateSpaceFactorization
 from ..linalg.tensors import Tensor
 from ..precision import get_precision_config
 from ..utils.devices import Device

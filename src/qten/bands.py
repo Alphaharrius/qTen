@@ -5,24 +5,21 @@ import numpy as np
 # TODO: Avoid using torch explicitly here.
 import torch
 
-from .geometries.spatials import Offset, Momentum
-from .symbolics.state_space import (
+from .geometries import BasisTransform, Momentum, Offset, ReciprocalLattice
+from .geometries.fourier import fourier_transform
+from .linalg import eigh
+from .linalg.tensors import Tensor, zeros
+from .symbolics import (
+    FuncOpr,
+    HilbertSpace,
     IndexSpace,
     MomentumSpace,
-    brillouin_zone,
-)
-from .symbolics.hilbert_space import (
-    HilbertSpace,
+    Opr,
     U1Basis,
-    FuncOpr,
+    brillouin_zone,
+    momentum_match_indices,
+    momentum_map,
 )
-from .linalg.decompose import eigh
-from .linalg.tensors import Tensor, zeros
-from .geometries.spatials import ReciprocalLattice
-from .geometries.basis_transform import BasisTransform
-from .geometries.fourier import fourier_transform
-from .symbolics.hilbert_space import Opr
-from .symbolics.ops import momentum_match_indices, momentum_map
 
 
 def bandtransform(

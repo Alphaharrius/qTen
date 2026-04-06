@@ -8,10 +8,8 @@ import numpy as np
 import torch
 from ..precision import get_precision_config
 
-from .spatials import Momentum, Offset
-from ..symbolics.state_space import MomentumSpace
-from ..symbolics.hilbert_space import HilbertSpace, U1Basis
-from ..symbolics.ops import region_hilbert
+from . import Momentum, Offset
+from ..symbolics import HilbertSpace, MomentumSpace, U1Basis, region_hilbert
 from ..linalg.tensors import Tensor
 from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby

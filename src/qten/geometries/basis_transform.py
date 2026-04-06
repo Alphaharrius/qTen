@@ -10,14 +10,14 @@ from ..abstracts import Functional
 from ..utils.collections_ext import FrozenDict
 from ..validations import need_validation
 from ..validations.symbolics import check_proper_transformation, check_numerical
-from .spatials import (
-    Lattice,
-    ReciprocalLattice,
-    Offset,
-    Momentum,
+from . import (
     AffineSpace,
+    Lattice,
+    Momentum,
+    Offset,
+    PeriodicBoundary,
+    ReciprocalLattice,
 )
-from .boundary import PeriodicBoundary
 
 
 @need_validation(check_proper_transformation("M"), check_numerical("M"))

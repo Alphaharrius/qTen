@@ -34,7 +34,7 @@ from ..plottings import Plottable
 from ..precision import get_precision_config
 from ..utils.devices import Device, DeviceBounded
 from ..validations import need_validation
-from ..symbolics.state_space import (
+from ..symbolics import (
     StateSpace,
     BroadcastSpace,
     IndexSpace,

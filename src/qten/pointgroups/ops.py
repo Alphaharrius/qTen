@@ -4,9 +4,7 @@ import sympy as sy
 
 from .abelian import AbelianBasis, AbelianOpr
 from ..linalg.tensors import Tensor, cat, eye
-from ..symbolics.hilbert_space import HilbertSpace, U1Basis
-from ..symbolics.ops import hilbert_opr_repr
-from ..symbolics.state_space import IndexSpace
+from ..symbolics import HilbertSpace, IndexSpace, U1Basis, hilbert_opr_repr
 
 
 def _same_phase(a: sy.Expr, b: sy.Expr) -> bool:

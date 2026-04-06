@@ -10,11 +10,8 @@ from multipledispatch import dispatch  # type: ignore[import-untyped]
 
 from ..abstracts import Convertible, Span
 from ..validations import need_validation
-from ..geometries.spatials import (
-    Spatial,
-    ReciprocalLattice,
-    Momentum,
-)
+from ..geometries import Momentum, ReciprocalLattice
+from ..geometries.spatials import Spatial
 
 
 T = TypeVar("T")

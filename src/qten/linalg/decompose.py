@@ -3,7 +3,7 @@ from collections import namedtuple
 
 import torch
 
-from ..symbolics.state_space import IndexSpace, same_rays
+from ..symbolics import IndexSpace, same_rays
 from .tensors import Tensor
 
 

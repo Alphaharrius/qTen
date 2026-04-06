@@ -5,7 +5,7 @@ from itertools import product
 
 from sympy import ImmutableDenseMatrix
 
-from .spatials import AffineSpace, Lattice, Offset
+from . import AffineSpace, Lattice, Offset
 
 
 def _cutoff_from_sites(
