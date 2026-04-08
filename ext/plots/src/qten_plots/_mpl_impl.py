@@ -4,16 +4,15 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, Any, cast, Tuple, Sequence
-from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
+from qten.geometries.spatials import Lattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.state_space import (
     MomentumSpace,
     StateSpace,
     same_rays,
-    brillouin_zone,
 )
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
-from ._utils import compute_bonds
+from ._utils import analyze_bandstructure_sampling, band_path_positions, compute_bonds
 from .plottables import PointCloud
 
 
@@ -708,8 +707,6 @@ def plot_bandstructure_mpl(
     if not same_rays(obj.dims[1], obj.dims[2]):
         raise ValueError("Last two dimensions must span the same Hilbert space")
 
-    k_points = list(k_space)
-
     # 2. Diagonalize
     hk_data = obj.data
     eigvals = torch.linalg.eigvalsh(hk_data)  # (K, N_bands)
@@ -717,37 +714,23 @@ def plot_bandstructure_mpl(
     n_bands = eigvals_np.shape[1]
 
     # 3. Build Cartesian reciprocal coordinates once for both modes.
-    recip = None
-    is_canonical_2d_bz = False
-    if len(k_points) > 0:
-        recip = k_points[0].space
-        basis_sym = recip.basis
-        basis_mat = np.array(basis_sym.evalf()).astype(float)
+    k_points = list(k_space)
+    k_cart, recip, is_canonical_2d_bz, effective_dim = analyze_bandstructure_sampling(
+        k_space
+    )
 
-        k_fracs = []
-        for k in k_points:
-            rep = k.rep
-            k_fracs.append(np.array(rep).astype(float).flatten())
-        k_fracs_arr = np.stack(k_fracs)
-        k_cart = k_fracs_arr @ basis_mat.T
-
-        if (
-            isinstance(recip, ReciprocalLattice)
-            and recip.dim == 2
-            and all(k.space == recip for k in k_points)
-        ):
-            canonical_k_space = brillouin_zone(recip)
-            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
-                canonical_k_space.elements()
-            )
-    else:
-        k_cart = np.array([])
-
-    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    is_surface = mode == "surface" or (
+        mode == "auto" and is_canonical_2d_bz and effective_dim >= 2
+    )
     if is_surface and not is_canonical_2d_bz:
         raise ValueError(
             "Surface bandstructure plotting requires the momentum axis to be the "
             "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+    if is_surface and effective_dim < 2:
+        raise ValueError(
+            "Surface bandstructure plotting requires two varying momentum "
+            "directions. Use mode='path' for effectively 1D k-samples."
         )
 
     if is_surface and recip is not None and len(k_cart) > 0:
@@ -811,11 +794,7 @@ def plot_bandstructure_mpl(
         else:
             fig = ax.get_figure()
 
-        x_vals = np.array([0.0])
-        if len(k_points) > 1 and len(k_cart) > 0:
-            diffs = k_cart[1:] - k_cart[:-1]
-            dists = np.linalg.norm(diffs, axis=1)
-            x_vals = np.concatenate(([0.0], np.cumsum(dists)))
+        x_vals = band_path_positions(k_space, k_cart)
 
         line_width = kwargs.get("line_width", 1.5)
         for b in range(n_bands):
