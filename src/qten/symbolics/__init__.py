@@ -24,7 +24,5 @@ from .hilbert_space import (
 from .ops import (
     hilbert_opr_repr as hilbert_opr_repr,
     match_indices as match_indices,
-    momentum_map as momentum_map,
-    momentum_match_indices as momentum_match_indices,
     region_hilbert as region_hilbert,
 )

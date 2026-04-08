@@ -14,7 +14,6 @@ from typing import (
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from multipledispatch import dispatch  # type: ignore[import-untyped]
-from itertools import product
 from functools import lru_cache
 import sympy as sy
 import numpy as np
@@ -395,14 +394,18 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
             shape `(n_points, dim)`.
         """
         torch_device = device.torch_device() if device is not None else None
-        element_indices = product(*(range(n) for n in self.shape))
-        sizes = ImmutableDenseMatrix(tuple(sy.Rational(1, n) for n in self.shape))
-        scaled_elements = (
-            ImmutableDenseMatrix(el).multiply_elementwise(sizes)
-            for el in element_indices
-        )
+        # Enumerate one representative per class in Z^d / N^T Z^d, where N is
+        # the direct-lattice boundary basis. Allowed fractional reciprocal
+        # coordinates are then N^{-T} m modulo Z^d.
+        direct_boundary = self.lattice.boundaries.basis
+        dual_boundary = PeriodicBoundary(ImmutableDenseMatrix(direct_boundary.T))
+        integer_reps = dual_boundary.representatives()
+        dual_transform = ImmutableDenseMatrix(direct_boundary.inv().T)
         momenta = tuple(
-            Momentum(rep=ImmutableDenseMatrix(el), space=self) for el in scaled_elements
+            Momentum(
+                rep=ImmutableDenseMatrix(dual_transform @ rep), space=self
+            ).fractional()
+            for rep in integer_reps
         )
         if T in (None, Momentum):
             return momenta

@@ -12,6 +12,7 @@ from .geometries import BasisTransform, Momentum, Offset, ReciprocalLattice
 from .geometries.fourier import fourier_transform
 from .linalg import eigh
 from .linalg.tensors import Tensor, zeros
+from .precision import get_precision_config
 from .symbolics import (
     FuncOpr,
     HilbertSpace,
@@ -54,16 +55,6 @@ def _probe_affine(
     return M, c, result_space
 
 
-def _kspace_frac(kspace: MomentumSpace) -> np.ndarray:
-    """Return the fractional coordinates of *kspace* as an ``(N, d)`` array."""
-    elements = kspace.elements()
-    dim = elements[0].space.dim
-    return np.array(
-        [[float(k.rep[j, 0]) for j in range(dim)] for k in elements],
-        dtype=np.float64,
-    )
-
-
 def _momentum_match_indices(
     src: MomentumSpace,
     dest: MomentumSpace,
@@ -78,15 +69,35 @@ def _momentum_match_indices(
     This is the ``MomentumSpace``-specialised counterpart of
     `match_indices`. Instead of evaluating *transform* per element, the
     transformation is applied as a single matrix multiply over all source
-    k-points, followed by fractional wrapping and grid snapping.
+    k-points, followed by fractional wrapping and determinant-scaled
+    integer snapping (correct for both diagonal and non-diagonal
+    boundaries).
     """
+    src_elements = src.elements()
+    if not src_elements:
+        torch_device = device.torch_device() if device is not None else None
+        return Tensor(
+            data=cast(
+                torch.LongTensor,
+                torch.tensor([], dtype=torch.long, device=torch_device),
+            ),
+            dims=(src,),
+        )
+
     if callable(transform):
-        recip_lat = next(iter(src.structure)).space
+        recip_lat = src_elements[0].space
         M, c, _ = _probe_affine(transform, recip_lat)
     else:
         M, c = transform, None
 
-    src_frac = _kspace_frac(src)
+    precision = get_precision_config()
+    src_frac = np.array(
+        [
+            [float(k.rep[j, 0]) for j in range(src_elements[0].space.dim)]
+            for k in src_elements
+        ],
+        dtype=precision.np_float,
+    )
     mapped = src_frac @ M.T
     if c is not None:
         mapped = mapped + c
@@ -94,22 +105,25 @@ def _momentum_match_indices(
 
     first_dest_k = next(iter(dest.structure))
     dim = first_dest_k.space.dim
-    grid = np.array(first_dest_k.space.shape, dtype=np.int64)
-    mapped_grid = np.rint(mapped_wrapped * grid).astype(np.int64) % grid
+    boundary_np = np.array(
+        first_dest_k.space.lattice.boundaries.basis.evalf(),
+        dtype=precision.np_float,
+    )
+    D = abs(int(round(np.linalg.det(boundary_np))))
+    mapped_scaled = np.rint(mapped_wrapped * D).astype(np.int64) % D
 
     lookup: Dict[Tuple[int, ...], int] = {}
     for k, idx in dest.structure.items():
-        gcoord = tuple(
-            int(round(float(k.rep[j, 0]) * grid[j])) % int(grid[j]) for j in range(dim)
-        )
+        gcoord = tuple(int(round(float(k.rep[j, 0]) * D)) % D for j in range(dim))
         lookup[gcoord] = idx
 
     indices: list[int] = []
-    for i in range(mapped_grid.shape[0]):
-        gcoord = tuple(int(mapped_grid[i, j]) for j in range(dim))
+    for i in range(mapped_scaled.shape[0]):
+        gcoord = tuple(int(mapped_scaled[i, j]) for j in range(dim))
         if gcoord not in lookup:
             raise ValueError(
-                f"Source momentum maps to grid {gcoord}, not in destination BZ."
+                f"Source momentum maps to scaled coord {gcoord} (D={D}), "
+                f"not in destination BZ."
             )
         indices.append(lookup[gcoord])
 
@@ -142,18 +156,25 @@ def _momentum_map(
     recip_lat = k_elements[0].space
     dim = recip_lat.dim
     M, c, result_space = _probe_affine(raw_opr, recip_lat)
-
-    k_frac = _kspace_frac(kspace)
+    precision = get_precision_config()
+    k_frac = np.array(
+        [[float(k.rep[j, 0]) for j in range(dim)] for k in k_elements],
+        dtype=precision.np_float,
+    )
     new_frac = k_frac @ M.T + c
     new_frac_wrapped = new_frac - np.floor(new_frac)
 
-    grid_shape = np.array(result_space.shape, dtype=np.int64)
-    grid_ints = np.rint(new_frac_wrapped * grid_shape).astype(np.int64) % grid_shape
+    boundary_np = np.array(
+        result_space.lattice.boundaries.basis.evalf(),
+        dtype=precision.np_float,
+    )
+    D = abs(int(round(np.linalg.det(boundary_np))))
+    grid_ints = np.rint(new_frac_wrapped * D).astype(np.int64) % D
 
     new_structure: OrderedDict[Momentum, int] = OrderedDict()
     for i, (k, idx) in enumerate(kspace.structure.items()):
         rep = ImmutableDenseMatrix(
-            [sy.Rational(int(grid_ints[i, j]), int(grid_shape[j])) for j in range(dim)]
+            [sy.Rational(int(grid_ints[i, j]), D) for j in range(dim)]
         )
         new_structure[Momentum(rep=rep, space=result_space)] = idx
 
@@ -394,8 +415,11 @@ def bandfold(
     # k-mapping: batch-compute which new-BZ slot each old k-point folds into.
     new_k_space = brillouin_zone(scaled_reciprocal_lattice)
 
-    old_basis_np = np.array(reciprocal_lattice.basis.evalf(), dtype=np.float64)
-    new_basis_np = np.array(scaled_reciprocal_lattice.basis.evalf(), dtype=np.float64)
+    precision = get_precision_config()
+    old_basis_np = np.array(reciprocal_lattice.basis.evalf(), dtype=precision.np_float)
+    new_basis_np = np.array(
+        scaled_reciprocal_lattice.basis.evalf(), dtype=precision.np_float
+    )
     M_rebase = np.linalg.solve(new_basis_np, old_basis_np)
 
     k_indices = _momentum_match_indices(
