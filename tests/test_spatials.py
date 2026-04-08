@@ -11,8 +11,10 @@ from qten.geometries.spatials import (
     AffineSpace,
     AbstractLattice,
 )
+from qten.geometries.basis_transform import BasisTransform
 from qten.geometries.boundary import PeriodicBoundary
 from qten.utils.collections_ext import FrozenDict
+from qten.symbolics.state_space import brillouin_zone
 
 
 def test_lattice_creation_and_dual():
@@ -101,6 +103,26 @@ def test_cartes_lattice():
     assert (0, 1) in coords
     assert (1, 0) in coords
     assert (1, 1) in coords
+
+
+def test_reciprocal_cartes_uses_nondiagonal_boundary_quotient():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1, 0], [0, 1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    transform = BasisTransform(ImmutableDenseMatrix([[1, 0], [1, 4]]))
+
+    transformed_lattice = transform(lattice)
+    reciprocal = transformed_lattice.dual
+    momenta = reciprocal.cartes()
+    k_space = brillouin_zone(reciprocal)
+
+    assert transformed_lattice.shape == (1, 4)
+    assert reciprocal.shape == (1, 4)
+    assert len(momenta) == 4
+    assert reciprocal.size == 4
+    assert k_space.dim == 4
 
 
 def test_lattice_basis_vectors_return_primitive_vectors():
