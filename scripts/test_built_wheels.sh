@@ -8,11 +8,12 @@ TMP_DIR=""
 KEEP_TMP=0
 INSTALL_PLOTS=1
 USE_CUDA=0
+USE_CPU=0
 CUDA_VERSION_OVERRIDE=""
 
 usage() {
     cat <<'EOF'
-Usage: scripts/test_built_wheels.sh [--keep] [--no-plots] [--cuda] [--cuda-version X.Y] [--] [pytest args...]
+Usage: scripts/test_built_wheels.sh [--keep] [--no-plots] [--cpu] [--cuda] [--cuda-version X.Y] [--] [pytest args...]
 
 Builds local wheel artifacts, creates an isolated uv virtual environment under
 .tmp/, installs the wheel(s), and runs the repository tests against the
@@ -21,6 +22,7 @@ installed packages instead of the source checkout.
 Options:
   --keep       Keep the temporary environment directory after the run
   --no-plots   Do not build or install qten-plots; skips tests/test_plots.py
+  --cpu        Preinstall a CPU-only torch wheel from the PyTorch CPU index
   --cuda       Preinstall a CUDA-enabled torch wheel chosen from nvidia-smi
   --cuda-version
                Override CUDA detection with an explicit version like 12.8
@@ -30,6 +32,7 @@ Examples:
   scripts/test_built_wheels.sh
   scripts/test_built_wheels.sh -- -q tests/test_abelian.py
   scripts/test_built_wheels.sh --no-plots -- -q
+  scripts/test_built_wheels.sh --cpu -- -q tests/test_gpu.py -k "not cuda"
   scripts/test_built_wheels.sh --cuda -- -q tests/test_gpu.py
 EOF
 }
@@ -91,6 +94,10 @@ while [[ $# -gt 0 ]]; do
             INSTALL_PLOTS=0
             shift
             ;;
+        --cpu)
+            USE_CPU=1
+            shift
+            ;;
         --cuda)
             USE_CUDA=1
             shift
@@ -149,7 +156,12 @@ if [[ ${INSTALL_PLOTS} -eq 1 && -z "${PLOTS_VERSION}" ]]; then
     exit 1
 fi
 
-if [[ ${USE_CUDA} -eq 1 && -z "${TORCH_SPEC}" ]]; then
+if [[ ${USE_CPU} -eq 1 && ${USE_CUDA} -eq 1 ]]; then
+    echo "--cpu and --cuda are mutually exclusive." >&2
+    exit 1
+fi
+
+if [[ ( ${USE_CPU} -eq 1 || ${USE_CUDA} -eq 1 ) && -z "${TORCH_SPEC}" ]]; then
     echo "Failed to read the torch dependency from ${ROOT_DIR}/pyproject.toml." >&2
     exit 1
 fi
@@ -191,6 +203,13 @@ fi
 
 echo "Creating isolated uv environment in ${TMP_DIR}"
 uv venv "${VENV_DIR}"
+
+if [[ ${USE_CPU} -eq 1 ]]; then
+    TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
+
+    echo "Installing ${TORCH_SPEC} from ${TORCH_INDEX_URL}"
+    uv pip install --python "${VENV_DIR}/bin/python" --index-url "${TORCH_INDEX_URL}" "${TORCH_SPEC}"
+fi
 
 if [[ ${USE_CUDA} -eq 1 ]]; then
     TORCH_CUDA_VERSION="$(detect_cuda_version)"
