@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,6 +16,7 @@ from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
 from qten_plots.plottables import PointCloud
+from qten_plots._utils import band_path_positions
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,42 @@ def create_dummy_tensor(data_like):
     dims = tuple(_space(dim, f"d{axis}_") for axis, dim in enumerate(data.shape))
 
     return Tensor(data=data, dims=dims)
+
+
+def _make_square_lattice_band_tensor(shape: tuple[int, int]) -> Tensor:
+    basis = sy.ImmutableDenseMatrix([[1, 0.0], [0.0, 1]])
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(*shape)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+
+    r_0 = Offset(rep=sy.ImmutableDenseMatrix([[0.0], [0.0]]), space=lat.affine)
+    basis_s = U1Basis.new(r_0, "s")
+    bloch_space = HilbertSpace.new([basis_s])
+
+    neighbor_offsets = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+    region_modes = []
+    offset_to_idx = {}
+    for i, (dx, dy) in enumerate(neighbor_offsets):
+        r_vec = sy.ImmutableDenseMatrix([[dx], [dy]])
+        r_off = Offset(rep=r_vec, space=lat.affine)
+        region_modes.append(basis_s.replace(r_off))
+        offset_to_idx[(dx, dy)] = i
+
+    region_space = HilbertSpace.new(region_modes)
+    h_data = torch.zeros((region_space.dim, region_space.dim), dtype=torch.complex128)
+
+    origin_idx = offset_to_idx[(0, 0)]
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        idx = offset_to_idx[(dx, dy)]
+        h_data[origin_idx, idx] = -1.0 + 0j
+        h_data[idx, origin_idx] = -1.0 + 0j
+
+    h_real = Tensor(data=h_data, dims=(region_space, region_space))
+    k_space = brillouin_zone(lat.dual)
+    F = fourier_transform(k_space, bloch_space, region_space)
+    return F @ h_real @ F.h(1, 2)
 
 
 def test_plottable_loads_plot_extensions_from_entry_points(monkeypatch):
@@ -282,68 +320,8 @@ def test_pointcloud_scatter_plot():
 
 
 def test_bandstructure_plot():
-    # 1. Define Lattice (2D Square)
-    # Basis: [[a, 0], [0, a]]
-    basis = sy.ImmutableDenseMatrix([[1, 0.0], [0.0, 1]])
-    # Small shape for test speed
-    lat = Lattice(
-        basis=basis,
-        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(4, 4)),
-        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
-    )
+    h_k = _make_square_lattice_band_tensor((4, 4))
 
-    # 2. Define Unit Cell (Bloch Space)
-    # Single s-orbital at origin (0,0)
-    r_0 = Offset(rep=sy.ImmutableDenseMatrix([[0.0], [0.0]]), space=lat.affine)
-    basis_s = U1Basis.new(r_0, "s")
-    bloch_space = HilbertSpace.new([basis_s])
-
-    # 3. Define Region Space (Real Space Neighbors)
-    neighbor_offsets = [
-        (0, 0),  # Center
-        (1, 0),
-        (-1, 0),
-        (0, 1),
-        (0, -1),
-    ]
-
-    region_modes = []
-    offset_to_idx = {}
-
-    for i, (dx, dy) in enumerate(neighbor_offsets):
-        r_vec = sy.ImmutableDenseMatrix([[dx], [dy]])
-        r_off = Offset(rep=r_vec, space=lat.affine)
-        # Create a mode at this position based on the unit cell mode
-        m = basis_s.replace(r_off)
-        region_modes.append(m)
-        offset_to_idx[(dx, dy)] = i
-
-    region_space = HilbertSpace.new(region_modes)
-
-    # 4. Construct Hamiltonian H_real
-    t_n = -1.0 + 0j
-
-    h_data = torch.zeros((region_space.dim, region_space.dim), dtype=torch.complex128)
-
-    origin_idx = offset_to_idx[(0, 0)]
-
-    nn_coords = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-    for dx, dy in nn_coords:
-        idx = offset_to_idx[(dx, dy)]
-        h_data[origin_idx, idx] = t_n
-        h_data[idx, origin_idx] = np.conjugate(t_n)
-
-    h_real = Tensor(data=h_data, dims=(region_space, region_space))
-
-    # 5. Define Momentum Space (Grid)
-    k_space = brillouin_zone(lat.dual)
-
-    # 6. Compute H(k)
-    F = fourier_transform(k_space, bloch_space, region_space)
-    F_dag = F.h(1, 2)
-    h_k = F @ h_real @ F_dag
-
-    # 7. Visualization
     fig = h_k.plot(
         "bandstructure",
         backend="plotly",
@@ -357,3 +335,52 @@ def test_bandstructure_plot():
     assert len(fig.data) >= 1
     # Check title
     assert fig.layout.title.text == "Test Bandstructure"
+
+
+def test_bandstructure_plot_auto_falls_back_to_path_for_effectively_1d_k_mesh():
+    h_k = _make_square_lattice_band_tensor((4, 1))
+
+    fig = h_k.plot(
+        "bandstructure",
+        backend="plotly",
+        title="Degenerate 2D Bandstructure",
+        show=False,
+    )
+
+    assert len(fig.data) >= 1
+    assert all(isinstance(trace, go.Scatter) for trace in fig.data)
+
+
+def test_bandstructure_surface_mode_rejects_effectively_1d_k_mesh():
+    h_k = _make_square_lattice_band_tensor((4, 1))
+
+    with pytest.raises(ValueError, match="requires two varying momentum directions"):
+        h_k.plot(
+            "bandstructure",
+            backend="plotly",
+            mode="surface",
+            show=False,
+        )
+
+
+def test_band_path_positions_wraps_across_periodic_boundary():
+    basis = sy.ImmutableDenseMatrix([[1]])
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(16)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lat.dual)
+    k_points = list(k_space.elements())
+    reordered = [k_points[0], *k_points[:0:-1]]
+
+    wrapped_space = type(k_space)(
+        structure=OrderedDict((k, i) for i, k in enumerate(reordered))
+    )
+    k_cart = np.array([[float(k.rep[0, 0])] for k in reordered], dtype=float)
+
+    x_vals = band_path_positions(wrapped_space, k_cart)
+
+    step = float(lat.dual.basis[0, 0]) / 16.0
+    expected = np.arange(len(reordered), dtype=float) * step
+    assert np.allclose(x_vals, expected)

@@ -4,6 +4,9 @@ import numpy as np
 import torch
 from scipy.spatial import cKDTree
 
+from qten.geometries.spatials import ReciprocalLattice
+from qten.symbolics.state_space import MomentumSpace, brillouin_zone
+
 
 def compute_bonds(
     coords: torch.Tensor, dim: int
@@ -51,3 +54,79 @@ def compute_bonds(
     z_lines = flat[:, 2] if dim == 3 and n_cols >= 3 else None
 
     return x_lines, y_lines, z_lines
+
+
+def analyze_bandstructure_sampling(
+    k_space: MomentumSpace,
+) -> tuple[np.ndarray, Optional[ReciprocalLattice], bool, int]:
+    """
+    Return Cartesian k-samples plus metadata needed to choose path vs surface plots.
+
+    The effective dimensionality is computed from the sampled Cartesian points rather
+    than the ambient reciprocal-lattice dimension. This prevents degenerate 2D
+    meshes such as shape `(N, 1)` from being rendered as surfaces.
+    """
+    k_points = list(k_space)
+    if len(k_points) == 0:
+        return np.array([]), None, False, 0
+
+    recip = k_points[0].space
+    basis_mat = np.array(recip.basis.evalf()).astype(float)
+    k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
+    k_cart = np.stack(k_fracs) @ basis_mat.T
+
+    is_canonical_2d_bz = False
+    if (
+        isinstance(recip, ReciprocalLattice)
+        and recip.dim == 2
+        and all(k.space == recip for k in k_points)
+    ):
+        canonical_k_space = brillouin_zone(recip)
+        is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
+            canonical_k_space.elements()
+        )
+
+    reciprocal_lattice = recip if isinstance(recip, ReciprocalLattice) else None
+    effective_dim = _effective_dimensionality(k_cart)
+    return k_cart, reciprocal_lattice, is_canonical_2d_bz, effective_dim
+
+
+def band_path_positions(k_space: MomentumSpace, k_cart: np.ndarray) -> np.ndarray:
+    """
+    Build cumulative 1D path coordinates for a sampled momentum path.
+
+    Consecutive momentum points live on a periodic reciprocal torus, so the raw
+    Cartesian difference between wrapped samples can contain an artificial jump at
+    the Brillouin-zone boundary. We therefore compute step lengths from the
+    minimum-image displacement in fractional coordinates before converting back
+    to Cartesian space.
+    """
+    k_points = list(k_space)
+    if len(k_points) <= 1 or len(k_cart) == 0:
+        return np.array([0.0], dtype=float)
+
+    recip = k_points[0].space
+    basis_mat = np.array(recip.basis.evalf(), dtype=float)
+    k_fracs = np.stack(
+        [np.array(k.rep.evalf(), dtype=float).flatten() for k in k_points], axis=0
+    )
+    frac_diffs = k_fracs[1:] - k_fracs[:-1]
+    wrapped_frac_diffs = frac_diffs - np.round(frac_diffs)
+    cart_diffs = wrapped_frac_diffs @ basis_mat.T
+    dists = np.linalg.norm(cart_diffs, axis=1)
+    return np.concatenate((np.array([0.0], dtype=float), np.cumsum(dists)))
+
+
+def _effective_dimensionality(points: np.ndarray, tol: float = 1e-12) -> int:
+    if points.size == 0 or len(points) <= 1:
+        return 0
+
+    centered = points - points[0]
+    singular_values = np.linalg.svd(centered, compute_uv=False)
+    if singular_values.size == 0:
+        return 0
+
+    scale = float(singular_values[0])
+    if scale <= tol:
+        return 0
+    return int(np.count_nonzero(singular_values > tol * scale))

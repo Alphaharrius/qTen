@@ -8,11 +8,11 @@ import plotly.graph_objects as go  # type: ignore[import-untyped]
 import plotly.figure_factory as ff  # type: ignore[import-untyped]
 from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 
-from qten.geometries.spatials import Lattice, ReciprocalLattice, Offset
+from qten.geometries.spatials import Lattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
-from qten.symbolics.state_space import StateSpace, brillouin_zone
-from ._utils import compute_bonds
+from qten.symbolics.state_space import StateSpace
+from ._utils import analyze_bandstructure_sampling, band_path_positions, compute_bonds
 from .plottables import PointCloud
 
 
@@ -837,38 +837,22 @@ def plot_bandstructure(
     if fig is None:
         fig = go.Figure()
 
-    recip = None
-    is_canonical_2d_bz = False
-    if len(k_points) > 0:
-        recip = k_points[0].space
-        basis_sym = recip.basis
+    k_cart, recip, is_canonical_2d_bz, effective_dim = analyze_bandstructure_sampling(
+        k_space
+    )
 
-        basis_mat = np.array(basis_sym.evalf()).astype(float)
-
-        k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
-        k_fracs_arr = np.stack(k_fracs)  # Shape: (K, 2)
-
-        # `Momentum.rep` is stored as a column vector in the reciprocal basis,
-        # so batched row-wise conversion to Cartesian coordinates uses `B^T`.
-        k_cart = k_fracs_arr @ basis_mat.T
-
-        if (
-            isinstance(recip, ReciprocalLattice)
-            and recip.dim == 2
-            and all(k.space == recip for k in k_points)
-        ):
-            canonical_k_space = brillouin_zone(recip)
-            is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
-                canonical_k_space.elements()
-            )
-    else:
-        k_cart = np.array([])
-
-    is_surface = mode == "surface" or (mode == "auto" and is_canonical_2d_bz)
+    is_surface = mode == "surface" or (
+        mode == "auto" and is_canonical_2d_bz and effective_dim >= 2
+    )
     if is_surface and not is_canonical_2d_bz:
         raise ValueError(
             "Surface bandstructure plotting requires the momentum axis to be the "
             "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+        )
+    if is_surface and effective_dim < 2:
+        raise ValueError(
+            "Surface bandstructure plotting requires two varying momentum "
+            "directions. Use mode='path' for effectively 1D k-samples."
         )
 
     if is_surface and recip is not None:
@@ -898,11 +882,7 @@ def plot_bandstructure(
 
     else:
         # === 1D Line Plot ===
-        x_vals = np.array([0.0])
-        if len(k_points) > 1:
-            diffs = k_cart[1:] - k_cart[:-1]
-            dists = np.linalg.norm(diffs, axis=1)
-            x_vals = np.concatenate(([0.0], np.cumsum(dists)))
+        x_vals = band_path_positions(k_space, k_cart)
 
         for b in range(n_bands):
             fig.add_trace(
