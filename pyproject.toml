@@ -13,7 +13,6 @@ authors = [
   { name = "eyjafjallac" },
 ]
 dependencies = [
-    "multipledispatch>=1.0.0",
     "multimethod>=2.0",
     "numpy>=2.0.0",
     "sympy>=1.14.0",
@@ -121,11 +120,6 @@ members = [
 
 [tool.ruff.lint]
     extend-ignore = ["F811"]
-
-[[tool.mypy.overrides]]
-module = "multipledispatch"
-ignore_missing_imports = true
-disable_error_code = ["import-untyped"]
 
 [[tool.mypy.overrides]]
 module = "multimethod"
