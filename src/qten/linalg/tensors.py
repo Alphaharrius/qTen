@@ -26,7 +26,7 @@ from types import EllipsisType
 from collections import OrderedDict
 import builtins
 
-from multipledispatch import dispatch  # type: ignore[import-untyped]
+from multimethod import DispatchError, multimethod
 import torch
 
 from ..abstracts import Convertible, Operable
@@ -558,6 +558,26 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         - `condition.where(index_type=...)`:
           returns the requested index representation for `True` entries.
 
+        Semantics
+        ---------
+        This method requires `condition.data.dtype == torch.bool`.
+
+        For `condition.where(input, other)`:
+        - `condition`, `input`, and `other` are promoted to a common rank by
+          prepending leading `BroadcastSpace` axes as needed.
+        - metadata is merged with
+          `union_dims(condition.dims, input.dims, other.dims, allow_merge=False)`.
+        - all three operands are aligned to those merged dims and broadcast-expanded.
+        - selection is then applied elementwise with `torch.where`.
+
+        For `condition.where()` and `condition.where(index_type=...)`:
+        - behavior follows `torch.where(condition)` /
+          `torch.nonzero(condition, as_tuple=True)`.
+        - for a rank-`R` mask, the Tensor form returns `R` one-dimensional
+          index tensors, one per axis.
+        - each returned Tensor index uses `IndexSpace.linear(nnz)`, where
+          `nnz` is the number of `True` entries.
+
         Parameters
         ----------
         `input` : `Optional[Tensor]`, optional
@@ -592,7 +612,12 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         Raises
         ------
         `TypeError`
-            If only one of `input`/`other` is provided.
+            If `condition.data` is not boolean, if only one of `input`/`other`
+            is provided, or if `index_type` is passed together with
+            `input`/`other`.
+        `ValueError`
+            If operands cannot be aligned/broadcast to shared union dims, or if
+            `index_type=StateSpace` is requested for a non-rank-1 mask.
         """
         if index_type is None:
             index_type = Tensor
@@ -3148,43 +3173,10 @@ def promote_rank(tensor: Tensor, target_rank: int) -> Tensor:
     return Tensor(data=tensor.data.reshape(new_shape), dims=new_dims)
 
 
-@dispatch(Tensor, Tensor, Tensor)
-def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> Tensor:
+@multimethod
+def _where(condition: Tensor, input: Tensor, other: Tensor) -> Tensor:
     """
-    Select values from `input` and `other` using a boolean mask.
-
-    This is the StateSpace-aware wrapper of `torch.where(condition, input, other)`.
-    The three tensors are first promoted to a common rank by prepending leading
-    `BroadcastSpace` axes (torch-style rank broadcasting), then symmetrically
-    aligned/broadcast to shared union dims, and finally selection is applied
-    elementwise:
-
-    - if `condition[i]` is `True`, output uses `input[i]`
-    - otherwise, output uses `other[i]`
-
-    Parameters
-    ----------
-    `condition` : `Tensor[torch.BoolTensor]`
-        Boolean mask tensor participating in symmetric union alignment.
-    `input` : `Tensor`
-        Values chosen where the mask is `True`. Must be compatible with
-        `condition` and `other` under `union_dims(..., allow_merge=False)`.
-    `other` : `Tensor`
-        Values chosen where the mask is `False`. Must be compatible with
-        `condition` and `input` under `union_dims(..., allow_merge=False)`.
-
-    Returns
-    -------
-    `Tensor`
-        Tensor with `dims == union_dims(condition.dims, input.dims, other.dims,
-        allow_merge=False)`.
-
-    Raises
-    ------
-    `TypeError`
-        If `condition.data` is not boolean.
-    `ValueError`
-        If operands cannot be aligned/broadcast to shared union dims.
+    Implementation for `Tensor.where(input, other)`.
     """
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
@@ -3206,41 +3198,16 @@ def where(condition: Tensor[torch.BoolTensor], input: Tensor, other: Tensor) -> 
     )
 
 
-@dispatch(Tensor)  # type: ignore[no-redef]
-def where(
-    condition: Tensor[torch.BoolTensor], index_type: Type[Any] = Tensor
+@_where.register
+def _(
+    condition: Tensor, index_type: Type[Any] = Tensor
 ) -> Union[
     Tuple[Tensor, ...],
     Tuple[Tuple[int, ...], ...],
     StateSpace,
 ]:
     """
-    Return coordinate tensors of `True` entries in a boolean mask.
-
-    This is the StateSpace-aware wrapper of `torch.where(condition)` and follows
-    `torch.nonzero(condition, as_tuple=True)` semantics.
-
-    For a mask of rank `R`, this returns `R` tensors. The `k`-th tensor stores
-    the indices along axis `k` for each `True` element. All returned tensors are
-    1D and share the same length, equal to the number of `True` entries.
-
-    The 1D dimension on each returned tensor is `IndexSpace.linear(nnz)`, where
-    `nnz` is the number of selected positions.
-
-    Parameters
-    ----------
-    `condition` : `Tensor[torch.BoolTensor]`
-        Boolean mask tensor.
-
-    Returns
-    -------
-    `Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]`
-        Index representation selected by `index_type`.
-
-    Raises
-    ------
-    `TypeError`
-        If `condition.data` is not boolean.
+    Implementation for `Tensor.where()` and `Tensor.where(index_type=...)`.
     """
     if condition.data.dtype != torch.bool:
         raise TypeError("where expects condition.data to have dtype torch.bool")
@@ -3262,6 +3229,15 @@ def where(
         selected = [int(row[0].item()) for row in rows]
         return condition.dims[0][selected]
     raise TypeError("index_type must be one of Tensor, tuple/Tuple, or StateSpace")
+
+
+def where(*args, **kwargs):
+    try:
+        return _where(*args, **kwargs)
+    except DispatchError as ex:
+        if isinstance(ex.__cause__, TypeError):
+            raise ex.__cause__
+        raise
 
 
 def nonzero(
@@ -3484,12 +3460,12 @@ class TensorIndexing:
             return indices + (slice(None),) * (self.rank - non_none)
         return indices
 
-    @dispatch(int, int)  # type: ignore[no-redef]
+    @multimethod
     def _compile(self, idx: int, v: int) -> Tuple[int, Tuple[StateSpace, ...], int]:
         return idx + 1, tuple(), v
 
-    @dispatch(int, slice)  # type: ignore[no-redef]
-    def _compile(self, idx: int, v: slice) -> Tuple[int, Tuple[StateSpace, ...], slice]:
+    @_compile.register
+    def _(self, idx: int, v: slice) -> Tuple[int, Tuple[StateSpace, ...], slice]:
         dim = self.dims[idx]
         # Check if its a full slice `:`
         if v.start is None and v.stop is None and v.step is None:
@@ -3504,16 +3480,14 @@ class TensorIndexing:
 
         return idx + 1, (dim[v],), v
 
-    @dispatch(int, type(None))  # type: ignore[no-redef]
-    def _compile(self, idx: int, _: None) -> Tuple[int, Tuple[StateSpace, ...], None]:
+    @_compile.register
+    def _(self, idx: int, _: None) -> Tuple[int, Tuple[StateSpace, ...], None]:
         return idx, (BroadcastSpace(),), None
 
-    @dispatch(int, (Convertible, StateSpace))  # type: ignore[no-redef]
-    def _compile(
-        self, idx: int, v: Union[Convertible, StateSpace]
+    @_compile.register
+    def _(
+        self, idx: int, v: StateSpace
     ) -> Tuple[int, Tuple[StateSpace, ...], Union[Tuple[int, ...], slice]]:
-        if isinstance(v, Convertible) and not isinstance(v, StateSpace):
-            v = v.convert(StateSpace)
         dim = self.dims[idx]
 
         if isinstance(dim, BroadcastSpace):
@@ -3537,8 +3511,14 @@ class TensorIndexing:
             f"Unable to index dimension with {v} that is not contained in {dim}"
         )
 
-    @dispatch(int, Tensor)  # type: ignore[no-redef]
-    def _compile(
+    @_compile.register
+    def _(
+        self, idx: int, v: Convertible
+    ) -> Tuple[int, Tuple[StateSpace, ...], Union[Tuple[int, ...], slice]]:
+        return self._compile(idx, v.convert(StateSpace))
+
+    @_compile.register
+    def _(
         self, idx: int, v: Tensor
     ) -> Tuple[int, Tuple[StateSpace, ...], torch.Tensor]:
         if v.data.dtype == torch.bool:
