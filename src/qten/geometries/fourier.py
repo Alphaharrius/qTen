@@ -2,7 +2,7 @@ from ..utils.devices import Device
 from typing import Dict, Tuple, overload, Optional
 from typing import cast
 
-from multipledispatch import dispatch
+from multimethod import multimethod
 
 import numpy as np
 import torch
@@ -16,7 +16,7 @@ from ..utils.collections_ext import matchby
 
 
 # TODO: Consider allow the creation of the tensor on a specified device.
-@dispatch(tuple, tuple)
+@multimethod
 def fourier_transform(
     K: Tuple[Momentum, ...], R: Tuple[Offset, ...], *, device: Optional[Device] = None
 ) -> torch.Tensor:
@@ -78,8 +78,8 @@ def fourier_transform(
     return torch.exp(exponent)  # (K, R)
 
 
-@dispatch(MomentumSpace, HilbertSpace, HilbertSpace)  # type: ignore[no-redef]
-def fourier_transform(
+@fourier_transform.register
+def _(
     k_space: MomentumSpace,
     bloch_space: HilbertSpace,
     region_space: HilbertSpace,
@@ -176,7 +176,7 @@ def region_restrict(
 ) -> Tensor: ...
 
 
-@dispatch(Tensor, HilbertSpace)  # type: ignore[no-redef,misc]
+@multimethod
 def region_restrict(
     tensor: Tensor, R: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
@@ -192,8 +192,8 @@ def region_restrict(
     return fourier_transform(K, B, R, device=device)
 
 
-@dispatch(Tensor, tuple)  # type: ignore[no-redef]
-def region_restrict(
+@region_restrict.register
+def _(
     tensor: Tensor, region: Tuple[Offset, ...], *, device: Optional[Device] = None
 ) -> Tensor:
     B = tensor.dims[1]
