@@ -232,7 +232,10 @@ def interpolate_reciprocal_path(
     wp_cart = wp_frac @ basis_mat.T
 
     seg_lengths = np.array(
-        [np.linalg.norm(wp_cart[i + 1] - wp_cart[i]) for i in range(len(resolved_wp) - 1)]
+        [
+            np.linalg.norm(wp_cart[i + 1] - wp_cart[i])
+            for i in range(len(resolved_wp) - 1)
+        ]
     )
     total_length = seg_lengths.sum()
     n_segments = len(resolved_wp) - 1
@@ -271,7 +274,9 @@ def interpolate_reciprocal_path(
     path_order: list[int] = []
 
     for frac in all_fracs:
-        rep = ImmutableDenseMatrix([sy.Rational(f).limit_denominator(10**9) for f in frac])
+        rep = ImmutableDenseMatrix(
+            [sy.Rational(f).limit_denominator(10**9) for f in frac]
+        )
         k = Momentum(rep=rep, space=recip)
         if k not in seen:
             seen[k] = len(unique_momenta)

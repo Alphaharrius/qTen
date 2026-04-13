@@ -15,7 +15,7 @@ from qten.symbolics.state_space import (
     MomentumSpace,
     brillouin_zone,
 )
-from qten.geometries import interpolate_reciprocal_path
+from qten.symbolics import interpolate_reciprocal_path
 
 
 def _space(name: str, n: int) -> HilbertSpace:

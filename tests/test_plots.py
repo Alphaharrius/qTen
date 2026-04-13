@@ -7,7 +7,7 @@ import pytest
 import sympy as sy
 import torch
 
-from qten.geometries import interpolate_reciprocal_path
+from qten.symbolics import interpolate_reciprocal_path
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
 from qten.geometries.spatials import Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
