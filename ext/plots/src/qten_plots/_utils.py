@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from scipy.spatial import cKDTree
 
+from qten.bands import BzPath
 from qten.geometries.spatials import ReciprocalLattice
 from qten.symbolics.state_space import MomentumSpace, brillouin_zone
 
@@ -130,3 +131,78 @@ def _effective_dimensionality(points: np.ndarray, tol: float = 1e-12) -> int:
     if scale <= tol:
         return 0
     return int(np.count_nonzero(singular_values > tol * scale))
+
+
+def interpolate_path_on_grid(
+    bz_path: BzPath,
+    grid_k_space: MomentumSpace,
+    eigvals: np.ndarray,
+) -> np.ndarray:
+    """Interpolate eigenvalues from a regular BZ grid onto a path.
+
+    Uses trilinear interpolation with periodic padding so that bands are
+    smooth even when path k-points fall between grid points.
+
+    Returns an array of shape ``(len(bz_path.path_order), n_bands)``.
+    """
+    from scipy.interpolate import RegularGridInterpolator
+
+    grid_k_points = list(grid_k_space)
+    grid_recip = grid_k_points[0].space
+    dim = grid_recip.dim
+    n_bands = eigvals.shape[1]
+
+    grid_fracs = np.array(
+        [np.array(k.rep, dtype=float).flatten() for k in grid_k_points]
+    )
+    grid_fracs = grid_fracs % 1.0
+
+    axes: list[np.ndarray] = []
+    for d in range(dim):
+        unique_vals = np.sort(np.unique(np.round(grid_fracs[:, d], 10)))
+        axes.append(unique_vals)
+    shape = tuple(len(ax) for ax in axes)
+
+    # Map each grid k-point to its (i, j, k, ...) position and fill the array.
+    evals_grid = np.empty((*shape, n_bands))
+    evals_grid[:] = np.nan
+    for frac, ev in zip(grid_fracs, eigvals):
+        idx = tuple(
+            int(np.searchsorted(axes[d], round(frac[d], 10))) for d in range(dim)
+        )
+        evals_grid[idx] = ev
+
+    # Pad one extra slice at the end of each axis (periodic copy of the
+    # first slice) so interpolation wraps smoothly across the BZ boundary.
+    for d in range(dim):
+        evals_grid = np.concatenate(
+            [evals_grid, np.take(evals_grid, [0], axis=d)], axis=d
+        )
+        axes[d] = np.append(axes[d], 1.0)
+
+    # Resolve path fractional coordinates in the *grid's* reciprocal lattice.
+    path_k_points = list(bz_path.k_space)
+    path_recip = path_k_points[0].space
+    path_fracs_unique = np.array(
+        [np.array(k.rep, dtype=float).flatten() for k in path_k_points]
+    )
+    if path_recip != grid_recip:
+        path_basis = np.array(path_recip.basis.evalf(), dtype=float)
+        grid_basis = np.array(grid_recip.basis.evalf(), dtype=float)
+        path_cart = path_fracs_unique @ path_basis.T
+        path_fracs_unique = path_cart @ np.linalg.inv(grid_basis).T
+
+    path_fracs = path_fracs_unique[list(bz_path.path_order)] % 1.0
+
+    result = np.empty((len(bz_path.path_order), n_bands))
+    for b in range(n_bands):
+        interp = RegularGridInterpolator(
+            tuple(axes),
+            evals_grid[..., b],
+            method="linear",
+            bounds_error=False,
+            fill_value=None,
+        )
+        result[:, b] = interp(path_fracs)
+
+    return result

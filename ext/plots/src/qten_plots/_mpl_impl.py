@@ -13,7 +13,12 @@ from qten.symbolics.state_space import (
 )
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from qten.bands import BzPath
-from ._utils import analyze_bandstructure_sampling, band_path_positions, compute_bonds
+from ._utils import (
+    analyze_bandstructure_sampling,
+    band_path_positions,
+    compute_bonds,
+    interpolate_path_on_grid,
+)
 from .plottables import PointCloud
 
 
@@ -802,7 +807,12 @@ def plot_bandstructure_mpl(
 
         if bz_path is not None:
             x_vals = np.array(bz_path.path_positions)
-            plot_eigvals = eigvals_np[list(bz_path.path_order)]
+            if k_space == bz_path.k_space:
+                plot_eigvals = eigvals_np[list(bz_path.path_order)]
+            else:
+                plot_eigvals = interpolate_path_on_grid(
+                    bz_path, k_space, eigvals_np
+                )
         else:
             x_vals = band_path_positions(k_space, k_cart)
             plot_eigvals = eigvals_np
