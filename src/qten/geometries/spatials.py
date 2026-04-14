@@ -497,6 +497,9 @@ def _check_offset_matches_space(r: "Offset") -> None:
 S = TypeVar("S", bound=AffineSpace)
 """Generic type for the `AffineSpace`."""
 
+OffsetType = TypeVar("OffsetType", bound="Offset")
+"""Type variable for spatial point-like coordinates such as `Offset` and `Momentum`."""
+
 
 @need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)

@@ -1,9 +1,10 @@
 import pytest
+import sympy as sy
 from sympy import ImmutableDenseMatrix
 
 from qten.geometries.boundary import PeriodicBoundary
-from qten.geometries.ops import nearest_sites
-from qten.geometries.spatials import AffineSpace, Lattice, Offset
+from qten.geometries.ops import center_of_region, nearest_sites
+from qten.geometries.spatials import AffineSpace, Lattice, Momentum, Offset
 
 
 def test_nearest_sites_with_lattice_center_is_inclusive_at_cutoff():
@@ -86,3 +87,49 @@ def test_nearest_sites_rejects_negative_counts():
 
     with pytest.raises(ValueError, match="n_nearest must be non-negative"):
         nearest_sites(lattice, lattice.at(), n_nearest=-1)
+
+
+def test_center_of_region_returns_offset_mean():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    center = center_of_region(
+        (
+            lattice.at("r", (0, 0)),
+            lattice.at("r", (2, 0)),
+            lattice.at("r", (0, 2)),
+            lattice.at("r", (2, 2)),
+        )
+    )
+
+    assert type(center) is Offset
+    assert center.space == lattice
+    assert center.rep == ImmutableDenseMatrix([1, 1])
+
+
+def test_center_of_region_returns_momentum_mean():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k = lattice.dual
+
+    center = center_of_region(
+        (
+            Momentum(rep=ImmutableDenseMatrix([0]), space=k),
+            Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=k),
+        )
+    )
+
+    assert type(center) is Momentum
+    assert center.space == k
+    assert center.rep == ImmutableDenseMatrix([sy.Rational(1, 4)])
+
+
+def test_center_of_region_rejects_empty_region():
+    with pytest.raises(ValueError, match="region must be non-empty"):
+        center_of_region(())

@@ -3,6 +3,7 @@ from .geometries.fourier import (
     region_restrict as region_restrict,
 )
 from .geometries import (
+    center_of_region as center_of_region,
     nearest_sites as nearest_sites,
 )
 from .symbolics import (

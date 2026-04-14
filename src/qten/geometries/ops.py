@@ -5,7 +5,7 @@ from itertools import product
 
 from sympy import ImmutableDenseMatrix
 
-from . import AffineSpace, Lattice, Offset
+from .spatials import AffineSpace, Lattice, Offset, OffsetType
 
 
 def _cutoff_from_sites(
@@ -153,3 +153,43 @@ def nearest_sites(
         if distance < cutoff_distance
         or math.isclose(distance, cutoff_distance, rel_tol=1e-9, abs_tol=1e-9)
     )
+
+
+def center_of_region(region: tuple[OffsetType, ...]) -> OffsetType:
+    """
+    Return the arithmetic center of a non-empty region of offsets or momenta.
+
+    Parameters
+    ----------
+    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+        Non-empty tuple of spatial points. All entries must share the same
+        concrete type and affine space.
+
+    Returns
+    -------
+    `Offset | Momentum`
+        Arithmetic mean of the region coordinates, returned as the same type as
+        the input entries.
+
+    Raises
+    ------
+    `ValueError`
+        If `region` is empty.
+    `TypeError`
+        If region entries do not all share the same concrete type and space.
+    """
+    if len(region) == 0:
+        raise ValueError("region must be non-empty.")
+
+    first = region[0]
+    point_type = type(first)
+    total = first.rep
+
+    for point in region[1:]:
+        if type(point) is not point_type:
+            raise TypeError("region entries must all have the same concrete type.")
+        if point.space != first.space:
+            raise TypeError("region entries must all belong to the same space.")
+        total += point.rep
+
+    return point_type(rep=ImmutableDenseMatrix(total / len(region)), space=first.space)
