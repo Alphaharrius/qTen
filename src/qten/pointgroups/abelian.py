@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Tuple, cast
 from collections import OrderedDict
 from itertools import product
 from functools import lru_cache, reduce
@@ -13,6 +13,46 @@ from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
 from ..symbolics import Multiple
+
+
+def _require_unique_axes(axes: Tuple[sy.Symbol, ...], *, role: str) -> None:
+    if len(set(axes)) != len(axes):
+        raise ValueError(
+            f"AbelianGroup {role} axes must be unique for composition, got {axes}."
+        )
+
+
+def _merged_axes(
+    left_axes: Tuple[sy.Symbol, ...], right_axes: Tuple[sy.Symbol, ...]
+) -> Tuple[sy.Symbol, ...]:
+    """
+    Build the canonical merged axis order for composing two groups.
+
+    The merge preserves the full left-axis order and then appends only those
+    right axes that are not already present.
+    """
+    return left_axes + tuple(axis for axis in right_axes if axis not in left_axes)
+
+
+def _embed_irrep_to_axes(
+    irrep: sy.ImmutableDenseMatrix,
+    src_axes: Tuple[sy.Symbol, ...],
+    dst_axes: Tuple[sy.Symbol, ...],
+) -> sy.ImmutableDenseMatrix:
+    """
+    Embed an operator into a larger/reordered axis basis.
+
+    Axes present in `src_axes` are mapped into `dst_axes` by symbol identity.
+    Any axis present in `dst_axes` but absent in `src_axes` is treated as an
+    untouched coordinate and therefore carries the identity action.
+    """
+    axis_to_dst = {axis: i for i, axis in enumerate(dst_axes)}
+    embedded = sy.ImmutableDenseMatrix.eye(len(dst_axes))
+    data = sy.Matrix(embedded)
+    for i, row_axis in enumerate(src_axes):
+        for j, col_axis in enumerate(src_axes):
+            data[axis_to_dst[row_axis], axis_to_dst[col_axis]] = irrep[i, j]
+    return sy.ImmutableDenseMatrix(sy.simplify(data))
 
 
 @dataclass(frozen=True)
@@ -174,6 +214,13 @@ class AbelianGroup(Opr):
     `AbelianGroup` is the linear object. To obtain an affine operator of the
     form `x -> g x + t`, wrap it in `AbelianOpr`. In that sense, `AbelianOpr`
     is the affine extension of `AbelianGroup`.
+
+    `AbelianGroup @ AbelianGroup` composes linear maps in the same algebraic
+    order as every other `Opr`: `(a @ b) @ x == a(b(x))`. When the two groups
+    use different but compatible ordered axis tuples, composition first embeds
+    both matrices into a common axis basis. The merged basis preserves the full
+    left-axis order and appends only unseen right axes. Missing axes act by the
+    identity, while shared axes are aligned by symbol and reordered as needed.
 
     The `group_order()` and `basis_table` utilities assume the represented
     element has finite order. They are appropriate for finite abelian point
@@ -377,6 +424,46 @@ class AbelianGroup(Opr):
         raise ValueError(
             f"Failed to build a complete basis table up to order {g_order - 1}."
         )
+
+
+@Operable.__matmul__.register
+def _(left: AbelianGroup, right: AbelianGroup) -> AbelianGroup:
+    """
+    Compose two abelian linear operators in algebraic `@` order.
+
+    The returned group represents the map `left(right(x))`.
+
+    Axis handling
+    -------------
+    If `left.axes` and `right.axes` differ, both operators are first embedded
+    into a common axis basis before multiplication:
+
+    - the merged axis order preserves all of `left.axes`
+    - any right-only axes are appended in their original order
+    - shared axes are aligned by symbol, even if their positions differ
+    - axes missing from one operator act trivially and therefore contribute an
+      identity block along that coordinate
+
+    For example:
+
+    - `(x, y)` composed with `(y, x)` aligns both to `(x, y)` by permutation
+    - `(x, y)` composed with `(y, z)` aligns both to `(x, y, z)`, with the
+      first operator acting as identity on `z` and the second as identity on `x`
+
+    Composition requires each operand's axis tuple to contain unique symbols.
+    Repeated axes are rejected because they do not define an unambiguous
+    coordinate alignment.
+    """
+    _require_unique_axes(left.axes, role="left")
+    _require_unique_axes(right.axes, role="right")
+
+    merged = _merged_axes(left.axes, right.axes)
+    left_irrep = _embed_irrep_to_axes(left.irrep, left.axes, merged)
+    right_irrep = _embed_irrep_to_axes(right.irrep, right.axes, merged)
+    return AbelianGroup(
+        irrep=sy.ImmutableDenseMatrix(sy.simplify(left_irrep @ right_irrep)),
+        axes=merged,
+    )
 
 
 @AbelianGroup.register(AbelianBasis)
@@ -601,7 +688,7 @@ def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
     `ValueError`
         Propagated from `t.g @ f`.
     """
-    return t.g @ f
+    return cast(Multiple[AbelianBasis], t.g @ f)
 
 
 @lru_cache(
