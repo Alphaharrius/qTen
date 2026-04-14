@@ -386,6 +386,20 @@ class AbelianGroup(Opr):
         )
 
     @lru_cache
+    def inv(self) -> "AbelianGroup":
+        """
+        Return the inverse linear operator in the same ordered axis basis.
+
+        The inverse is computed exactly from `irrep.inv()` and keeps the same
+        `axes`, so `self @ self.inv()` and `self.inv() @ self` both represent
+        the identity map on that coordinate system.
+        """
+        return AbelianGroup(
+            irrep=sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
+            axes=self.axes,
+        )
+
+    @lru_cache
     def basis(self, order: int) -> FrozenDict:
         """
         Compute abelian eigen-basis functions from `euclidean_repr(order)` eigenvectors.

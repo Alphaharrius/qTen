@@ -217,6 +217,34 @@ def test_abelian_group_matmul_returns_composed_group():
     assert composed.irrep == ImmutableDenseMatrix(left.irrep @ right.irrep)
 
 
+def test_abelian_group_inv_returns_exact_inverse_in_same_axes():
+    x, y = sy.symbols("x y")
+    g = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
+        axes=(x, y),
+    )
+
+    g_inv = g.inv()
+
+    assert isinstance(g_inv, AbelianGroup)
+    assert g_inv.axes == (x, y)
+    assert g_inv.irrep == ImmutableDenseMatrix([[1, -1], [-1, 2]])
+
+
+def test_abelian_group_inv_composes_to_identity():
+    x, y = sy.symbols("x y")
+    g = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
+        axes=(x, y),
+    )
+
+    ident = ImmutableDenseMatrix.eye(2)
+    assert (g @ g.inv()).axes == (x, y)
+    assert (g @ g.inv()).irrep == ident
+    assert (g.inv() @ g).axes == (x, y)
+    assert (g.inv() @ g).irrep == ident
+
+
 def test_abelian_group_matmul_aligns_permuted_axes():
     x, y = sy.symbols("x y")
     left = AbelianGroup(
