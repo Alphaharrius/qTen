@@ -897,16 +897,16 @@ def plot_bandstructure(
             if k_space == bz_path.k_space:
                 plot_eigvals = eigvals_np[list(bz_path.path_order)]
             else:
-                plot_eigvals = interpolate_path_on_grid(
-                    bz_path, k_space, eigvals_np
-                )
+                plot_eigvals = interpolate_path_on_grid(bz_path, k_space, eigvals_np)
         else:
             x_vals = band_path_positions(k_space, k_cart)
             plot_eigvals = eigvals_np
 
         for b in range(plot_eigvals.shape[1]):
             fig.add_trace(
-                go.Scatter(x=x_vals, y=plot_eigvals[:, b], mode="lines", name=f"Band {b}")
+                go.Scatter(
+                    x=x_vals, y=plot_eigvals[:, b], mode="lines", name=f"Band {b}"
+                )
             )
 
     if is_surface:
@@ -931,9 +931,7 @@ def plot_bandstructure(
                 ticktext=list(bz_path.labels),
             )
             for x in wp_x:
-                fig.add_vline(
-                    x=x, line_dash="dash", line_color="gray", line_width=0.8
-                )
+                fig.add_vline(x=x, line_dash="dash", line_color="gray", line_width=0.8)
         else:
             layout_kwargs["xaxis_title"] = "k-path (1/Å)"
         fig.update_layout(**layout_kwargs)

@@ -810,9 +810,7 @@ def plot_bandstructure_mpl(
             if k_space == bz_path.k_space:
                 plot_eigvals = eigvals_np[list(bz_path.path_order)]
             else:
-                plot_eigvals = interpolate_path_on_grid(
-                    bz_path, k_space, eigvals_np
-                )
+                plot_eigvals = interpolate_path_on_grid(bz_path, k_space, eigvals_np)
         else:
             x_vals = band_path_positions(k_space, k_cart)
             plot_eigvals = eigvals_np

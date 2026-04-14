@@ -5,8 +5,16 @@ from sympy import ImmutableDenseMatrix
 
 from qten.geometries.spatials import AffineSpace, Offset
 from qten.linalg.tensors import Tensor
-from qten.pointgroups.abelian import AbelianBasis, AbelianGroup, AbelianOpr
-from qten.pointgroups.ops import abelian_column_symmetrize
+from qten.pointgroups.abelian import (
+    AbelianBasis,
+    AbelianGroup,
+    AbelianOpr,
+)
+from qten.pointgroups.ops import (
+    abelian_column_symmetrize,
+    joint_abelian_basis,
+    joint_abelian_column_symmetrize,
+)
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from qten.symbolics.ops import hilbert_opr_repr
 from qten.symbolics.state_space import IndexSpace
@@ -182,6 +190,86 @@ def test_abelian_column_symmetrize_full_sector_expands_mixed_column():
     w_sym = abelian_column_symmetrize(mirror, w, full_sector=True)
 
     assert w_sym.data.shape == (2, 2)
+
+
+def test_joint_abelian_column_symmetrize_projects_diagonal_mirrors():
+    x, y = sy.symbols("x y")
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+    mirror_45 = _opr_with_offset(
+        irrep=ImmutableDenseMatrix([[0, 1], [1, 0]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
+    )
+    mirror_135 = _opr_with_offset(
+        irrep=ImmutableDenseMatrix([[0, -1], [-1, 0]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
+    )
+
+    points = [
+        Offset(rep=ImmutableDenseMatrix([1, 0]), space=space),
+        Offset(rep=ImmutableDenseMatrix([0, 1]), space=space),
+        Offset(rep=ImmutableDenseMatrix([-1, 0]), space=space),
+        Offset(rep=ImmutableDenseMatrix([0, -1]), space=space),
+    ]
+    h = HilbertSpace.new([_state(point) for point in points])
+
+    w = Tensor(
+        data=torch.tensor([[1.0], [0.0], [0.0], [0.0]], dtype=torch.complex128),
+        dims=(h, IndexSpace.linear(1)),
+    )
+    w_sym = joint_abelian_column_symmetrize(
+        [mirror_45, mirror_135], w, full_sector=True
+    )
+
+    assert w_sym.data.shape == (4, 4)
+    labels = list(w_sym.dims[1].elements())
+    assert all(
+        isinstance(label.irrep_of(AbelianBasis), AbelianBasis) for label in labels
+    )
+
+    for opr in (mirror_45, mirror_135):
+        g_full = hilbert_opr_repr(opr, h)
+        projected_repr = w_sym.h(-2, -1) @ g_full @ w_sym
+        assert torch.allclose(
+            projected_repr.data,
+            torch.diag(torch.diagonal(projected_repr.data)),
+            atol=1e-10,
+        )
+    assert {
+        tuple(
+            sy.simplify(opr(label.irrep_of(AbelianBasis)).coef)
+            for opr in (mirror_45, mirror_135)
+        )
+        for label in labels
+    } == {
+        (sy.Integer(1), sy.Integer(1)),
+        (sy.Integer(1), sy.Integer(-1)),
+        (sy.Integer(-1), sy.Integer(1)),
+        (sy.Integer(-1), sy.Integer(-1)),
+    }
+
+
+def test_joint_abelian_basis_returns_common_diagonal_mirror_eigenfunctions():
+    x, y = sy.symbols("x y")
+    mirror_45 = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[0, 1], [1, 0]]),
+        axes=(x, y),
+    )
+    mirror_135 = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[0, -1], [-1, 0]]),
+        axes=(x, y),
+    )
+
+    common = joint_abelian_basis([mirror_45, mirror_135], order=1)
+
+    assert set(common) == {
+        (sy.Integer(1), sy.Integer(-1)),
+        (sy.Integer(-1), sy.Integer(1)),
+    }
+    assert {
+        sy.expand(bases[0].expr) for bases in common.values() if len(bases) == 1
+    } == {x + y, x - y}
 
 
 @pytest.mark.parametrize(

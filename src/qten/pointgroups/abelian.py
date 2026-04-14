@@ -42,6 +42,54 @@ class AbelianBasis(Spatial):
     order: int
     rep: sy.ImmutableDenseMatrix
 
+    @classmethod
+    def from_rep(
+        cls,
+        rep: sy.ImmutableDenseMatrix,
+        euclidean_basis: sy.ImmutableDenseMatrix,
+        axes: Tuple[sy.Symbol, ...],
+        order: int,
+    ) -> "AbelianBasis":
+        """
+        Build an `AbelianBasis` from a Euclidean representation vector.
+
+        The input `rep` is first normalized to a canonical representative by
+        dividing through its first non-zero coefficient. The normalized vector
+        is then converted into the symbolic polynomial expression in
+        `euclidean_basis` and stored as both `expr` and canonical `rep` data
+        of the resulting `AbelianBasis`.
+
+        Parameters
+        ----------
+        `rep` : `sy.ImmutableDenseMatrix`
+            Euclidean representation vector in the commuting monomial basis.
+            The vector need not already be normalized, but it must be non-zero.
+        `euclidean_basis` : `sy.ImmutableDenseMatrix`
+            Row matrix of commuting monomials spanning the Euclidean polynomial
+            basis for the given `order`.
+        `axes` : `Tuple[sy.Symbol, ...]`
+            Ordered coordinate symbols associated with the Euclidean basis.
+        `order` : `int`
+            Polynomial order of the Euclidean representation.
+
+        Returns
+        -------
+        `AbelianBasis`
+            Canonicalized abelian basis function whose stored `rep` is the
+            normalized version of the input vector and whose `expr` is the
+            corresponding symbolic polynomial.
+
+        Raises
+        ------
+        `StopIteration`
+            If `rep` is the zero vector, so there is no first non-zero
+            coefficient available for normalization.
+        """
+        principle_term = next(x for x in rep if x != 0)
+        normalized = sy.ImmutableDenseMatrix(sy.simplify(rep / principle_term))
+        expr = sy.simplify(normalized.dot(euclidean_basis))
+        return cls(expr=expr, axes=axes, order=order, rep=normalized)
+
     @property
     def dim(self):
         """Number of axes (spatial dimension) for this affine function."""
@@ -168,7 +216,7 @@ class AbelianGroup(Opr):
         return tuple(indices[n] for n, _ in sorted_rules)
 
     @lru_cache
-    def _euclidean_basis(self, order: int) -> sy.ImmutableDenseMatrix:
+    def euclidean_basis(self, order: int) -> sy.ImmutableDenseMatrix:
         """
         Return commuting Euclidean monomials spanning the polynomial basis.
 
@@ -308,12 +356,12 @@ class AbelianGroup(Opr):
         tbl = {}
         for v, _, vec_group in eig:
             vec = vec_group[0]
-            # principle term is the first non-zero term
-            principle_term = next(x for x in vec if x != 0)
-
-            rep = vec / principle_term
-            expr = sy.simplify(rep.dot(self._euclidean_basis(order)))
-            tbl[v] = AbelianBasis(expr=expr, axes=self.axes, order=order, rep=rep)
+            tbl[v] = AbelianBasis.from_rep(
+                rep=sy.ImmutableDenseMatrix(vec),
+                euclidean_basis=self.euclidean_basis(order),
+                axes=self.axes,
+                order=order,
+            )
 
         return FrozenDict(tbl)
 
