@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
-from itertools import product
+from itertools import combinations, product
 
+import numpy as np
+import sympy as sy
 from sympy import ImmutableDenseMatrix
 
 from .spatials import AffineSpace, Lattice, Offset, OffsetType
@@ -194,3 +196,96 @@ def center_of_region(region: tuple[OffsetType, ...]) -> OffsetType:
         total += point.rep
 
     return point_type(rep=ImmutableDenseMatrix(total / len(region)), space=first.space)
+
+
+def _circumcenter(points: np.ndarray) -> np.ndarray | None:
+    base = points[0]
+    linear = 2.0 * (points[1:] - base)
+    rhs = np.sum(points[1:] ** 2, axis=1) - np.sum(base**2)
+
+    if np.linalg.matrix_rank(linear) < points.shape[1]:
+        return None
+
+    return np.linalg.solve(linear, rhs)
+
+
+def interstitial_centers(region: tuple[OffsetType, ...]) -> tuple[OffsetType, ...]:
+    """
+    Return centers of locally maximal empty spheres supported by `region`.
+
+    Candidate gap points are built as circumcenters of local simplices formed
+    from nearby sites. A candidate is retained when its defining sites are
+    equidistant from the center and no input point lies strictly closer. This
+    recovers square-lattice plaquette centers and also produces non-trivial
+    void centers for lattices such as diamond.
+
+    Parameters
+    ----------
+    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+        Spatial points defining the candidate corner set. All entries must
+        share the same concrete type and affine space.
+
+    Returns
+    -------
+    `tuple[Offset, ...] | tuple[Momentum, ...]`
+        Interstitial centers, returned as the same concrete type as the inputs
+        and ordered lexicographically by point coordinates.
+
+    Raises
+    ------
+    `TypeError`
+        If region entries do not all share the same concrete type and space.
+    """
+    if len(region) == 0:
+        return ()
+
+    first = region[0]
+    point_type = type(first)
+
+    for point in region[1:]:
+        if type(point) is not point_type:
+            raise TypeError("region entries must all have the same concrete type.")
+        if point.space != first.space:
+            raise TypeError("region entries must all belong to the same space.")
+
+    if len(region) < first.dim + 1:
+        return ()
+
+    coords = np.stack([point.to_vec(np.ndarray) for point in region])
+    pairwise_distances = np.linalg.norm(coords[:, np.newaxis, :] - coords, axis=2)
+    np.fill_diagonal(pairwise_distances, np.inf)
+
+    neighborhood_size = min(len(region), max(8, 4 * first.dim + 2))
+    min_support = max(first.dim + 1, 4)
+    tolerance = 1e-7
+    centers_by_rep: dict[tuple, OffsetType] = {}
+
+    for seed_idx in range(len(region)):
+        nearest = np.argsort(pairwise_distances[seed_idx])[: neighborhood_size - 1]
+        for neighbor_indices in combinations(nearest, first.dim):
+            simplex_indices = (seed_idx, *neighbor_indices)
+            center_cart = _circumcenter(coords[list(simplex_indices)])
+            if center_cart is None:
+                continue
+
+            radius = np.linalg.norm(coords[seed_idx] - center_cart)
+            distances = np.linalg.norm(coords - center_cart, axis=1)
+            if np.any(distances < radius - tolerance):
+                continue
+
+            if (
+                np.count_nonzero(
+                    np.isclose(distances, radius, atol=tolerance, rtol=tolerance)
+                )
+                < min_support
+            ):
+                continue
+
+            center_rep = first.space.basis.inv() @ ImmutableDenseMatrix(center_cart)
+            center_rep = ImmutableDenseMatrix(
+                [sy.nsimplify(coord) for coord in center_rep]
+            )
+            center = point_type(rep=center_rep, space=first.space)
+            centers_by_rep[tuple(center.rep)] = center
+
+    return tuple(sorted(centers_by_rep.values()))

@@ -4,6 +4,7 @@ from .geometries.fourier import (
 )
 from .geometries import (
     center_of_region as center_of_region,
+    interstitial_centers as interstitial_centers,
     nearest_sites as nearest_sites,
 )
 from .symbolics import (

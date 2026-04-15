@@ -43,3 +43,8 @@ from .linalg.tensors import (
 
 from .utils.devices import Device as Device
 from .utils import io as io
+from .ops import (
+    center_of_region as center_of_region,
+    interstitial_centers as interstitial_centers,
+    nearest_sites as nearest_sites,
+)

@@ -3,7 +3,11 @@ import sympy as sy
 from sympy import ImmutableDenseMatrix
 
 from qten.geometries.boundary import PeriodicBoundary
-from qten.geometries.ops import center_of_region, nearest_sites
+from qten.geometries.ops import (
+    center_of_region,
+    interstitial_centers,
+    nearest_sites,
+)
 from qten.geometries.spatials import AffineSpace, Lattice, Momentum, Offset
 
 
@@ -156,3 +160,73 @@ def test_center_of_region_returns_momentum_mean():
 def test_center_of_region_rejects_empty_region():
     with pytest.raises(ValueError, match="region must be non-empty"):
         center_of_region(())
+
+
+def test_interstitial_centers_returns_shifted_square_lattice_centers():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5, 5)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    region = tuple(lattice.at("r", (i, j)) for i in range(3) for j in range(3))
+
+    centers = interstitial_centers(region)
+
+    assert tuple(tuple(point.rep) for point in centers) == (
+        (sy.Rational(1, 2), sy.Rational(1, 2)),
+        (sy.Rational(1, 2), sy.Rational(3, 2)),
+        (sy.Rational(3, 2), sy.Rational(1, 2)),
+        (sy.Rational(3, 2), sy.Rational(3, 2)),
+    )
+
+
+def test_interstitial_centers_skips_cells_with_missing_corners():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5, 5)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    region = (
+        lattice.at("r", (0, 0)),
+        lattice.at("r", (0, 1)),
+        lattice.at("r", (1, 0)),
+        lattice.at("r", (1, 1)),
+        lattice.at("r", (1, 2)),
+        lattice.at("r", (2, 1)),
+    )
+
+    centers = interstitial_centers(region)
+
+    assert tuple(tuple(point.rep) for point in centers) == (
+        (sy.Rational(1, 2), sy.Rational(1, 2)),
+    )
+
+
+def test_interstitial_centers_finds_nontrivial_voids_for_diamond_lattice():
+    half = sy.Rational(1, 2)
+    quarter = sy.Rational(1, 4)
+    diamond = Lattice(
+        basis=ImmutableDenseMatrix(
+            [
+                [0, half, half],
+                [half, 0, half],
+                [half, half, 0],
+            ]
+        ),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(3, 3, 3)),
+        unit_cell={
+            "A": ImmutableDenseMatrix([0, 0, 0]),
+            "B": ImmutableDenseMatrix([quarter, quarter, quarter]),
+        },
+    )
+
+    centers = interstitial_centers(diamond.cartes())
+
+    assert centers
+    assert (
+        Offset(
+            rep=ImmutableDenseMatrix([sy.Rational(1, 2)] * 3),
+            space=diamond,
+        )
+        in centers
+    )
