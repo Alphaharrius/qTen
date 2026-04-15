@@ -42,6 +42,7 @@ class AffineSpace(Spatial):
     basis: ImmutableDenseMatrix
     @property
     def dim(self) -> int: ...
+    def origin(self) -> Offset[AffineSpace]: ...
 
 @dataclass(frozen=True)
 class AbstractLattice(AffineSpace, HasDual, Generic[_O], metaclass=abc.ABCMeta):

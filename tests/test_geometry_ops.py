@@ -5,6 +5,7 @@ from sympy import ImmutableDenseMatrix
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.ops import (
     center_of_region,
+    get_strip_region_2d,
     interstitial_centers,
     nearest_sites,
     region_tile,
@@ -115,6 +116,286 @@ def test_nearest_sites_rejects_negative_counts():
 
     with pytest.raises(ValueError, match="n_nearest must be non-negative"):
         nearest_sites(lattice, lattice.at(), n_nearest=-1)
+
+
+def test_get_strip_region_2d_builds_axis_aligned_strip():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=3,
+        width_step=2,
+        side="lhs",
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+        (2, 0),
+        (2, 1),
+    )
+
+
+def test_get_strip_region_2d_trim_step_trims_the_tail():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(6, 6)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=3,
+        width_step=2,
+        trim_step=1,
+        side="lhs",
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (1, 0),
+        (1, 1),
+        (2, 0),
+        (2, 1),
+    )
+
+
+def test_get_strip_region_2d_defaults_to_rhs_side():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(6, 6)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=3,
+        width_step=2,
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (0, 0),
+        (0, 5),
+        (1, 0),
+        (1, 5),
+        (2, 0),
+        (2, 5),
+    )
+
+
+def test_get_strip_region_2d_supports_custom_origin():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=3,
+        width_step=2,
+        side="lhs",
+        origin=lattice.at("r", (2, 3)),
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (2, 3),
+        (2, 4),
+        (3, 3),
+        (3, 4),
+        (4, 3),
+        (4, 4),
+    )
+
+
+def test_get_strip_region_2d_supports_affine_origin():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    affine_origin = Offset(
+        rep=ImmutableDenseMatrix([2, 3]),
+        space=AffineSpace(ImmutableDenseMatrix.eye(2)),
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=2,
+        width_step=1,
+        side="lhs",
+        origin=affine_origin,
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (2, 3),
+        (3, 3),
+    )
+
+
+def test_get_strip_region_2d_uses_primitive_direction():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (2, 2)),
+        length_step=3,
+        width_step=2,
+        side="lhs",
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (0, 0),
+        (0, 1),
+        (1, 1),
+        (1, 2),
+        (2, 2),
+    )
+
+
+def test_get_strip_region_2d_matches_diagonal_examples():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(16, 16)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 1)),
+        length_step=3,
+        width_step=2,
+        side="lhs",
+    )
+    assert set(tuple(site.rep) for site in region) == {
+        (0, 0),
+        (1, 1),
+        (2, 2),
+        (0, 1),
+        (1, 2),
+    }
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 1)),
+        length_step=3,
+        width_step=3,
+        side="lhs",
+    )
+    assert set(tuple(site.rep) for site in region) == {
+        (0, 0),
+        (1, 1),
+        (2, 2),
+        (0, 1),
+        (1, 2),
+        (15, 1),
+        (0, 2),
+        (1, 3),
+    }
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 1)),
+        length_step=3,
+        width_step=3,
+        trim_step=1,
+        side="lhs",
+    )
+    assert set(tuple(site.rep) for site in region) == {
+        (0, 2),
+        (1, 1),
+        (2, 2),
+        (1, 2),
+        (1, 3),
+    }
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 1)),
+        length_step=3,
+        width_step=2,
+        side="rhs",
+    )
+    assert set(tuple(site.rep) for site in region) == {
+        (0, 0),
+        (1, 1),
+        (2, 2),
+        (1, 0),
+        (2, 1),
+    }
+
+
+def test_get_strip_region_2d_rejects_invalid_inputs():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    three_d_lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(3),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0, 0])},
+    )
+
+    with pytest.raises(ValueError, match="non-negative"):
+        get_strip_region_2d(lattice.at(), length_step=-1, width_step=1)
+
+    with pytest.raises(ValueError, match="trim_step must not exceed"):
+        get_strip_region_2d(
+            lattice.at("r", (1, 0)), length_step=1, width_step=1, trim_step=2
+        )
+
+    with pytest.raises(ValueError, match="non-zero"):
+        get_strip_region_2d(lattice.at(), length_step=1, width_step=1)
+
+    with pytest.raises(ValueError, match="side must be 'lhs' or 'rhs'"):
+        get_strip_region_2d(
+            lattice.at("r", (1, 0)),
+            length_step=1,
+            width_step=1,
+            side="up",  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="origin must have dimension"):
+        get_strip_region_2d(
+            lattice.at("r", (1, 0)),
+            length_step=1,
+            width_step=1,
+            origin=Offset(
+                rep=ImmutableDenseMatrix([0, 0, 0]),
+                space=AffineSpace(ImmutableDenseMatrix.eye(3)),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="only 2D lattices"):
+        get_strip_region_2d(
+            three_d_lattice.at("r", (1, 0, 0)), length_step=1, width_step=1
+        )
+
+
+def test_get_strip_region_2d_with_zero_width_keeps_only_centerline():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+
+    region = get_strip_region_2d(
+        lattice.at("r", (1, 0)),
+        length_step=3,
+        width_step=1,
+        side="lhs",
+    )
+
+    assert tuple(tuple(site.rep) for site in region) == (
+        (0, 0),
+        (1, 0),
+        (2, 0),
+    )
 
 
 def test_center_of_region_returns_offset_mean():

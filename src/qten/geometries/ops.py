@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from itertools import combinations, product
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 import sympy as sy
@@ -25,6 +25,146 @@ def _cutoff_from_sites(
             if shell_count == n_nearest:
                 return distance
     return None
+
+
+def _extended_gcd(a: int, b: int) -> tuple[int, int, int]:
+    if b == 0:
+        sign = 1 if a >= 0 else -1
+        return sign, 0, abs(a)
+
+    x1, y1, g = _extended_gcd(b, a % b)
+    return y1, x1 - (a // b) * y1, g
+
+
+def _primitive_integer_direction(
+    direction: Offset[Lattice],
+) -> tuple[Lattice, int, int]:
+    lattice = direction.space
+    if lattice.dim != 2:
+        raise ValueError(
+            f"get_strip_region_2d currently supports only 2D lattices, got dim={lattice.dim}."
+        )
+
+    if direction.rep != ImmutableDenseMatrix([sy.nsimplify(x) for x in direction.rep]):
+        raise ValueError("direction must have exact symbolic coordinates.")
+
+    coords = [sy.nsimplify(x) for x in direction.rep]
+    if any(coord.is_integer is not True for coord in coords):
+        raise ValueError(
+            "direction must be an integer lattice translation with no unit-cell fractional offset."
+        )
+
+    dx, dy = (int(coords[0]), int(coords[1]))
+    if dx == 0 and dy == 0:
+        raise ValueError("direction must be non-zero.")
+
+    g = math.gcd(abs(dx), abs(dy))
+    return lattice, dx // g, dy // g
+
+
+def _strip_direction_data(
+    direction: Offset[Lattice],
+) -> tuple[Lattice, float, float, int, int]:
+    lattice = direction.space
+    if lattice.dim != 2:
+        raise ValueError(
+            f"get_strip_region_2d currently supports only 2D lattices, got dim={lattice.dim}."
+        )
+
+    coords = [sy.nsimplify(x) for x in direction.rep]
+    if any(not coord.is_real for coord in coords):
+        raise ValueError("direction must have real coordinates.")
+    if coords[0] == 0 and coords[1] == 0:
+        raise ValueError("direction must be non-zero.")
+
+    if all(coord.is_integer is True for coord in coords):
+        _, px, py = _primitive_integer_direction(direction)
+        return lattice, float(px), float(py), px, py
+
+    if any(not coord.is_rational for coord in coords):
+        raise ValueError("direction must have exact integer or rational coordinates.")
+
+    den_lcm = 1
+    for coord in coords:
+        den_lcm = math.lcm(den_lcm, int(cast(sy.Rational, coord).q))
+
+    integer_coords = [int(cast(sy.Rational, coord) * den_lcm) for coord in coords]
+    g = math.gcd(abs(integer_coords[0]), abs(integer_coords[1]))
+    px = integer_coords[0] // g
+    py = integer_coords[1] // g
+    return lattice, float(coords[0]), float(coords[1]), px, py
+
+
+def _cluster_levels(
+    values: np.ndarray, *, atol: float = 1e-9
+) -> tuple[list[float], list[int]]:
+    if values.size == 0:
+        return [], []
+
+    order = np.argsort(values)
+    levels: list[float] = []
+    assignments = [0] * len(values)
+    current_level = float(values[order[0]])
+    current_members = [current_level]
+    current_index = 0
+    levels.append(current_level)
+    assignments[int(order[0])] = current_index
+
+    for raw_idx in order[1:]:
+        value = float(values[raw_idx])
+        if math.isclose(value, current_level, rel_tol=atol, abs_tol=atol):
+            current_members.append(value)
+            current_level = sum(current_members) / len(current_members)
+            levels[current_index] = current_level
+            assignments[int(raw_idx)] = current_index
+            continue
+
+        current_index += 1
+        current_level = value
+        current_members = [value]
+        levels.append(current_level)
+        assignments[int(raw_idx)] = current_index
+
+    return levels, assignments
+
+
+def _nearest_periodic_strip_projections(
+    lattice: Lattice,
+    sites: tuple[Offset[Lattice], ...],
+    direction_cart: np.ndarray,
+    orthogonal_cart: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    boundary_basis = np.array(lattice.boundaries.basis.tolist(), dtype=int)
+    image_shifts = [
+        boundary_basis @ np.array(shift, dtype=int)
+        for shift in product((-1, 0, 1), repeat=lattice.dim)
+    ]
+
+    longitudinal = np.empty(len(sites), dtype=float)
+    transverse = np.empty(len(sites), dtype=float)
+    for i, site in enumerate(sites):
+        base_rep = np.array(site.rep, dtype=float).reshape(-1)
+        best_key: tuple[float, float, float] | None = None
+        best_longitudinal = 0.0
+        best_transverse = 0.0
+        for shift in image_shifts:
+            image_rep = base_rep + shift
+            image_cart = np.array(lattice.basis.evalf(), dtype=float) @ image_rep
+            signed_transverse = float(image_cart @ orthogonal_cart)
+            signed_longitudinal = float(image_cart @ direction_cart)
+            key = (
+                abs(signed_transverse),
+                abs(signed_longitudinal),
+                signed_longitudinal,
+            )
+            if best_key is None or key < best_key:
+                best_key = key
+                best_longitudinal = signed_longitudinal
+                best_transverse = signed_transverse
+        longitudinal[i] = best_longitudinal
+        transverse[i] = best_transverse
+
+    return longitudinal, transverse
 
 
 def nearest_sites(
@@ -157,6 +297,141 @@ def nearest_sites(
         if distance < cutoff_distance
         or math.isclose(distance, cutoff_distance, rel_tol=1e-9, abs_tol=1e-9)
     )
+
+
+def get_strip_region_2d(
+    direction: Offset[Lattice],
+    *,
+    length_step: int,
+    width_step: int,
+    trim_step: int = 0,
+    side: Literal["lhs", "rhs"] = "rhs",
+    origin: Offset[AffineSpace] | Offset[Lattice] | None = None,
+) -> tuple[Offset[Lattice], ...]:
+    """
+    Return a 2D rectangular strip region in primitive-strip lattice coordinates.
+
+    This helper is defined only for 2D lattices.
+
+    Let `r_0` be the supplied `origin` (or the lattice origin when omitted),
+    `d` be the primitive integer version of `direction`, and let
+    `n = (-d_y, d_x)` be the integer normal. `side="lhs"` grows toward
+    positive `n` and `side="rhs"` grows toward negative `n`. A lattice site
+    belongs to the strip when some periodic image of that site satisfies
+
+    .. math::
+
+        \\mathrm{trim\\_step} \\, d \\cdot d \\le d \\cdot (r - r_0) \\le
+        (\\mathrm{length\\_step} - 1) \\, d \\cdot d
+
+    and
+
+    .. math::
+
+        0 \\le s \\, n \\cdot (r - r_0) \\le \\mathrm{width\\_step} - 1,
+
+    where `s = 1` for `"lhs"` and `s = -1` for `"rhs"`.
+
+    `width_step` counts the true transverse shell thickness including the main
+    axis row. `trim_step` is a tail trimmer only: it advances the strip start
+    along the longitudinal axis without affecting the transverse width.
+
+    Parameters
+    ----------
+    `direction` : `Offset[Lattice]`
+        Non-zero lattice translation on a 2D lattice whose primitive direction
+        defines the strip axis.
+    `length_step` : `int`
+        Number of strip shells from the origin along the primitive direction.
+    `width_step` : `int`
+        Number of transverse shell rows including the main axis row.
+    `trim_step` : `int`
+        Number of longitudinal shells trimmed from the tail near the origin.
+    `side` : `Literal["lhs", "rhs"]`
+        Side on which transverse width shells are accumulated relative to the
+        strip direction. `"lhs"` uses the positive lattice normal and `"rhs"`
+        uses the negative lattice normal.
+    `origin` : `Offset[AffineSpace] | Offset[Lattice] | None`
+        Anchor point for the strip coordinates. If omitted, the zero offset in
+        the lattice space is used. When provided, it is rebased into the
+        lattice before evaluating strip membership.
+
+    Returns
+    -------
+    `tuple[Offset[Lattice], ...]`
+        Deduplicated lattice sites in the strip, ordered by the lattice-site
+        ordering.
+
+    Raises
+    ------
+    `ValueError`
+        If the direction is invalid, the lattice is not 2D, or any step count
+        is out of range.
+    """
+    if length_step < 0:
+        raise ValueError(f"length_step must be non-negative, got {length_step}.")
+    if width_step < 0:
+        raise ValueError(f"width_step must be non-negative, got {width_step}.")
+    if trim_step < 0:
+        raise ValueError(f"trim_step must be non-negative, got {trim_step}.")
+    if trim_step > length_step:
+        raise ValueError(
+            f"trim_step must not exceed length_step, got {trim_step} and {length_step}."
+        )
+    if side not in ("lhs", "rhs"):
+        raise ValueError(f"side must be 'lhs' or 'rhs', got {side!r}.")
+    if length_step == 0 or width_step == 0:
+        return ()
+
+    lattice, dx, dy, px, py = _strip_direction_data(direction)
+    if origin is None:
+        origin = lattice.origin()
+    if origin.dim != lattice.dim:
+        raise ValueError(
+            f"origin must have dimension {lattice.dim} to match the lattice, got {origin.dim}."
+        )
+    origin_rep = np.array(origin.rebase(lattice).rep, dtype=float).reshape(-1)
+    all_sites = lattice.cartes()
+    if len(all_sites) == 0:
+        return ()
+
+    normal_x = -py
+    normal_y = px
+    normal_sign = 1 if side == "lhs" else -1
+    longitudinal_min = trim_step * (dx * dx + dy * dy)
+    longitudinal_max = (length_step - 1) * (dx * dx + dy * dy)
+    transverse_min = 0
+    transverse_max = width_step - 1
+
+    boundary_basis = np.array(lattice.boundaries.basis.tolist(), dtype=int)
+    image_shifts = [
+        boundary_basis @ np.array(shift, dtype=int)
+        for shift in product((-1, 0, 1), repeat=lattice.dim)
+    ]
+
+    region: list[Offset[Lattice]] = []
+    for site in all_sites:
+        base_rep = np.array(site.rep, dtype=float).reshape(-1)
+        include = False
+        for shift in image_shifts:
+            image_rep = base_rep + shift
+            relative_rep = image_rep - origin_rep
+            along = dx * relative_rep[0] + dy * relative_rep[1]
+            across = normal_sign * (
+                normal_x * relative_rep[0] + normal_y * relative_rep[1]
+            )
+            if (
+                along >= longitudinal_min - 1e-9
+                and along <= longitudinal_max + 1e-9
+                and across >= transverse_min - 1e-9
+                and across <= transverse_max + 1e-9
+            ):
+                include = True
+                break
+        if include:
+            region.append(site)
+
+    return tuple(sorted(region))
 
 
 def center_of_region(region: tuple[OffsetType, ...]) -> OffsetType:
