@@ -446,6 +446,50 @@ def test_plot_structure_highlights_use_pointcloud_name_for_legend():
     assert fig.data[-1].name == "Edge Sites"
 
 
+def test_plot_structure_hover_can_use_lattice_coords():
+    basis = sy.ImmutableDenseMatrix([[2, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 1)),
+        unit_cell=OrderedDict(
+            [
+                ("a", sy.ImmutableDenseMatrix([0, 0])),
+                ("b", sy.ImmutableDenseMatrix([sy.Rational(1, 2), 0])),
+            ]
+        ),
+    )
+
+    fig = lattice.plot("structure", show=False, use_lattice_coords=True)
+
+    assert isinstance(fig, go.Figure)
+    basis_b_trace = next(trace for trace in fig.data if trace.name == "Basis 1")
+    assert basis_b_trace.hovertemplate == "%{text}<extra></extra>"
+    assert "(1/2, 0)" == basis_b_trace.text[0]
+
+
+def test_pointcloud_scatter_hover_can_use_lattice_coords():
+    basis = sy.ImmutableDenseMatrix([[2, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+    cloud = PointCloud.of(
+        [
+            Offset(
+                rep=sy.ImmutableDenseMatrix([sy.Rational(1, 2), 0]),
+                space=lattice.affine,
+            )
+        ]
+    )
+
+    fig = cloud.plot("scatter", show=False, use_lattice_coords=True)
+
+    assert isinstance(fig, go.Figure)
+    assert fig.data[0].hovertemplate == "%{text}<extra></extra>"
+    assert "(1/2, 0)" == fig.data[0].text[0]
+
+
 def test_pointcloud_scatter_matplotlib_interprets_size_as_linear_extent():
     import matplotlib
 
@@ -467,6 +511,41 @@ def test_pointcloud_scatter_matplotlib_interprets_size_as_linear_extent():
     collection = ax.collections[0]
 
     assert collection.get_sizes().tolist() == [25]
+
+
+def test_plot_column_scatter_hover_can_use_lattice_coords():
+    basis = sy.ImmutableDenseMatrix([[2, 0], [0, 1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(sy.ImmutableDenseMatrix.diag(2, 2)),
+        unit_cell={"r": sy.ImmutableDenseMatrix([0, 0])},
+    )
+
+    row_space = HilbertSpace.new(
+        [
+            U1Basis.new(
+                Offset(
+                    rep=sy.ImmutableDenseMatrix([[sy.Rational(1, 2)], [0]]),
+                    space=lattice.affine,
+                )
+            ),
+            U1Basis.new(
+                Offset(rep=sy.ImmutableDenseMatrix([[1], [0]]), space=lattice.affine)
+            ),
+        ]
+    )
+    col_space = IndexSpace.linear(1)
+    tensor = Tensor(
+        data=torch.tensor([[1.0 + 0.0j], [0.5 + 0.5j]], dtype=torch.complex128),
+        dims=(row_space, col_space),
+    )
+
+    fig = tensor.plot("column_scatter", show=False, use_lattice_coords=True)
+
+    assert isinstance(fig, go.Figure)
+    assert fig.data[0].hovertemplate == "%{text}<extra></extra>"
+    assert "|value|=1" in fig.data[0].text[0]
+    assert "(1/2, 0)" in fig.data[0].text[0]
 
 
 def test_bandstructure_plot():

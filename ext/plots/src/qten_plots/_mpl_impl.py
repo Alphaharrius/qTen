@@ -65,6 +65,7 @@ def plot_structure_mpl(
     ax: Optional[Any] = None,
     color_by: str = "basis",
     highlights: Sequence[PointCloud] | None = None,
+    use_lattice_coords: bool = False,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -259,6 +260,7 @@ def plot_pointcloud_mpl(
     obj: PointCloud,
     ax: Optional[Any] = None,
     save_path: Optional[str] = None,
+    use_lattice_coords: bool = False,
     **kwargs,
 ) -> plt.Figure:
     coords = _pointcloud_coords(obj)
@@ -607,6 +609,7 @@ def plot_tensor_column_scatter_mpl(
     save_path: Optional[str] = None,
     default_size: float = 16.0,
     ncols: int = 3,
+    use_lattice_coords: bool = False,
     **kwargs,
 ) -> plt.Figure:
     if obj.rank() != 2:
