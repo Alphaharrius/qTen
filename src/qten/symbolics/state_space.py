@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace, field
-from typing import Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self, cast
+from typing import Any, Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self, cast
 from typing_extensions import override
 from collections import OrderedDict
 from collections.abc import Iterator, Sequence
@@ -189,6 +189,26 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
             new_structure[new_k] = s
         return replace(self, structure=restructure(new_structure))
 
+    def filter(self, pred: Callable[[T], bool]) -> "Self":
+        """
+        Return the subspace containing elements where `pred(element)` is `True`.
+
+        Parameters
+        ----------
+        `pred` : `Callable[[T], bool]`
+            Predicate applied to each element in basis order.
+
+        Returns
+        -------
+        `Self`
+            A new state space of the same concrete type containing only the
+            selected elements, with indices repacked contiguously.
+        """
+        new_structure = OrderedDict(
+            (k, s) for k, s in self.structure.items() if pred(k)
+        )
+        return replace(self, structure=restructure(new_structure))
+
     def tensor_product(self, other: Self) -> Self:
         """
         Return the tensor product of this state space with another.
@@ -204,6 +224,18 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
             A new state space representing the tensor product of the two.
         """
         raise NotImplementedError(f"Tensor product not implemented for {type(self)}!")
+
+    @multimethod
+    def extract(self, info_type: type[Any]) -> Any:
+        """
+        Extract an object implied by the elements of this state space.
+
+        Subclasses may register specialized implementations for supported
+        target types.
+        """
+        raise NotImplementedError(
+            f"Extraction of {info_type} from {type(self)} is not supported!"
+        )
 
 
 @StateSpace.add_conversion(StateSpace)
@@ -396,6 +428,18 @@ def momentum_to_momentumspace(k: Momentum) -> StateSpace:
 Momentum.add_conversion(MomentumSpace)(
     cast(Callable[[Momentum], MomentumSpace], momentum_to_momentumspace)
 )
+
+
+@StateSpace.extract.register
+def _(space: MomentumSpace, _: type[ReciprocalLattice]) -> ReciprocalLattice:
+    if not space.elements():
+        raise ValueError("MomentumSpace is empty")
+
+    reciprocal_lattices = {k.space for k in space}
+    if len(reciprocal_lattices) != 1:
+        raise ValueError("MomentumSpace does not have a unique ReciprocalLattice")
+
+    return reciprocal_lattices.pop()
 
 
 @lru_cache

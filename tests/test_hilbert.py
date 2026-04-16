@@ -6,7 +6,7 @@ from sympy import ImmutableDenseMatrix
 from qten.symbolics.hilbert_space import U1Basis, U1Span, HilbertSpace
 from qten.symbolics.ops import region_hilbert
 from qten.symbolics.state_space import MomentumSpace, brillouin_zone
-from qten.geometries.spatials import Lattice, Offset
+from qten.geometries.spatials import Lattice, Offset, Momentum, ReciprocalLattice
 from qten.utils.collections_ext import FrozenDict
 from qten.geometries.boundary import PeriodicBoundary
 
@@ -186,6 +186,33 @@ def test_hilbert_space_group_by_returns_tuple_of_hilbertspace():
     assert tuple(groups[0].elements()) == (s0, s2)
     assert tuple(groups[1].elements()) == (p1,)
     assert tuple(groups[2].elements()) == (d3,)
+
+
+def test_hilbert_space_filter_returns_predicate_selected_subspace():
+    basis = ImmutableDenseMatrix([[1]])
+    lat = _lattice(basis, (4,))
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat.affine)
+    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat.affine)
+    r2 = Offset(rep=ImmutableDenseMatrix([2]), space=lat.affine)
+    hs = HilbertSpace.new([_state(r0, "s"), _state(r1, "p"), _state(r2, "s")])
+
+    filtered = hs.filter(lambda el: el.irrep_of(Orb) == Orb("s"))
+
+    assert isinstance(filtered, HilbertSpace)
+    assert tuple(filtered.elements()) == (_state(r0, "s"), _state(r2, "s"))
+    assert tuple(filtered.structure.values()) == (0, 1)
+
+
+def test_momentum_space_filter_preserves_type_and_order():
+    basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
+    lat = _lattice(basis, (2, 2))
+    ms = brillouin_zone(lat.dual)
+
+    filtered = ms.filter(lambda k: tuple(k.rep)[:1] == (sy.Integer(0),))
+
+    assert isinstance(filtered, MomentumSpace)
+    assert tuple(filtered.elements()) == tuple(k for k in ms if k.rep[0, 0] == 0)
+    assert tuple(filtered.structure.values()) == tuple(range(filtered.dim))
 
 
 def test_hilbert_space_irrep_of_returns_irrep_tuple():
@@ -381,9 +408,31 @@ def test_momentum_space_brillouin():
     ms = brillouin_zone(recip)
     assert isinstance(ms, MomentumSpace)
     assert ms.dim == 4
+    assert ms.extract(ReciprocalLattice) is recip
 
     assert str(ms) == "MomentumSpace(4)"
     assert "MomentumSpace(4):" in repr(ms)
+
+
+def test_momentum_space_extract_reciprocal_lattice_rejects_empty_space():
+    ms = MomentumSpace(structure={})
+
+    with pytest.raises(ValueError, match="MomentumSpace is empty"):
+        ms.extract(ReciprocalLattice)
+
+
+def test_momentum_space_extract_reciprocal_lattice_requires_uniqueness():
+    basis = ImmutableDenseMatrix([[1]])
+    lat_a = _lattice(basis, (2,))
+    lat_b = _lattice(basis, (3,))
+    k0 = Momentum(rep=ImmutableDenseMatrix([0]), space=lat_a.dual)
+    k1 = Momentum(rep=ImmutableDenseMatrix([0]), space=lat_b.dual)
+    ms = MomentumSpace(structure={k0: 0, k1: 1})
+
+    with pytest.raises(
+        ValueError, match="MomentumSpace does not have a unique ReciprocalLattice"
+    ):
+        ms.extract(ReciprocalLattice)
 
 
 def test_statespace_type_errors():
