@@ -5,3 +5,6 @@ from .abelian import (
     AbelianGroup as AbelianGroup,
     AbelianOpr as AbelianOpr,
 )
+from .ops import (
+    joint_abelian_basis as joint_abelian_basis,
+)

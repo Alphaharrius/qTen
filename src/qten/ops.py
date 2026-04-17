@@ -10,5 +10,9 @@ from .symbolics import (
     hilbert_opr_repr as hilbert_opr_repr,
     interpolate_reciprocal_path as interpolate_reciprocal_path,
 )
-from .pointgroups.ops import abelian_column_symmetrize as abelian_column_symmetrize
 from .bands import interpolate_path as interpolate_path
+from .pointgroups.ops import (
+    abelian_column_symmetrize as abelian_column_symmetrize,
+    joint_abelian_basis as joint_abelian_basis,
+    joint_abelian_column_symmetrize as joint_abelian_column_symmetrize,
+)

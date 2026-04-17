@@ -199,6 +199,140 @@ def test_affine_group_rebase_conjugates_irrep_for_nontrivial_basis_change():
     assert new_t.g.irrep == ImmutableDenseMatrix(expected)
 
 
+def test_abelian_group_matmul_returns_composed_group():
+    x, y = sy.symbols("x y")
+    left = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
+        axes=(x, y),
+    )
+    right = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[1, 1], [0, 1]]),
+        axes=(x, y),
+    )
+
+    composed = left @ right
+
+    assert isinstance(composed, AbelianGroup)
+    assert composed.axes == (x, y)
+    assert composed.irrep == ImmutableDenseMatrix(left.irrep @ right.irrep)
+
+
+def test_abelian_group_inv_returns_exact_inverse_in_same_axes():
+    x, y = sy.symbols("x y")
+    g = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
+        axes=(x, y),
+    )
+
+    g_inv = g.inv()
+
+    assert isinstance(g_inv, AbelianGroup)
+    assert g_inv.axes == (x, y)
+    assert g_inv.irrep == ImmutableDenseMatrix([[1, -1], [-1, 2]])
+
+
+def test_abelian_group_inv_composes_to_identity():
+    x, y = sy.symbols("x y")
+    g = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
+        axes=(x, y),
+    )
+
+    ident = ImmutableDenseMatrix.eye(2)
+    assert (g @ g.inv()).axes == (x, y)
+    assert (g @ g.inv()).irrep == ident
+    assert (g.inv() @ g).axes == (x, y)
+    assert (g.inv() @ g).irrep == ident
+
+
+def test_abelian_group_matmul_aligns_permuted_axes():
+    x, y = sy.symbols("x y")
+    left = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 1], [3, 4]]),
+        axes=(x, y),
+    )
+    right = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[5, 6], [7, 8]]),
+        axes=(y, x),
+    )
+
+    composed = left @ right
+
+    right_aligned = ImmutableDenseMatrix([[8, 7], [6, 5]])
+    assert composed.axes == (x, y)
+    assert composed.irrep == ImmutableDenseMatrix(left.irrep @ right_aligned)
+
+    fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+
+    assert composed.euclidean_repr(1) @ fx.rep == ImmutableDenseMatrix([[22], [48]])
+    assert composed.euclidean_repr(1) @ fy.rep == ImmutableDenseMatrix([[19], [41]])
+
+
+def test_abelian_group_matmul_extends_missing_axes_with_identity():
+    x, y, z = sy.symbols("x y z")
+    left = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[2, 3], [5, 7]]),
+        axes=(x, y),
+    )
+    right = AbelianGroup(
+        irrep=ImmutableDenseMatrix([[11, 13], [17, 19]]),
+        axes=(y, z),
+    )
+
+    composed = left @ right
+
+    left_embedded = ImmutableDenseMatrix([[2, 3, 0], [5, 7, 0], [0, 0, 1]])
+    right_embedded = ImmutableDenseMatrix([[1, 0, 0], [0, 11, 13], [0, 17, 19]])
+    assert composed.axes == (x, y, z)
+    assert composed.irrep == ImmutableDenseMatrix(left_embedded @ right_embedded)
+
+    fx = AbelianBasis(
+        expr=x,
+        axes=(x, y, z),
+        order=1,
+        rep=ImmutableDenseMatrix([1, 0, 0]),
+    )
+    fy = AbelianBasis(
+        expr=y,
+        axes=(x, y, z),
+        order=1,
+        rep=ImmutableDenseMatrix([0, 1, 0]),
+    )
+    fz = AbelianBasis(
+        expr=z,
+        axes=(x, y, z),
+        order=1,
+        rep=ImmutableDenseMatrix([0, 0, 1]),
+    )
+
+    expected_fx = left_embedded @ (right_embedded @ fx.rep)
+    expected_fy = left_embedded @ (right_embedded @ fy.rep)
+    expected_fz = left_embedded @ (right_embedded @ fz.rep)
+
+    assert composed.euclidean_repr(1) @ fx.rep == expected_fx
+    assert composed.euclidean_repr(1) @ fy.rep == expected_fy
+    assert composed.euclidean_repr(1) @ fz.rep == expected_fz
+    assert expected_fx == ImmutableDenseMatrix([[2], [5], [0]])
+    assert expected_fy == ImmutableDenseMatrix([[33], [77], [17]])
+    assert expected_fz == ImmutableDenseMatrix([[39], [91], [19]])
+
+
+def test_abelian_group_matmul_rejects_duplicate_axes():
+    x, y = sy.symbols("x y")
+    left = AbelianGroup(
+        irrep=ImmutableDenseMatrix.eye(2),
+        axes=(x, x),
+    )
+    right = AbelianGroup(
+        irrep=ImmutableDenseMatrix.eye(2),
+        axes=(x, y),
+    )
+
+    with pytest.raises(ValueError, match="axes must be unique"):
+        _ = left @ right
+
+
 def test_affine_group_basis_keys_match_eigenvalues():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
