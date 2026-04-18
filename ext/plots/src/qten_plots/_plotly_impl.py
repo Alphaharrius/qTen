@@ -251,25 +251,23 @@ def plot_structure(
                 scatter_kw["marker"]["symbol"] = "circle"
             fig.add_trace(_Scatter(**scatter_kw))
 
-    else:  # color_by == "unit_cell" — single trace to avoid O(num_cells) trace overhead
-        color_per_site = np.empty(coords.shape[0], dtype=object)
+    else:  # color_by == "unit_cell"
         for c in range(num_cells):
-            color_per_site[c * num_basis : (c + 1) * num_basis] = basis_colors[c]
-
-        scatter_kw = dict(
-            x=x,
-            y=y,
-            mode="markers",
-            marker=dict(size=marker_size, color=color_per_site.tolist()),
-            name="Sites",
-            text=hovertext,
-            hovertemplate="%{text}<extra></extra>",
-        )
-        if is_3d:
-            scatter_kw["z"] = z
-        else:
-            scatter_kw["marker"]["symbol"] = "circle"  # type: ignore[index]
-        fig.add_trace(_Scatter(**scatter_kw))
+            idx = np.arange(c * num_basis, (c + 1) * num_basis)
+            scatter_kw: dict = dict(
+                x=x[idx],
+                y=y[idx],
+                mode="markers",
+                marker=dict(size=marker_size, color=basis_colors[c]),
+                name=f"Cell {c}",
+                text=[hovertext[i] for i in idx],
+                hovertemplate="%{text}<extra></extra>",
+            )
+            if is_3d:
+                scatter_kw["z"] = z[idx]  # type: ignore[index]
+            else:
+                scatter_kw["marker"]["symbol"] = "circle"
+            fig.add_trace(_Scatter(**scatter_kw))
 
     # Spins (Optional)
     if spin_data is not None:
