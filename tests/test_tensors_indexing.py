@@ -580,10 +580,10 @@ class TestTensorAdvancedGetitem:
             dims=(src,),
         )
         out = tensor[mask]
-        
+
         expected = data[mask.data]
         expected_space = src[[0, 2, 4]]
-        
+
         assert isinstance(out, Tensor)
         assert torch.equal(out.data, expected)
         assert out.dims == (expected_space,)
@@ -593,18 +593,18 @@ class TestTensorAdvancedGetitem:
         col = IndexSpace.linear(4)
         data = torch.arange(12, dtype=torch.float64).reshape(3, 4)
         tensor = Tensor(data=data, dims=(row, col))
-        
+
         mask_data = torch.zeros(3, 4, dtype=torch.bool)
         mask_data[0, 1] = True
         mask_data[1, 3] = True
         mask_data[2, 0] = True
-        
+
         mask = Tensor(data=mask_data, dims=(row, col))
         out = tensor[mask]
-        
+
         expected = data[mask_data]
         expected_space = IndexSpace.linear(3)
-        
+
         assert isinstance(out, Tensor)
         assert torch.equal(out.data, expected)
         assert out.dims == (expected_space,)
@@ -615,15 +615,15 @@ class TestTensorAdvancedGetitem:
         c = IndexSpace.linear(4)
         data = torch.arange(24, dtype=torch.float64).reshape(2, 3, 4)
         tensor = Tensor(data=data, dims=(a, b, c))
-        
+
         mask_data = torch.zeros(3, 4, dtype=torch.bool)
         mask_data[0, 1] = True
         mask_data[1, 3] = True
         mask = Tensor(data=mask_data, dims=(b, c))
-        
+
         out = tensor[:, mask]
         expected = data[:, mask_data]
-        
+
         assert isinstance(out, Tensor)
         assert torch.equal(out.data, expected)
         assert out.dims == (a, IndexSpace.linear(2))

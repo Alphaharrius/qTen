@@ -3573,7 +3573,9 @@ class TensorIndexing:
         entries: list[Tuple[TensorIndexType, Tuple[StateSpace, ...], TorchIndexType]],
     ) -> Tuple[StateSpace, ...]:
         tensor_positions = [
-            i for i, (idx, _, _) in enumerate(entries) if isinstance(idx, Tensor) and idx.data.dtype != torch.bool
+            i
+            for i, (idx, _, _) in enumerate(entries)
+            if isinstance(idx, Tensor) and idx.data.dtype != torch.bool
         ]
         if len(tensor_positions) == 0:
             return tuple(dim for _, dims, _ in entries for dim in dims)
