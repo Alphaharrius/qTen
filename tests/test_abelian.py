@@ -891,7 +891,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
         basis_function_order=1,
     )
 
-    tensor_out = bandtransform(c4, tensor_in, opt="both")
+    tensor_out = bandtransform(c4, tensor_in)
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
 
     assert torch.allclose(tensor_out.data, tensor_in.data)
@@ -958,7 +958,7 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
     )
     tensor_ref = cast(Tensor, (left_ref @ tensor_in @ right_ref.h(-2, -1)))
 
-    tensor_out = bandtransform(c4, tensor_in, opt="both")
+    tensor_out = bandtransform(c4, tensor_in)
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
     tensor_ref = tensor_ref.align(0, k_space).align(1, h_space).align(2, h_space)
 
@@ -1006,7 +1006,7 @@ def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
 
     out = tensor_in
     for _ in range(4):
-        out = bandtransform(c4, out, opt="both")
+        out = bandtransform(c4, out)
 
     out = out.align(0, k_space).align(1, h_space).align(2, h_space)
     assert torch.allclose(out.data, tensor_in.data)

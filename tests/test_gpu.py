@@ -305,7 +305,7 @@ def test_bandfold_device(device):
     T = BasisTransform(M=ImmutableDenseMatrix([[2]]))
 
     # Run bandfold, it should operate completely on device
-    H_folded = bandfold(T, H, opt="both")
+    H_folded = bandfold(T, H)
 
     # Assert output device matches input device
     assert H_folded.device == device
