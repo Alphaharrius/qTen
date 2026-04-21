@@ -164,7 +164,9 @@ def test_bandunfold_handles_fractional_sector_collisions():
     assert unfolded.dims[0].dim == tensor_in.dims[0].dim
     assert unfolded.dims[1].dim == tensor_in.dims[1].dim
     assert unfolded.dims[2].dim == tensor_in.dims[2].dim
-    assert torch.allclose(unfolded.data, tensor_in.data.to(unfolded.data.dtype), atol=1e-10)
+    assert torch.allclose(
+        unfolded.data, tensor_in.data.to(unfolded.data.dtype), atol=1e-10
+    )
 
 
 def test_affine_space_transform():

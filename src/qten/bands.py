@@ -467,7 +467,6 @@ def bandfold(
 def bandunfold(
     transform: BasisTransform,
     tensor: Tensor,
-    opt: Literal["both", "left", "right"] = "both",
 ) -> Tensor:
     """
     Unfold a folded momentum-resolved band tensor back to a primitive cell.
@@ -479,12 +478,7 @@ def bandunfold(
     primitive Brillouin zone and recovers a tensor with dimensions
     `(K_primitive, B_primitive, B_primitive)`.
 
-    As with `bandfold`, `opt` selects which Hilbert-space leg is used to infer
-    the folded supercell basis (`"left"` uses axis 1, `"right"` and `"both"`
-    use axis 2).
     """
-    if opt not in ("both", "left", "right"):
-        raise ValueError(f"Invalid option {opt} for bandunfold!")
     if tensor.rank() != 3:
         raise ValueError(
             f"Input tensor must be of rank 3, but has rank {tensor.rank()}"
@@ -537,17 +531,12 @@ def bandunfold(
     primitive_reciprocal_lattice = primitive_lattice.dual
     primitive_k_space = brillouin_zone(primitive_reciprocal_lattice)
 
-    switch_index = -2 if opt == "left" else -1
-    target_space = tensor.dims[switch_index]
-    if not isinstance(target_space, HilbertSpace):
-        raise TypeError(
-            f"Dimension at index {switch_index} must be a HilbertSpace, "
-            f"but got {type(target_space)}"
-        )
-    folded_hilbert = cast(HilbertSpace, target_space)
+    folded_hilbert = cast(HilbertSpace, tensor.dims[2])
 
     rebased_hilbert = HilbertSpace.new(
-        cast(U1Basis, psi).replace(cast(U1Basis, psi).irrep_of(Offset).rebase(primitive_lattice))
+        cast(U1Basis, psi).replace(
+            cast(U1Basis, psi).irrep_of(Offset).rebase(primitive_lattice)
+        )
         for psi in folded_hilbert
     )
 
@@ -565,7 +554,9 @@ def bandunfold(
     primitive_basis_np = np.array(
         primitive_reciprocal_lattice.basis.evalf(), dtype=precision.np_float
     )
-    folded_basis_np = np.array(folded_reciprocal_lattice.basis.evalf(), dtype=precision.np_float)
+    folded_basis_np = np.array(
+        folded_reciprocal_lattice.basis.evalf(), dtype=precision.np_float
+    )
     M_rebase = np.linalg.solve(folded_basis_np, primitive_basis_np)
     k_indices = _momentum_match_indices(
         primitive_k_space, k_space, M_rebase, device=tensor.device
