@@ -10,10 +10,10 @@ import torch
 
 from .geometries import (
     BasisTransform,
+    InverseBasisTransform,
     Lattice,
     Momentum,
     Offset,
-    PeriodicBoundary,
     ReciprocalLattice,
 )
 from .geometries.fourier import fourier_transform
@@ -137,21 +137,38 @@ def _momentum_match_indices(
     )
     D = abs(int(round(np.linalg.det(boundary_np))))
     mapped_scaled = np.rint(mapped_wrapped * D).astype(np.int64) % D
+    dest_items = list(dest.structure.items())
+    dest_coords = np.array(
+        [
+            [int(round(float(k.rep[j, 0]) * D)) % D for j in range(dim)]
+            for k, _ in dest_items
+        ],
+        dtype=np.int64,
+    )
+    dest_indices = np.array([idx for _, idx in dest_items], dtype=np.int64)
 
-    lookup: Dict[Tuple[int, ...], int] = {}
-    for k, idx in dest.structure.items():
-        gcoord = tuple(int(round(float(k.rep[j, 0]) * D)) % D for j in range(dim))
-        lookup[gcoord] = idx
+    def _row_keys(arr: np.ndarray) -> np.ndarray:
+        arr_c = np.ascontiguousarray(arr)
+        return arr_c.view(np.dtype((np.void, arr_c.dtype.itemsize * arr_c.shape[1])))
 
-    indices: list[int] = []
-    for i in range(mapped_scaled.shape[0]):
-        gcoord = tuple(int(mapped_scaled[i, j]) for j in range(dim))
-        if gcoord not in lookup:
-            raise ValueError(
-                f"Source momentum maps to scaled coord {gcoord} (D={D}), "
-                f"not in destination BZ."
-            )
-        indices.append(lookup[gcoord])
+    src_keys = _row_keys(mapped_scaled).reshape(-1)
+    dest_keys = _row_keys(dest_coords).reshape(-1)
+    order = np.argsort(dest_keys)
+    sorted_dest_keys = dest_keys[order]
+
+    pos = np.searchsorted(sorted_dest_keys, src_keys)
+    in_range = pos < sorted_dest_keys.size
+    matched = np.zeros_like(in_range, dtype=bool)
+    matched[in_range] = sorted_dest_keys[pos[in_range]] == src_keys[in_range]
+    if not np.all(matched):
+        bad_idx = int(np.flatnonzero(~matched)[0])
+        gcoord = tuple(int(x) for x in mapped_scaled[bad_idx])
+        raise ValueError(
+            f"Source momentum maps to scaled coord {gcoord} (D={D}), "
+            f"not in destination BZ."
+        )
+
+    indices = dest_indices[order[pos]]
 
     torch_device = device.torch_device() if device is not None else None
     return Tensor(
@@ -463,22 +480,25 @@ def bandfold(
     return transformed
 
 
-# TODO: add bandunfold function
 def bandunfold(
-    transform: BasisTransform,
+    inverse_transform: InverseBasisTransform,
     tensor: Tensor,
 ) -> Tensor:
     """
-    Unfold a folded momentum-resolved band tensor back to a primitive cell.
+    Unfold a folded momentum-resolved band tensor using an inverse basis transform.
 
-    This function is the inverse-style counterpart of `bandfold` for operator
-    tensors. The input is expected to have dimensions
-    `(MomentumSpace, HilbertSpace, HilbertSpace)` where the momentum axis lives
-    on a transformed (folded) Brillouin zone. The function reconstructs the
-    primitive Brillouin zone and recovers a tensor with dimensions
-    `(K_primitive, B_primitive, B_primitive)`.
+    The input is expected to have dimensions `(MomentumSpace, HilbertSpace,
+    HilbertSpace)` where the momentum axis lives on a transformed (folded)
+    Brillouin zone. The inverse transform maps that folded lattice back to the
+    primitive one and recovers dimensions `(K_primitive, B_primitive,
+    B_primitive)`.
 
     """
+    if not isinstance(inverse_transform, InverseBasisTransform):
+        raise TypeError(
+            "bandunfold requires InverseBasisTransform, "
+            f"but got {type(inverse_transform)}"
+        )
     if tensor.rank() != 3:
         raise ValueError(
             f"Input tensor must be of rank 3, but has rank {tensor.rank()}"
@@ -514,37 +534,24 @@ def bandunfold(
     folded_reciprocal_lattice = cast(ReciprocalLattice, folded_reciprocal_lattice)
     folded_lattice = folded_reciprocal_lattice.dual
 
-    # Reconstruct the primitive lattice by inverting the basis update:
-    # folded_basis = primitive_basis @ M.
-    primitive_basis = ImmutableDenseMatrix(folded_lattice.basis @ transform.M.inv())
-    primitive_boundary_basis = transform.M @ folded_lattice.boundaries.basis
-    if any(not sy.cancel(x).is_integer for x in primitive_boundary_basis):
-        raise ValueError(
-            "Unfolded boundary basis must remain integral for PeriodicBoundary."
-        )
-    primitive_lattice = Lattice(
-        basis=primitive_basis,
-        boundaries=PeriodicBoundary(
-            ImmutableDenseMatrix(primitive_boundary_basis.applyfunc(int))
-        ),
-    )
-    primitive_reciprocal_lattice = primitive_lattice.dual
-    primitive_k_space = brillouin_zone(primitive_reciprocal_lattice)
+    primitive_lattice = cast(Lattice, inverse_transform(folded_lattice))
 
     folded_hilbert = cast(HilbertSpace, tensor.dims[2])
 
-    rebased_hilbert = HilbertSpace.new(
-        cast(U1Basis, psi).replace(
-            cast(U1Basis, psi).irrep_of(Offset).rebase(primitive_lattice)
+    primitive_reciprocal_lattice = primitive_lattice.dual
+    primitive_k_space = brillouin_zone(primitive_reciprocal_lattice)
+
+    rebased_states = []
+    for psi in folded_hilbert:
+        u1_psi = cast(U1Basis, psi)
+        rebased_states.append(
+            u1_psi.replace(u1_psi.irrep_of(Offset).rebase(primitive_lattice))
         )
-        for psi in folded_hilbert
-    )
+    rebased_hilbert = HilbertSpace.new(rebased_states)
 
     primitive_states: "OrderedDict[U1Basis, int]" = OrderedDict()
-    for psi in rebased_hilbert:
-        primitive_state = cast(U1Basis, psi).replace(
-            cast(U1Basis, psi).irrep_of(Offset).fractional()
-        )
+    for psi in rebased_states:
+        primitive_state = psi.replace(psi.irrep_of(Offset).fractional())
         if primitive_state not in primitive_states:
             primitive_states[primitive_state] = len(primitive_states)
     primitive_hilbert = HilbertSpace(structure=primitive_states)

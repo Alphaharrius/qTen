@@ -14,7 +14,7 @@ from qten.geometries.spatials import (
 from qten.symbolics.state_space import brillouin_zone
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
 from qten.linalg.tensors import Tensor
-from qten.geometries.basis_transform import BasisTransform
+from qten.geometries.basis_transform import BasisTransform, InverseBasisTransform
 from qten.bands import bandfold, bandunfold
 from qten.geometries.boundary import PeriodicBoundary
 
@@ -159,7 +159,7 @@ def test_bandunfold_handles_fractional_sector_collisions():
     transform = BasisTransform(ImmutableDenseMatrix([[2]]))
 
     folded = bandfold(transform, tensor_in)
-    unfolded = bandunfold(transform, folded)
+    unfolded = bandunfold(InverseBasisTransform(transform.M), folded)
 
     assert unfolded.dims[0].dim == tensor_in.dims[0].dim
     assert unfolded.dims[1].dim == tensor_in.dims[1].dim
@@ -167,6 +167,92 @@ def test_bandunfold_handles_fractional_sector_collisions():
     assert torch.allclose(
         unfolded.data, tensor_in.data.to(unfolded.data.dtype), atol=1e-10
     )
+
+
+def test_bandunfold_preserves_primitive_unit_cell_metadata():
+    basis = ImmutableDenseMatrix([[1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={
+            "a": ImmutableDenseMatrix([0]),
+            "b": ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        },
+    )
+    k_space = brillouin_zone(lattice.dual)
+    h_space = HilbertSpace.new(
+        [
+            _mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice), "a"),
+            _mode(
+                Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lattice),
+                "b",
+            ),
+        ]
+    )
+
+    data = torch.arange(16, dtype=torch.float64).reshape(4, 2, 2).to(torch.complex128)
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+    transform = BasisTransform(ImmutableDenseMatrix([[2]]))
+
+    unfolded = bandunfold(InverseBasisTransform(transform.M), bandfold(transform, tensor_in))
+    restored_lattice = unfolded.dims[1].elements()[0].irrep_of(Offset).space
+
+    assert len(restored_lattice.unit_cell) == 2
+    assert set(restored_lattice.unit_cell.keys()) == {"a", "b"}
+    restored_offsets = {site.rep for site in restored_lattice.unit_cell.values()}
+    assert ImmutableDenseMatrix([0]) in restored_offsets
+    assert ImmutableDenseMatrix([sy.Rational(1, 2)]) in restored_offsets
+
+
+def test_bandunfold_accepts_inverse_transform():
+    basis = ImmutableDenseMatrix([[1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={
+            "a": ImmutableDenseMatrix([0]),
+            "b": ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        },
+    )
+    k_space = brillouin_zone(lattice.dual)
+    h_space = HilbertSpace.new(
+        [
+            _mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice), "a"),
+            _mode(
+                Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lattice),
+                "b",
+            ),
+        ]
+    )
+    data = torch.arange(16, dtype=torch.float64).reshape(4, 2, 2).to(torch.complex128)
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+    transform = BasisTransform(ImmutableDenseMatrix([[2]]))
+
+    folded = bandfold(transform, tensor_in)
+    unfolded = bandunfold(InverseBasisTransform(transform.M), folded)
+    assert unfolded.dims[0].dim == tensor_in.dims[0].dim
+    assert unfolded.dims[1].dim == tensor_in.dims[1].dim
+    assert unfolded.dims[2].dim == tensor_in.dims[2].dim
+
+
+def test_bandunfold_rejects_forward_basis_transform():
+    basis = ImmutableDenseMatrix([[1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    h_space = HilbertSpace.new([_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))])
+    tensor_in = Tensor(
+        data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1),
+        dims=(k_space, h_space, h_space),
+    )
+    transform = BasisTransform(ImmutableDenseMatrix([[2]]))
+    folded = bandfold(transform, tensor_in)
+
+    with pytest.raises(TypeError, match="InverseBasisTransform"):
+        bandunfold(transform, folded)  # type: ignore[arg-type]
 
 
 def test_affine_space_transform():
@@ -183,6 +269,15 @@ def test_affine_space_transform():
 def test_basis_transform_rejects_non_invertible_matrix():
     with pytest.raises(ValueError, match="positive determinant"):
         BasisTransform(ImmutableDenseMatrix([[1, 0], [0, 0]]))
+
+
+def test_basis_transform_inv_roundtrip_type():
+    forward = BasisTransform(ImmutableDenseMatrix([[2]]))
+    inverse = forward.inv()
+    assert isinstance(inverse, InverseBasisTransform)
+    assert inverse.M == forward.M
+    assert isinstance(inverse.inv(), BasisTransform)
+    assert inverse.inv().M == forward.M
 
 
 def test_lattice_transform():
@@ -210,6 +305,30 @@ def test_lattice_transform():
     # Positions: 0 and 0.5
     assert new_lat.unit_cell["r_0"].rep == ImmutableDenseMatrix([0])
     assert new_lat.unit_cell["r_1"].rep == ImmutableDenseMatrix([sy.Rational(1, 2)])
+
+
+def test_inverse_lattice_transform_recovers_primitive_metadata():
+    basis = ImmutableDenseMatrix([[1]])
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={
+            "a": ImmutableDenseMatrix([0]),
+            "b": ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        },
+    )
+    M = ImmutableDenseMatrix([[2]])
+    forward = BasisTransform(M)
+    inverse = InverseBasisTransform(M)
+
+    restored = inverse(forward(lat))
+    assert isinstance(restored, Lattice)
+    assert restored.basis == lat.basis
+    assert restored.boundaries.basis == lat.boundaries.basis
+    assert set(restored.unit_cell.keys()) == {"a", "b"}
+    restored_offsets = {site.rep for site in restored.unit_cell.values()}
+    assert ImmutableDenseMatrix([0]) in restored_offsets
+    assert ImmutableDenseMatrix([sy.Rational(1, 2)]) in restored_offsets
 
 
 def test_reciprocal_lattice_transform():

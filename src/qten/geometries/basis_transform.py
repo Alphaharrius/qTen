@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 import sympy as sy
@@ -22,8 +23,24 @@ from . import (
 
 @need_validation(check_proper_transformation("M"), check_numerical("M"))
 @dataclass(frozen=True)
-class BasisTransform(Functional):
+class AbstractBasisTransform(Functional, ABC):
     M: ImmutableDenseMatrix
+
+    @abstractmethod
+    def inv(self) -> "AbstractBasisTransform":
+        pass
+
+
+class BasisTransform(AbstractBasisTransform):
+    def inv(self) -> "InverseBasisTransform":
+        """Return the inverse-view transform associated with this matrix."""
+        return InverseBasisTransform(self.M)
+
+
+class InverseBasisTransform(AbstractBasisTransform):
+    def inv(self) -> BasisTransform:
+        """Return the forward-view transform associated with this matrix."""
+        return BasisTransform(self.M)
 
 
 @lru_cache
@@ -38,6 +55,28 @@ def _supercell_shifts(
     ranges = [range(int(S[i, i])) for i in range(dim)]
     shifts = [U_inv @ ImmutableDenseMatrix(dim, 1, n) for n in product(*ranges)]
     return tuple(shifts)
+
+
+def _primitive_label_from_folded_label(label: str) -> str:
+    return label.rsplit("_", 1)[0] if "_" in label else label
+
+
+def _insert_primitive_unit_cell_site(
+    unit_cell: dict[str, ImmutableDenseMatrix],
+    label: str,
+    offset: ImmutableDenseMatrix,
+) -> None:
+    if label not in unit_cell:
+        unit_cell[label] = offset
+        return
+    if unit_cell[label] == offset:
+        return
+    suffix = 1
+    collision_label = f"{label}_{suffix}"
+    while collision_label in unit_cell:
+        suffix += 1
+        collision_label = f"{label}_{suffix}"
+    unit_cell[collision_label] = offset
 
 
 @BasisTransform.register(AffineSpace)
@@ -101,9 +140,9 @@ def lattice_transform(t: BasisTransform, lat: Lattice) -> Lattice:
     )
 
 
-@BasisTransform.register(ReciprocalLattice)
+@AbstractBasisTransform.register(ReciprocalLattice)
 def reciprocal_lattice_transform(
-    t: BasisTransform, lat: ReciprocalLattice
+    t: AbstractBasisTransform, lat: ReciprocalLattice
 ) -> ReciprocalLattice:
     """
     Generate the reciprocal lattice corresponding to the transformed direct lattice.
@@ -113,8 +152,8 @@ def reciprocal_lattice_transform(
     return transformed_dual_lat.dual
 
 
-@BasisTransform.register(Offset)
-def offset_transform(t: BasisTransform, r: Offset) -> Offset:
+@AbstractBasisTransform.register(Offset)
+def offset_transform(t: AbstractBasisTransform, r: Offset) -> Offset:
     """
 
     Transform an Offset by the basis transformation M.
@@ -123,8 +162,8 @@ def offset_transform(t: BasisTransform, r: Offset) -> Offset:
     return r.rebase(new_space)
 
 
-@BasisTransform.register(Momentum)
-def momentum_transform(t: BasisTransform, momentum: Momentum) -> Momentum:
+@AbstractBasisTransform.register(Momentum)
+def momentum_transform(t: AbstractBasisTransform, momentum: Momentum) -> Momentum:
     """
     Docstring for momentum_transform
 
@@ -133,3 +172,54 @@ def momentum_transform(t: BasisTransform, momentum: Momentum) -> Momentum:
     """
     new_space = t(momentum.space)
     return momentum.rebase(new_space)
+
+
+@InverseBasisTransform.register(AffineSpace)
+def inverse_affine_space_transform(
+    t: InverseBasisTransform, space: AffineSpace
+) -> AffineSpace:
+    """Transform an AffineSpace by the inverse basis transformation."""
+    new_basis = space.basis @ t.M.inv()
+    return AffineSpace(basis=new_basis)
+
+
+@InverseBasisTransform.register(Lattice)
+@lru_cache(maxsize=None)
+def inverse_lattice_transform(t: InverseBasisTransform, lat: Lattice) -> Lattice:
+    """
+    Invert a supercell lattice back to a primitive-cell basis defined by M.
+    """
+    if not isinstance(lat.boundaries, PeriodicBoundary):
+        raise NotImplementedError(
+            f"InverseBasisTransform currently supports PeriodicBoundary only, got {type(lat.boundaries).__name__}."
+        )
+
+    primitive_basis = lat.basis @ t.M.inv()
+    primitive_boundary_basis = t.M @ lat.boundaries.basis
+    if any(not sy.cancel(x).is_integer for x in primitive_boundary_basis):
+        raise ValueError(
+            "Inverse-transformed boundary basis must remain integral for PeriodicBoundary."
+        )
+    primitive_boundaries = PeriodicBoundary(
+        ImmutableDenseMatrix(primitive_boundary_basis.applyfunc(int))
+    )
+
+    primitive_seed = Lattice(
+        basis=ImmutableDenseMatrix(primitive_basis),
+        boundaries=primitive_boundaries,
+    )
+    primitive_unit_cell: dict[str, ImmutableDenseMatrix] = {}
+    for folded_label, folded_offset in lat.unit_cell.items():
+        primitive_offset = folded_offset.rebase(primitive_seed).fractional()
+        primitive_label = _primitive_label_from_folded_label(folded_label)
+        _insert_primitive_unit_cell_site(
+            primitive_unit_cell, primitive_label, ImmutableDenseMatrix(primitive_offset.rep)
+        )
+
+    return Lattice(
+        basis=ImmutableDenseMatrix(primitive_basis),
+        boundaries=primitive_boundaries,
+        unit_cell=FrozenDict(primitive_unit_cell),
+    )
+
+

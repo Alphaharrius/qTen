@@ -12,6 +12,7 @@ from .boundary import (
 )
 
 from .basis_transform import BasisTransform as BasisTransform
+from .basis_transform import InverseBasisTransform as InverseBasisTransform
 from .ops import (
     center_of_region as center_of_region,
     get_strip_region_2d as get_strip_region_2d,
