@@ -194,7 +194,9 @@ def test_bandunfold_preserves_primitive_unit_cell_metadata():
     tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
     transform = BasisTransform(ImmutableDenseMatrix([[2]]))
 
-    unfolded = bandunfold(InverseBasisTransform(transform.M), bandfold(transform, tensor_in))
+    unfolded = bandunfold(
+        InverseBasisTransform(transform.M), bandfold(transform, tensor_in)
+    )
     restored_lattice = unfolded.dims[1].elements()[0].irrep_of(Offset).space
 
     assert len(restored_lattice.unit_cell) == 2
@@ -243,7 +245,9 @@ def test_bandunfold_rejects_forward_basis_transform():
         unit_cell={"r": ImmutableDenseMatrix([0])},
     )
     k_space = brillouin_zone(lattice.dual)
-    h_space = HilbertSpace.new([_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))])
+    h_space = HilbertSpace.new(
+        [_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))]
+    )
     tensor_in = Tensor(
         data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1),
         dims=(k_space, h_space, h_space),

@@ -213,7 +213,9 @@ def inverse_lattice_transform(t: InverseBasisTransform, lat: Lattice) -> Lattice
         primitive_offset = folded_offset.rebase(primitive_seed).fractional()
         primitive_label = _primitive_label_from_folded_label(folded_label)
         _insert_primitive_unit_cell_site(
-            primitive_unit_cell, primitive_label, ImmutableDenseMatrix(primitive_offset.rep)
+            primitive_unit_cell,
+            primitive_label,
+            ImmutableDenseMatrix(primitive_offset.rep),
         )
 
     return Lattice(
@@ -221,5 +223,3 @@ def inverse_lattice_transform(t: InverseBasisTransform, lat: Lattice) -> Lattice
         boundaries=primitive_boundaries,
         unit_cell=FrozenDict(primitive_unit_cell),
     )
-
-
