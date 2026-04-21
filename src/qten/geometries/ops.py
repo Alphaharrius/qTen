@@ -433,6 +433,56 @@ def center_of_region(region: tuple[OffsetType, ...]) -> OffsetType:
     return point_type(rep=ImmutableDenseMatrix(total / len(region)), space=first.space)
 
 
+def region_centering(
+    region: tuple[OffsetType, ...], center: OffsetType
+) -> tuple[OffsetType, ...]:
+    """
+    Translate a region so that its arithmetic center lands at `center`.
+
+    Parameters
+    ----------
+    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+        Region to translate. All entries must share the same concrete type and
+        affine space.
+    `center` : `Offset | Momentum`
+        Target center for the translated region. It must have the same
+        concrete type and affine space as the region entries.
+
+    Returns
+    -------
+    `tuple[Offset, ...] | tuple[Momentum, ...]`
+        Region translated by `center - center_of_region(region)`. Empty input
+        returns an empty tuple.
+
+    Raises
+    ------
+    `TypeError`
+        If region entries do not all share the same concrete type and space,
+        or if `center` does not match them.
+    """
+    if len(region) == 0:
+        return ()
+
+    first = region[0]
+    point_type = type(first)
+
+    for point in region[1:]:
+        if type(point) is not point_type:
+            raise TypeError("region entries must all have the same concrete type.")
+        if point.space != first.space:
+            raise TypeError("region entries must all belong to the same space.")
+
+    if type(center) is not point_type:
+        raise TypeError(
+            "center must have the same concrete type as the region entries."
+        )
+    if center.space != first.space:
+        raise TypeError("center must belong to the same space as the region entries.")
+
+    translation = cast(OffsetType, center - center_of_region(region))
+    return tuple(cast(OffsetType, point + translation) for point in region)
+
+
 def region_tile(
     region: tuple[OffsetType, ...],
     bases: tuple[OffsetType, ...],

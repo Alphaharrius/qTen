@@ -17,5 +17,6 @@ from .ops import (
     get_strip_region_2d as get_strip_region_2d,
     interstitial_centers as interstitial_centers,
     nearest_sites as nearest_sites,
+    region_centering as region_centering,
     region_tile as region_tile,
 )

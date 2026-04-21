@@ -8,6 +8,7 @@ from qten.geometries.ops import (
     get_strip_region_2d,
     interstitial_centers,
     nearest_sites,
+    region_centering,
     region_tile,
 )
 from qten.geometries.spatials import AffineSpace, Lattice, Momentum, Offset
@@ -481,6 +482,66 @@ def test_center_of_region_accounts_for_momentum_wrapping():
 def test_center_of_region_rejects_empty_region():
     with pytest.raises(ValueError, match="region must be non-empty"):
         center_of_region(())
+
+
+def test_region_centering_translates_region_to_target_offset_center():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    region = (
+        lattice.at("r", (0, 0)),
+        lattice.at("r", (2, 0)),
+        lattice.at("r", (0, 2)),
+        lattice.at("r", (2, 2)),
+    )
+
+    centered = region_centering(region, lattice.at("r", (5, 6)))
+
+    assert tuple(tuple(point.rep) for point in centered) == (
+        (4, 5),
+        (6, 5),
+        (4, 7),
+        (6, 7),
+    )
+    assert center_of_region(centered) == lattice.at("r", (5, 6))
+
+
+def test_region_centering_handles_periodic_wrapping():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    region = (
+        lattice.at("r", (0,)),
+        lattice.at("r", (1,)),
+    )
+
+    centered = region_centering(region, lattice.at("r", (0,)))
+
+    assert tuple(tuple(point.rep) for point in centered) == (
+        (sy.Rational(7, 2),),
+        (sy.Rational(1, 2),),
+    )
+    assert center_of_region(centered) == lattice.at("r", (0,))
+
+
+def test_region_centering_rejects_center_with_wrong_space():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    region = (lattice.at("r", (0,)),)
+    wrong_center = Offset(
+        rep=ImmutableDenseMatrix([0]),
+        space=AffineSpace(ImmutableDenseMatrix.eye(1)),
+    )
+
+    with pytest.raises(TypeError, match="same space as the region"):
+        region_centering(region, wrong_center)
 
 
 def test_interstitial_centers_returns_shifted_square_lattice_centers():
