@@ -1,0 +1,47 @@
+site_name: QTen
+site_description: API and user documentation for qten and qten-plots.
+repo_url: https://github.com/Alphaharrius/PyHilbert
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+            - ext/plots/src
+          options:
+            docstring_style: numpy
+            filters:
+              - "!^_[^_]"
+              - "!^[A-Z]$"
+            inherited_members: true
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_if_no_docstring: true
+            show_root_full_path: false
+            show_root_heading: true
+            show_root_members_full_path: false
+            show_signature_annotations: true
+watch:
+  - src/qten
+  - ext/plots/src/qten_plots
+  - README.md
