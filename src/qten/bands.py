@@ -242,10 +242,10 @@ def bandtransform(
 
     Momentum handling:
     - The action on `Momentum` is treated as a relabeling/permutation of sectors.
-    - We align the k-axis of the transform tensors to the canonical `kspace`
-      ordering before multiplication.
-    - The input tensor itself is not pre-remapped in k; remapping is used only
-      to align transform blocks with each momentum sector.
+    - The output tensor carries the transformed momentum axis
+      `mapped_kspace = {t @ k | k in kspace}`.
+    - Each output k-block is populated from the preimage source block before
+      the Hilbert-space conjugation is applied.
 
     Notes
     -----
@@ -299,31 +299,40 @@ def bandtransform(
     kspace: MomentumSpace = cast(MomentumSpace, tensor.dims[0])
     transform_cache: Dict[HilbertSpace, Tensor] = {}
 
+    mapped_kspace = _momentum_map(kspace, lambda k: cast(Momentum, t @ k))
+
     def build_transform(space: HilbertSpace) -> Tensor:
         cached = transform_cache.get(space)
         if cached is not None:
             return cached
 
         fractional = FuncOpr(Offset, Offset.fractional)
-        new_space = cast(HilbertSpace, fractional @ t @ space)
+        raw_space = cast(HilbertSpace, t @ space)
+        new_space = cast(HilbertSpace, fractional @ raw_space)
         # The transformation will distort the unit-cell of the Hilbert space,
         # we will use fractional to return it to the original unit-cell.
         if not space.same_rays(new_space):
             raise ValueError(
                 f"Hilbert space {space} is not closed under the transform {t}!"
             )
-        bloch_transform = cast(
+        # `raw_space` keeps the transformed positions before wrapping them back
+        # into the home cell; `new_space` is the corresponding wrapped basis.
+        # Their difference is the lattice translation whose Bloch phase is
+        # encoded by the Fourier transform below.
+        transformed_fourier = fourier_transform(
+            mapped_kspace, new_space, raw_space, device=tensor.device
+        ).replace_dim(2, space)  # (K, B, B')
+        # This is the home-cell basis map analogous to the Julia
+        # `homefocktransform`: it relabels the wrapped transformed basis back
+        # onto the original Hilbert-space labels.
+        home_transform = cast(
             Tensor, space.cross_gram(new_space, device=tensor.device)
-        ).h(-2, -1)
-        f = fourier_transform(kspace, space, space, device=tensor.device)  # (K, B, B')
-        # Keep the transformed unit-cell labels explicit on the region leg so
-        # StateSpace auto-alignment does not erase the site permutation.
-        # (K, B, B) @ (B, B) @ (K, B, B)
-        transform = f @ bloch_transform @ f.h(-2, -1)  # (K, B, B)
+        ).replace_dim(1, new_space)
+        transform = home_transform @ transformed_fourier  # (K, B, B)
         transform_cache[space] = transform
         return transform
 
-    mapped_kspace = _momentum_map(kspace, lambda k: cast(Momentum, t @ k))
+    tensor = tensor.replace_dim(0, mapped_kspace)
 
     left_fourier = build_transform(cast(HilbertSpace, tensor.dims[1]))  # (K, B, B)
     left_fourier = left_fourier.replace_dim(0, mapped_kspace)  # (K, B, B)

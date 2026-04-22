@@ -1,6 +1,8 @@
 import sympy as sy
 import torch
 import pytest
+import qten
+import qten.ops as Q
 from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 from typing import cast
@@ -18,8 +20,11 @@ from qten.symbolics.hilbert_space import HilbertSpace, U1Basis, FuncOpr
 from qten.geometries.spatials import AffineSpace, Momentum, Offset
 from qten.geometries.spatials import Lattice
 from qten.geometries.boundary import PeriodicBoundary
+from qten.geometries.basis_transform import BasisTransform
 from qten.linalg.tensors import Tensor
 from qten.symbolics import Multiple
+from qten.phys import FFObservable
+from qten.bands import bandfillings, bandfold
 
 
 @dataclass(frozen=True)
@@ -897,6 +902,54 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     assert torch.allclose(tensor_out.data, tensor_in.data)
 
 
+def test_bandtransform_c4_rotates_scalar_anisotropic_band_k_axis():
+    x, y = sy.symbols("x y")
+
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+
+    r0 = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    h_space = HilbertSpace.new([_state(r0, Orb("s"))])
+
+    data = torch.zeros((k_space.dim, 1, 1), dtype=torch.complex128)
+    for n, k in enumerate(k_space.elements()):
+        kx = float(k.rep[0])
+        ky = float(k.rep[1])
+        data[n, 0, 0] = complex(
+            sy.N(1.2 * sy.cos(2 * sy.pi * kx) + 0.3 * sy.cos(2 * sy.pi * ky))
+        )
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+
+    c4 = _affine(
+        irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
+        basis_function_order=1,
+    )
+
+    tensor_out = bandtransform(c4, tensor_in)
+    mapped_kspace = cast(MomentumSpace, tensor_out.dims[0])
+
+    assert mapped_kspace != k_space
+
+    source_values = {
+        k: value for k, value in zip(k_space.elements(), tensor_in.data[:, 0, 0])
+    }
+    for k, value in zip(mapped_kspace.elements(), tensor_out.data[:, 0, 0]):
+        preimage = cast(
+            Momentum,
+            _transformed(c4, _transformed(c4, _transformed(c4, k))).fractional(),
+        )
+        assert value == source_values[preimage]
+
+    aligned = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
+    assert not torch.allclose(aligned.data, tensor_in.data)
+
+
 def test_bandtransform_both_matches_explicit_k_aligned_reference():
     x, y = sy.symbols("x y")
 
@@ -936,27 +989,33 @@ def test_bandtransform_both_matches_explicit_k_aligned_reference():
 
     def _build_transform_ref(space: HilbertSpace, kspace: MomentumSpace) -> Tensor:
         fractional = FuncOpr(Offset, Offset.fractional)
-        gspace = fractional @ (c4 @ space)
-        bloch_transform = cast(Tensor, space.cross_gram(gspace)).h(-2, -1)  # (B', B)
-        bloch_transform = bloch_transform.replace_dim(0, gspace)
-        left_fourier = fourier_transform(kspace, space, gspace)
-        right_fourier = fourier_transform(kspace, space, space)
-        return cast(Tensor, left_fourier @ bloch_transform @ right_fourier.h(-2, -1))
+        raw_space = cast(HilbertSpace, c4 @ space)
+        gspace = cast(HilbertSpace, fractional @ raw_space)
+        bloch_transform = cast(Tensor, space.cross_gram(gspace)).replace_dim(1, gspace)
+        fourier = fourier_transform(kspace, gspace, raw_space).replace_dim(2, space)
+        return cast(Tensor, bloch_transform @ fourier)
 
     mapped_kspace = k_space.map(
         lambda k: cast(Momentum, _transformed(c4, k)).fractional()
     )
-    left_ref = (
-        _build_transform_ref(h_space, k_space)
-        .replace_dim(0, mapped_kspace)
-        .align(0, k_space)
+    source_blocks = {k: tensor_in.data[i] for i, k in enumerate(k_space.elements())}
+    reordered = torch.stack(
+        [
+            source_blocks[
+                cast(
+                    Momentum,
+                    _transformed(
+                        c4, _transformed(c4, _transformed(c4, k))
+                    ).fractional(),
+                )
+            ]
+            for k in mapped_kspace.elements()
+        ]
     )
-    right_ref = (
-        _build_transform_ref(h_space, k_space)
-        .replace_dim(0, mapped_kspace)
-        .align(0, k_space)
-    )
-    tensor_ref = cast(Tensor, (left_ref @ tensor_in @ right_ref.h(-2, -1)))
+    tensor_perm = Tensor(data=reordered, dims=(mapped_kspace, h_space, h_space))
+    left_ref = _build_transform_ref(h_space, mapped_kspace)
+    right_ref = _build_transform_ref(h_space, mapped_kspace)
+    tensor_ref = cast(Tensor, (left_ref @ tensor_perm @ right_ref.h(-2, -1)))
 
     tensor_out = bandtransform(c4, tensor_in)
     tensor_out = tensor_out.align(0, k_space).align(1, h_space).align(2, h_space)
@@ -1010,6 +1069,118 @@ def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
 
     out = out.align(0, k_space).align(1, h_space).align(2, h_space)
     assert torch.allclose(out.data, tensor_in.data)
+
+
+def test_bandtransform_c4_twice_restores_c2_symmetric_but_not_c4_tensor():
+    x, y = sy.symbols("x y")
+
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+
+    r0 = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
+    h_space = HilbertSpace.new([_state(r0, Orb("s"))])
+
+    c4 = _affine(
+        irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice),
+        basis_function_order=1,
+    )
+
+    seed_data = torch.zeros((k_space.dim, 1, 1), dtype=torch.complex128)
+    for n, k in enumerate(k_space.elements()):
+        kx = float(k.rep[0])
+        ky = float(k.rep[1])
+        seed_data[n, 0, 0] = complex(
+            sy.N(1.2 * sy.cos(2 * sy.pi * kx) + 0.3 * sy.cos(2 * sy.pi * ky))
+        )
+    seed = Tensor(data=seed_data, dims=(k_space, h_space, h_space))
+
+    c2_part = bandtransform(c4, bandtransform(c4, seed)).align_all(seed.dims)
+    tensor_in = (seed + c2_part).align_all(seed.dims)
+
+    once = bandtransform(c4, tensor_in).align_all(seed.dims)
+    twice = bandtransform(c4, once).align_all(seed.dims)
+
+    assert not torch.allclose(once.data, tensor_in.data)
+    assert torch.allclose(twice.data, tensor_in.data)
+
+
+def test_bandtransform_notebook_cb_c4_symmetry_reproducer():
+    square = Lattice(
+        basis=sy.ImmutableMatrix([[1, 0], [0, 1]]),
+        unit_cell={"r": sy.ImmutableMatrix([0, 0])},
+        shape=(64, 64),
+    )
+
+    c4 = pointgroup("c4-xy:xy")
+
+    a1, a2 = square.basis_vectors()
+    R_a1 = FuncOpr(Offset, lambda r: r + a1)
+    R_a2 = FuncOpr(Offset, lambda r: r + a2)
+
+    psi_r = U1Basis.new(square.at("r"), c4.basis_table[1])
+    t = sy.Number(1)
+
+    tb = FFObservable()
+    tb.add_bond(-t, psi_r, R_a2 @ psi_r)
+    tb.add_bond(-t, psi_r, R_a1 @ psi_r)
+    harmonic = tb.to_tensor()
+
+    bloch_space = HilbertSpace.new([psi_r])
+    k_space = brillouin_zone(square.dual)
+    F = Q.fourier_transform(k_space, bloch_space, harmonic.dims[0])
+    bloch = F @ harmonic @ F.h(-2, -1)
+    gs = bandfillings(bloch, 0.5)
+    C_gs = qten.eye(bloch.dims) - gs @ gs.h(-2, -1)
+
+    blocking = BasisTransform(sy.ImmutableMatrix([[4, 0], [0, 4]]))
+    C_b = bandfold(blocking, C_gs)
+
+    C_rot = bandtransform(AbelianOpr(c4), C_b).align_all(C_b.dims)
+    assert C_b.allclose(C_rot)
+
+
+def test_bandtransform_notebook_cb_c4_symmetry_about_block_center():
+    square = Lattice(
+        basis=sy.ImmutableMatrix([[1, 0], [0, 1]]),
+        unit_cell={"r": sy.ImmutableMatrix([0, 0])},
+        shape=(64, 64),
+    )
+
+    c4 = pointgroup("c4-xy:xy")
+
+    a1, a2 = square.basis_vectors()
+    R_a1 = FuncOpr(Offset, lambda r: r + a1)
+    R_a2 = FuncOpr(Offset, lambda r: r + a2)
+
+    psi_r = U1Basis.new(square.at("r"), c4.basis_table[1])
+    t = sy.Number(1)
+
+    tb = FFObservable()
+    tb.add_bond(-t, psi_r, R_a2 @ psi_r)
+    tb.add_bond(-t, psi_r, R_a1 @ psi_r)
+    harmonic = tb.to_tensor()
+
+    bloch_space = HilbertSpace.new([psi_r])
+    k_space = brillouin_zone(square.dual)
+    F = Q.fourier_transform(k_space, bloch_space, harmonic.dims[0])
+    bloch = F @ harmonic @ F.h(-2, -1)
+    gs = bandfillings(bloch, 0.5)
+    C_gs = qten.eye(bloch.dims) - gs @ gs.h(-2, -1)
+
+    blocking = BasisTransform(sy.ImmutableMatrix([[4, 0], [0, 4]]))
+    C_b = bandfold(blocking, C_gs)
+
+    cent = Q.center_of_region(C_b.dims[1].irrep_of(Offset))
+    centered_c4 = AbelianOpr(c4).fixpoint_at(cent)
+    C_rot = bandtransform(centered_c4, C_b).align_all(C_b.dims)
+
+    assert C_b.allclose(C_rot)
 
 
 def test_affine_query_c3_xy_and_inverse_orientation():
