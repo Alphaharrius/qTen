@@ -1060,17 +1060,22 @@ def plot_bandstructure(
     if fig is None:
         fig = go.Figure()
 
-    k_cart, recip, is_canonical_2d_bz, effective_dim = analyze_bandstructure_sampling(
-        k_space
-    )
+    (
+        k_cart,
+        recip,
+        is_surface_compatible_2d_bz,
+        effective_dim,
+        surface_order,
+    ) = analyze_bandstructure_sampling(k_space)
 
     is_surface = mode == "surface" or (
-        mode == "auto" and is_canonical_2d_bz and effective_dim >= 2
+        mode == "auto" and is_surface_compatible_2d_bz and effective_dim >= 2
     )
-    if is_surface and not is_canonical_2d_bz:
+    if is_surface and not is_surface_compatible_2d_bz:
         raise ValueError(
             "Surface bandstructure plotting requires the momentum axis to be the "
-            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+            "full 2D Brillouin-zone mesh returned by brillouin_zone(recip), up to "
+            "permutation."
         )
     if is_surface and effective_dim < 2:
         raise ValueError(
@@ -1081,10 +1086,16 @@ def plot_bandstructure(
     if is_surface and recip is not None:
         # === 3D Surface Plot ===
         nx, ny = recip.shape
+        if surface_order is None:
+            raise ValueError(
+                "Unable to map momentum samples onto the canonical BZ mesh."
+            )
+        surface_k_cart = k_cart[surface_order]
+        surface_eigvals = eigvals_np[surface_order]
 
-        KX = k_cart[:, 0].reshape(nx, ny)
-        KY = k_cart[:, 1].reshape(nx, ny)
-        evals_grid = eigvals_np.reshape(nx, ny, n_bands)
+        KX = surface_k_cart[:, 0].reshape(nx, ny)
+        KY = surface_k_cart[:, 1].reshape(nx, ny)
+        evals_grid = surface_eigvals.reshape(nx, ny, n_bands)
         if hide_nullspace:
             evals_grid = evals_grid.copy()
             evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan

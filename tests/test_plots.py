@@ -762,6 +762,30 @@ def test_bandstructure_plot():
     assert fig.layout.title.text == "Test Bandstructure"
 
 
+def test_bandstructure_plot_keeps_surface_mode_for_permuted_2d_k_mesh():
+    h_k = _make_square_lattice_band_tensor((4, 4))
+    k_space = h_k.dims[0]
+    permuted_k_points = list(k_space.elements())[::2] + list(k_space.elements())[1::2]
+    permuted_k_space = type(k_space)(
+        structure=OrderedDict((k, i) for i, k in enumerate(permuted_k_points))
+    )
+    permuted_h_k = Tensor(
+        data=h_k.data[[k_space.structure[k] for k in permuted_k_points]],
+        dims=(permuted_k_space, *h_k.dims[1:]),
+    )
+
+    fig = permuted_h_k.plot(
+        "bandstructure",
+        backend="plotly",
+        title="Permuted 2D Bandstructure",
+        show=False,
+    )
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) >= 1
+    assert all(isinstance(trace, go.Surface) for trace in fig.data)
+
+
 def test_bandstructure_plot_auto_falls_back_to_path_for_effectively_1d_k_mesh():
     h_k = _make_square_lattice_band_tensor((4, 1))
 

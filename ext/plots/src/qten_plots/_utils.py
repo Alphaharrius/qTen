@@ -6,7 +6,12 @@ from scipy.spatial import cKDTree
 
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice, Offset, ReciprocalLattice
-from qten.symbolics.state_space import BzPath, MomentumSpace, brillouin_zone
+from qten.symbolics.state_space import (
+    BzPath,
+    MomentumSpace,
+    brillouin_zone,
+    same_rays,
+)
 
 
 _COMMON_MARKER_ALIASES: dict[str, str] = {
@@ -185,7 +190,7 @@ def unwrap_periodic_offsets(
 
 def analyze_bandstructure_sampling(
     k_space: MomentumSpace,
-) -> tuple[np.ndarray, Optional[ReciprocalLattice], bool, int]:
+) -> tuple[np.ndarray, Optional[ReciprocalLattice], bool, int, Optional[np.ndarray]]:
     """
     Return Cartesian k-samples plus metadata needed to choose path vs surface plots.
 
@@ -195,27 +200,37 @@ def analyze_bandstructure_sampling(
     """
     k_points = list(k_space)
     if len(k_points) == 0:
-        return np.array([]), None, False, 0
+        return np.array([]), None, False, 0, None
 
     recip = k_points[0].space
     basis_mat = np.array(recip.basis.evalf()).astype(float)
     k_fracs = [np.array(k.rep).astype(float).flatten() for k in k_points]
     k_cart = np.stack(k_fracs) @ basis_mat.T
 
-    is_canonical_2d_bz = False
+    is_surface_compatible_2d_bz = False
+    surface_order = None
     if (
         isinstance(recip, ReciprocalLattice)
         and recip.dim == 2
         and all(k.space == recip for k in k_points)
     ):
         canonical_k_space = brillouin_zone(recip)
-        is_canonical_2d_bz = tuple(k_space.elements()) == tuple(
-            canonical_k_space.elements()
-        )
+        if same_rays(k_space, canonical_k_space):
+            is_surface_compatible_2d_bz = True
+            current_positions = {k: i for i, k in enumerate(k_space.elements())}
+            surface_order = np.array(
+                [current_positions[k] for k in canonical_k_space.elements()], dtype=int
+            )
 
     reciprocal_lattice = recip if isinstance(recip, ReciprocalLattice) else None
     effective_dim = _effective_dimensionality(k_cart)
-    return k_cart, reciprocal_lattice, is_canonical_2d_bz, effective_dim
+    return (
+        k_cart,
+        reciprocal_lattice,
+        is_surface_compatible_2d_bz,
+        effective_dim,
+        surface_order,
+    )
 
 
 def band_path_positions(k_space: MomentumSpace, k_cart: np.ndarray) -> np.ndarray:

@@ -9,9 +9,7 @@ from qten.geometries.spatials import Lattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.state_space import (
     BzPath,
-    MomentumSpace,
     StateSpace,
-    same_rays,
 )
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from ._utils import (
@@ -807,7 +805,8 @@ def plot_bandstructure_mpl(
 ) -> plt.Figure:
     """
     Plot the band structure of a Hamiltonian tensor using Matplotlib.
-    The tensor must have dimensions (MomentumSpace, HilbertSpace, HilbertSpace).
+    The tensor must be rank-3 with momentum samples on axis 0 and
+    matrix axes on the last two dimensions.
 
     Parameters
     ----------
@@ -828,25 +827,13 @@ def plot_bandstructure_mpl(
     """
     # 1. Check Dimensions
     if obj.rank() != 3:
-        raise ValueError(
-            f"Tensor must be rank 3 (Momentum, Hilbert, Hilbert), got rank {obj.rank()}"
-        )
+        raise ValueError(f"Tensor must be rank 3, got {obj.rank()}")
     if mode not in ("auto", "path", "surface"):
         raise ValueError(f"Invalid mode '{mode}'. Options: ('auto', 'path', 'surface')")
     if nullspace_tol < 0:
         raise ValueError(f"nullspace_tol must be non-negative, got {nullspace_tol}")
 
     k_space = obj.dims[0]
-    if not isinstance(k_space, MomentumSpace):
-        raise ValueError(f"First dimension must be MomentumSpace, got {type(k_space)}")
-
-    if not (
-        isinstance(obj.dims[1], HilbertSpace) and isinstance(obj.dims[2], HilbertSpace)
-    ):
-        raise ValueError("Last two dimensions must be HilbertSpace")
-
-    if not same_rays(obj.dims[1], obj.dims[2]):
-        raise ValueError("Last two dimensions must span the same Hilbert space")
 
     # 2. Diagonalize
     hk_data = obj.data
@@ -855,17 +842,22 @@ def plot_bandstructure_mpl(
     n_bands = eigvals_np.shape[1]
 
     # 3. Build Cartesian reciprocal coordinates once for both modes.
-    k_cart, recip, is_canonical_2d_bz, effective_dim = analyze_bandstructure_sampling(
-        k_space
-    )
+    (
+        k_cart,
+        recip,
+        is_surface_compatible_2d_bz,
+        effective_dim,
+        surface_order,
+    ) = analyze_bandstructure_sampling(k_space)
 
     is_surface = mode == "surface" or (
-        mode == "auto" and is_canonical_2d_bz and effective_dim >= 2
+        mode == "auto" and is_surface_compatible_2d_bz and effective_dim >= 2
     )
-    if is_surface and not is_canonical_2d_bz:
+    if is_surface and not is_surface_compatible_2d_bz:
         raise ValueError(
             "Surface bandstructure plotting requires the momentum axis to be the "
-            "canonical 2D Brillouin-zone mesh returned by brillouin_zone(recip)."
+            "full 2D Brillouin-zone mesh returned by brillouin_zone(recip), up to "
+            "permutation."
         )
     if is_surface and effective_dim < 2:
         raise ValueError(
@@ -887,13 +879,20 @@ def plot_bandstructure_mpl(
                 )
 
         # Reshape eigenvalues
-        evals_grid = eigvals_np.reshape(recip.shape[0], recip.shape[1], n_bands)
+        if surface_order is None:
+            raise ValueError(
+                "Unable to map momentum samples onto the canonical BZ mesh."
+            )
+        surface_k_cart = k_cart[surface_order]
+        surface_eigvals = eigvals_np[surface_order]
+
+        evals_grid = surface_eigvals.reshape(recip.shape[0], recip.shape[1], n_bands)
         if hide_nullspace:
             evals_grid = evals_grid.copy()
             evals_grid[np.abs(evals_grid) <= nullspace_tol] = np.nan
 
-        KX = k_cart[:, 0].reshape(recip.shape[0], recip.shape[1])
-        KY = k_cart[:, 1].reshape(recip.shape[0], recip.shape[1])
+        KX = surface_k_cart[:, 0].reshape(recip.shape[0], recip.shape[1])
+        KY = surface_k_cart[:, 1].reshape(recip.shape[0], recip.shape[1])
 
         cmap = kwargs.get("cmap", "viridis")
         surface_alpha = kwargs.get("surface_alpha", 0.85)
@@ -909,8 +908,8 @@ def plot_bandstructure_mpl(
             )
 
         ax.set_title(title)
-        ax.set_xlabel("kx (1/A)")
-        ax.set_ylabel("ky (1/A)")
+        ax.set_xlabel("kx (1/Å)")
+        ax.set_ylabel("ky (1/Å)")
         # Explicit cast to avoid type checking issues with dynamic ax
         cast(Any, ax).set_zlabel("Energy (eV)")
         if data_aspect:
@@ -962,7 +961,7 @@ def plot_bandstructure_mpl(
             ax.set_xticks(wp_x)
             ax.set_xticklabels(list(bz_path.labels))
         else:
-            ax.set_xlabel("k-path (1/A)")
+            ax.set_xlabel("k-path (1/Å)")
 
         ax.grid(True, alpha=kwargs.get("grid_alpha", 0.3))
         if kwargs.get("legend", False):
