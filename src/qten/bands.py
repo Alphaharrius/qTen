@@ -421,12 +421,10 @@ def bandfold(
     enlarge_unit_cell = tuple(r.rebase(lattice) for r in transformed_unit_cell)
 
     # Follow the existing "both" branch behavior by rebuilding the right leg.
-    switch_index = -1
-    target_space = tensor.dims[switch_index]
+    target_space = tensor.dims[-1]
     if not isinstance(target_space, HilbertSpace):
         raise TypeError(
-            f"Dimension at index {switch_index} must be a HilbertSpace, "
-            f"but got {type(target_space)}"
+            f"The last dimension must be a HilbertSpace, but got {type(target_space)}"
         )
     rebased_hilbert = HilbertSpace.new(
         cast(U1Basis, target_space.lookup({Offset: r.fractional()})).replace(r)
@@ -440,7 +438,7 @@ def bandfold(
     )
     # # Transform both sides
     f = fourier_transform(
-        k_space, tensor.dims[switch_index], rebased_hilbert, device=tensor.device
+        k_space, tensor.dims[-1], rebased_hilbert, device=tensor.device
     )
     vratio = np.sqrt(len(enlarge_unit_cell) / len(lattice.unit_cell))
     f = f / vratio
