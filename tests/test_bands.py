@@ -4,7 +4,11 @@ import torch
 import sympy as sy
 from sympy import ImmutableDenseMatrix
 
-from qten.bands import bandselect, interpolate_path
+from qten.bands import (
+    nearest_bands,
+    bandselect,
+    interpolate_path,
+)
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice
 from qten.linalg.tensors import Tensor
@@ -275,3 +279,155 @@ def test_interpolate_reciprocal_path_accessible_via_geometries():
     recip = _recip_2d()
     path = interpolate_reciprocal_path(recip, [(0, 0), (0.5, 0)], n_points=10)
     assert isinstance(path, BzPath)
+
+
+# --- bands_near_value_as_tensor_KHH tests ---
+
+
+def _nondiag_band_tensor() -> Tensor:
+    """Build a (2, 2, 2) Hamiltonian with non-diagonal anchor eigenbasis.
+
+    H(k=Gamma) = [[0, 1], [1, 0]] has eigvecs (1,-1)/sqrt(2) (eigval -1)
+    and (1, 1)/sqrt(2) (eigval +1).
+    H(k=X)     = [[1, 2], [2, 3]] is used to exercise the projection math.
+    """
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = _space("band", 2)
+
+    h_gamma = torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.complex128)
+    h_x = torch.tensor([[1.0, 2.0], [2.0, 3.0]], dtype=torch.complex128)
+    data = torch.stack([h_gamma, h_x], dim=0)
+    return Tensor(data=data, dims=(k_space, band_space, band_space))
+
+
+def test_bands_near_value_selects_single_band_at_gamma():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(
+        tensor, point="Gamma", close_to=-1.0, tol=1e-6
+    )
+
+    assert result.dims[0] == tensor.dims[0]
+    assert isinstance(result.dims[1], IndexSpace)
+    assert isinstance(result.dims[2], IndexSpace)
+    assert result.dims[1].dim == 1
+    assert result.dims[2].dim == 1
+    # Diagonal H: eigenvector for eigenvalue -1 at Gamma is e_1, so the
+    # projection just picks the (1, 1) diagonal entry at every k.
+    expected = torch.tensor([[[-1.0]], [[1.0]]], dtype=torch.complex128)
+    assert torch.allclose(result.data, expected)
+
+
+def test_bands_near_value_selects_multiple_bands_in_tolerance_window():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(
+        tensor, point="Gamma", close_to=0.5, tol=1.6
+    )
+
+    assert result.dims[1].dim == 2
+    assert result.dims[2].dim == 2
+    expected = torch.zeros((2, 2, 2), dtype=torch.complex128)
+    expected[0] = torch.diag(torch.tensor([-1.0, 2.0], dtype=torch.complex128))
+    expected[1] = torch.diag(torch.tensor([1.0, 3.0], dtype=torch.complex128))
+    assert torch.allclose(result.data, expected)
+
+
+def test_bands_near_value_with_points_dict_non_gamma():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(
+        tensor,
+        point="X",
+        close_to=1.0,
+        tol=1e-6,
+        points={"X": (0.5,)},
+    )
+
+    assert result.dims[1].dim == 1
+    # At X the eigenvalue 1.0 belongs to band 1; the projection picks (1, 1).
+    expected = torch.tensor([[[-1.0]], [[1.0]]], dtype=torch.complex128)
+    assert torch.allclose(result.data, expected)
+
+
+def test_bands_near_value_with_explicit_fractional_tuple():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(
+        tensor, point=(0.5,), close_to=3.0, tol=1e-6
+    )
+
+    assert result.dims[1].dim == 1
+    # Band 2 (eigvalue 3 at X) projects to (2, 2) diagonal entries.
+    expected = torch.tensor([[[2.0]], [[3.0]]], dtype=torch.complex128)
+    assert torch.allclose(result.data, expected)
+
+
+def test_bands_near_value_empty_subspace_when_no_match():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(tensor, close_to=1000.0, tol=1e-6)
+
+    assert result.dims[1].dim == 0
+    assert result.dims[2].dim == 0
+    assert result.data.shape == (2, 0, 0)
+
+
+def test_bands_near_value_non_diagonal_projection_math():
+    tensor = _nondiag_band_tensor()
+
+    result = nearest_bands(
+        tensor, point="Gamma", close_to=-1.0, tol=1e-6
+    )
+
+    # Selected eigenvector at Gamma is v = (1, -1)/sqrt(2).
+    # v^H H(Gamma) v = -1, v^H H(X) v = 0.5*(1 - 2 - 2 + 3) = 0.
+    assert result.dims[1].dim == 1
+    expected = torch.tensor([[[-1.0]], [[0.0]]], dtype=torch.complex128)
+    assert torch.allclose(result.data, expected, atol=1e-10)
+
+
+def test_bands_near_value_wraps_fractional_coordinates():
+    tensor, _ = _band_tensor()
+
+    result = nearest_bands(
+        tensor, point=(1.0,), close_to=-1.0, tol=1e-6
+    )
+
+    # (1.0,) wraps to Gamma = (0,), so this matches the Gamma selection.
+    expected = torch.tensor([[[-1.0]], [[1.0]]], dtype=torch.complex128)
+    assert torch.allclose(result.data, expected)
+
+
+def test_bands_near_value_unknown_label_without_points_raises():
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(KeyError, match="not found"):
+        nearest_bands(tensor, point="Z")
+
+
+def test_bands_near_value_dimension_mismatch_raises():
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(ValueError, match="coordinates"):
+        nearest_bands(tensor, point=(0.0, 0.0))
+
+
+def test_bands_near_value_rejects_wrong_rank():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = _space("band", 2)
+    data = torch.zeros((2, 2), dtype=torch.complex128)
+    rank2 = Tensor(data=data, dims=(k_space, band_space))
+
+    with pytest.raises(ValueError, match="rank 3"):
+        nearest_bands(rank2)

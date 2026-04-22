@@ -782,3 +782,105 @@ def bandselect(
         selected[name] = pack(mask)
 
     return selected
+
+
+def nearest_bands(
+    h_k: Tensor,
+    point: Union[str, Sequence[float]] = "Gamma",
+    close_to: float = 0.0,
+    tol: float = 1e-6,
+    points: Optional[Dict[str, Sequence[float]]] = None,
+) -> Tensor:
+    r"""
+    Select bands near ``close_to`` at a single anchor k-point, then project
+    ``H(k)`` onto that subspace for every momentum.
+
+    The anchor momentum is located by:
+    - a string label looked up in ``points`` (``"Gamma"`` defaults to the
+      origin when the label is absent from ``points``), or
+    - an explicit fractional-coordinate tuple.
+
+    ``h_k`` is diagonalized at the anchor k-point, and the eigenvectors whose
+    eigenvalues lie within ``tol`` of ``close_to`` are collected into a
+    rectangular matrix ``V`` of shape ``(N, H)``. The returned tensor is
+    :math:`V^{\dagger} H(k) V` for every ``k``.
+
+    Parameters
+    ----------
+    `h_k` : `Tensor`
+        Hamiltonian tensor with dims `(MomentumSpace, HilbertSpace, HilbertSpace)`.
+    `point` : `str` or fractional coordinate, default `"Gamma"`
+        Anchor k-point. When a string, it is looked up in `points`.
+    `close_to` : `float`, default `0.0`
+        Target eigenvalue for the subspace selection.
+    `tol` : `float`, default `1e-6`
+        Half-window around `close_to` for including eigenvectors.
+    `points` : dict, optional
+        Mapping from labels to fractional coordinates.
+
+    Returns
+    -------
+    `Tensor`
+        Tensor with dims `(MomentumSpace, IndexSpace, IndexSpace)` whose last
+        two axes span the selected subspace.
+    """
+    if h_k.rank() != 3:
+        raise ValueError(f"Input tensor must be of rank 3, but has rank {h_k.rank()}")
+    if not isinstance(h_k.dims[0], MomentumSpace):
+        raise TypeError("The first dimension of the tensor must be a MomentumSpace.")
+    if not isinstance(h_k.dims[1], HilbertSpace):
+        raise TypeError("The second dimension of the tensor must be a HilbertSpace.")
+    if not isinstance(h_k.dims[2], HilbertSpace):
+        raise TypeError("The third dimension of the tensor must be a HilbertSpace.")
+
+    kspace = cast(MomentumSpace, h_k.dims[0])
+    k_items = list(kspace.structure.items())
+    if not k_items:
+        raise ValueError("MomentumSpace is empty")
+
+    dim = k_items[0][0].space.dim
+    if isinstance(point, str):
+        if points is not None and point in points:
+            target_frac = tuple(float(x) for x in points[point])
+        elif point == "Gamma":
+            target_frac = tuple(0.0 for _ in range(dim))
+        else:
+            raise KeyError(
+                f"Point {point!r} not found in `points`; "
+                "provide a `points` mapping or pass explicit fractional coordinates."
+            )
+    else:
+        target_frac = tuple(float(x) for x in point)
+    if len(target_frac) != dim:
+        raise ValueError(
+            f"Anchor point has {len(target_frac)} coordinates but momentum "
+            f"space has dimension {dim}."
+        )
+
+    precision = get_precision_config()
+    k_frac = np.array(
+        [[float(k.rep[j, 0]) for j in range(dim)] for k, _ in k_items],
+        dtype=precision.np_float,
+    )
+    k_indices = np.array([idx for _, idx in k_items], dtype=np.int64)
+    target_arr = np.asarray(target_frac, dtype=precision.np_float)
+    diff = k_frac - target_arr
+    diff = diff - np.round(diff)
+    dist = np.linalg.norm(diff, axis=1)
+    best_row = int(np.argmin(dist))
+    anchor_idx = int(k_indices[best_row])
+
+    H_anchor = h_k.data[anchor_idx]
+    eigenvalues, eigenvectors = torch.linalg.eigh(H_anchor)
+
+    mask = (eigenvalues - close_to).abs() <= tol
+    selected = torch.nonzero(mask, as_tuple=False).flatten()
+    n_selected = int(selected.numel())
+
+    V = eigenvectors.index_select(-1, selected)  # (N, H)
+    V_dag = V.conj().transpose(-2, -1)  # (H, N)
+
+    projected = torch.einsum("ia,kab,bj->kij", V_dag, h_k.data, V)
+
+    out_space = IndexSpace.linear(n_selected)
+    return Tensor(data=projected, dims=(kspace, out_space, out_space))
