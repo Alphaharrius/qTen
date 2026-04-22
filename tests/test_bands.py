@@ -308,9 +308,7 @@ def _nondiag_band_tensor() -> Tensor:
 def test_bands_near_value_selects_single_band_at_gamma():
     tensor, _ = _band_tensor()
 
-    result = nearest_bands(
-        tensor, point="Gamma", close_to=-1.0, tol=1e-6
-    )
+    result = nearest_bands(tensor, point="Gamma", close_to=-1.0, tol=1e-6)
 
     assert result.dims[0] == tensor.dims[0]
     assert isinstance(result.dims[1], IndexSpace)
@@ -326,9 +324,7 @@ def test_bands_near_value_selects_single_band_at_gamma():
 def test_bands_near_value_selects_multiple_bands_in_tolerance_window():
     tensor, _ = _band_tensor()
 
-    result = nearest_bands(
-        tensor, point="Gamma", close_to=0.5, tol=1.6
-    )
+    result = nearest_bands(tensor, point="Gamma", close_to=0.5, tol=1.6)
 
     assert result.dims[1].dim == 2
     assert result.dims[2].dim == 2
@@ -358,9 +354,7 @@ def test_bands_near_value_with_points_dict_non_gamma():
 def test_bands_near_value_with_explicit_fractional_tuple():
     tensor, _ = _band_tensor()
 
-    result = nearest_bands(
-        tensor, point=(0.5,), close_to=3.0, tol=1e-6
-    )
+    result = nearest_bands(tensor, point=(0.5,), close_to=3.0, tol=1e-6)
 
     assert result.dims[1].dim == 1
     # Band 2 (eigvalue 3 at X) projects to (2, 2) diagonal entries.
@@ -381,9 +375,7 @@ def test_bands_near_value_empty_subspace_when_no_match():
 def test_bands_near_value_non_diagonal_projection_math():
     tensor = _nondiag_band_tensor()
 
-    result = nearest_bands(
-        tensor, point="Gamma", close_to=-1.0, tol=1e-6
-    )
+    result = nearest_bands(tensor, point="Gamma", close_to=-1.0, tol=1e-6)
 
     # Selected eigenvector at Gamma is v = (1, -1)/sqrt(2).
     # v^H H(Gamma) v = -1, v^H H(X) v = 0.5*(1 - 2 - 2 + 3) = 0.
@@ -395,9 +387,7 @@ def test_bands_near_value_non_diagonal_projection_math():
 def test_bands_near_value_wraps_fractional_coordinates():
     tensor, _ = _band_tensor()
 
-    result = nearest_bands(
-        tensor, point=(1.0,), close_to=-1.0, tol=1e-6
-    )
+    result = nearest_bands(tensor, point=(1.0,), close_to=-1.0, tol=1e-6)
 
     # (1.0,) wraps to Gamma = (0,), so this matches the Gamma selection.
     expected = torch.tensor([[[-1.0]], [[1.0]]], dtype=torch.complex128)
