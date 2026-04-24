@@ -55,6 +55,7 @@ plugins:
             members_order: source
             merge_init_into_class: true
             separate_signature: true
+            overloads_only: true
             show_if_no_docstring: true
             show_root_full_path: false
             show_root_heading: true

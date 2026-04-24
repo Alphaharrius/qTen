@@ -437,9 +437,7 @@ def bandfold(
         for r_lookup, r_out in zip(enlarge_unit_cell, transformed_unit_cell)
     )
     # # Transform both sides
-    f = fourier_transform(
-        k_space, tensor.dims[-1], rebased_hilbert, device=tensor.device
-    )
+    f = fourier_transform(k_space, target_space, rebased_hilbert, device=tensor.device)
     vratio = np.sqrt(len(enlarge_unit_cell) / len(lattice.unit_cell))
     f = f / vratio
     fh = f.h(-2, -1)  # (K, B', B)

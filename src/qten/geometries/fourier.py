@@ -1,3 +1,55 @@
+"""
+Fourier-transform helpers connecting finite real-space and momentum-space geometry.
+
+This module provides the Fourier phase-factor machinery used to move between
+discrete momentum points and finite real-space offsets in QTen. Its core role
+is to build the finite Fourier kernel associated with a bounded lattice and to
+package that kernel into
+[`Tensor`][qten.linalg.tensors.Tensor] objects whose legs are labeled by the
+repository's symbolic
+[`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] and
+[`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] objects.
+
+Two related APIs are defined here:
+
+- [`fourier_kernel`][qten.geometries.fourier.fourier_kernel] computes the raw
+  phase matrix `exp(-i k·r)` for momentum points and real-space offsets.
+- [`fourier_transform`][qten.geometries.fourier.fourier_transform] lifts that
+  kernel into a labeled `(K, B, R)` tensor that maps a region basis into a
+  Bloch basis.
+- [`region_restrict`][qten.geometries.fourier.region_restrict] rebuilds an
+  existing Fourier-transform tensor on a different real-space region while
+  preserving the momentum and Bloch-space structure.
+
+The implementation follows the repository's reciprocal-lattice convention:
+[`Momentum.to_vec()`][qten.geometries.spatials.Momentum.to_vec] already uses
+Cartesian reciprocal coordinates containing the `2π` factor induced by
+[`Lattice.dual`][qten.geometries.spatials.Lattice.dual]. As a result, the
+Fourier phase is evaluated as `exp(-i k_cart·r_cart)`, which is equivalent to
+`exp(-2π i κ·n)` in fractional direct/reciprocal coordinates.
+
+Repository usage
+----------------
+This module sits at the junction of geometry and tensor assembly:
+
+- Finite-region Hilbert spaces contribute the real-space offsets whose phases
+  are sampled against a discrete
+  [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+- Bloch-space labeling is recovered through
+  [`mapping_matrix`][qten.linalg.tensors.mapping_matrix], allowing the raw
+  Fourier kernel to be embedded into a tensor with explicit symbolic legs.
+- Region-changing workflows can rebuild the rightmost real-space leg without
+  modifying the momentum grid or Bloch labeling by calling
+  [`region_restrict`][qten.geometries.fourier.region_restrict].
+
+Notes
+-----
+The functions in this module assume a finite sampled momentum set and a finite
+real-space region supplied by the surrounding geometry/symbolics layers. They
+therefore implement the discrete Fourier transform conventions used by the
+repository's bounded-lattice workflows rather than a continuum transform API.
+"""
+
 from ..utils.devices import Device
 from typing import Dict, Tuple, overload, Optional
 from typing import cast
@@ -15,16 +67,11 @@ from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby
 
 
-# TODO: Consider allow the creation of the tensor on a specified device.
-@multimethod
-def fourier_transform(
+def fourier_kernel(
     K: Tuple[Momentum, ...], R: Tuple[Offset, ...], *, device: Optional[Device] = None
 ) -> torch.Tensor:
     """
-    Compute Fourier phase factors between momentum and real-space offsets.
-
-    This returns the Fourier kernel evaluated for all pairs of momentum points
-    in `K` and offsets in `R`.
+    Compute the raw discrete Fourier kernel for momentum points and offsets.
 
     `Momentum.to_vec()` uses the reciprocal basis (which already carries the
     `2π` convention via `Lattice.dual`), so the phase is computed as
@@ -34,15 +81,17 @@ def fourier_transform(
     Parameters
     ----------
     K : Tuple[Momentum, ...]
-        Momentum points.
+        Momentum points for the raw-kernel form
+        [`fourier_kernel(K, R)`][qten.geometries.fourier.fourier_kernel].
     R : Tuple[Offset, ...]
-        Real-space offsets.
+        Real-space offsets for the raw-kernel form
+        [`fourier_kernel(K, R)`][qten.geometries.fourier.fourier_kernel].
 
     Returns
     -------
     torch.Tensor
         Complex tensor of shape `(len(K), len(R))` with elements
-        exp(-i k_cart·r_cart) (equivalently `exp(-2π i κ·n)` in fractional
+        `exp(-i k_cart·r_cart)` (equivalently `exp(-2π i κ·n)` in fractional
         coordinates).
     """
     precision = get_precision_config()
@@ -78,8 +127,7 @@ def fourier_transform(
     return torch.exp(exponent)  # (K, R)
 
 
-@fourier_transform.register
-def _(
+def fourier_transform(
     k_space: MomentumSpace,
     bloch_space: HilbertSpace,
     region_space: HilbertSpace,
@@ -87,11 +135,14 @@ def _(
     device: Optional[Device] = None,
 ) -> Tensor:
     """
-    Build the Fourier transform tensor between `k_space` and `region_space`.
+    Build the labeled Fourier transform tensor for symbolic Hilbert spaces.
 
-    This computes phase factors for `k_space` against the offsets collected
-    from `region_space`, then maps region modes into `bloch_space` using
-    the coordinate named by `r_name`.
+    This function is the high-level symbolic wrapper around
+    [`fourier_kernel`][qten.geometries.fourier.fourier_kernel]. It enumerates
+    momentum points from `k_space`, collects real-space offsets from
+    `region_space`, evaluates the raw Fourier kernel, and maps region modes
+    into `bloch_space` with
+    [`mapping_matrix`][qten.linalg.tensors.mapping_matrix].
 
     Parameters
     ----------
@@ -107,12 +158,17 @@ def _(
     Tensor
         Tensor with data shape `(K, B, R)` and dims
         (k_space, bloch_space, region_space).
+
+    See Also
+    --------
+    [`fourier_kernel`][qten.geometries.fourier.fourier_kernel]
+        Low-level Fourier phase matrix used internally by this function.
     """
     K: Tuple[Momentum, ...] = k_space.elements()
     R: Tuple[Offset, ...] = tuple(
         cast(U1Basis, el).irrep_of(Offset) for el in region_space.elements()
     )
-    f = fourier_transform(K, R, device=device)  # (K, R)
+    f = fourier_kernel(K, R, device=device)  # (K, R)
 
     region_to_bloch: Dict[U1Basis, U1Basis] = matchby(
         region_space,
@@ -193,13 +249,32 @@ def region_restrict(
     """
     Rebuild a Fourier transform tensor on a different real-space region.
 
+    Supported forms
+    ---------------
+    [`region_restrict(tensor, R)`][qten.geometries.fourier.region_restrict]
+        Rebuild the Fourier transform tensor on the target real-space
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] `R`,
+        reusing the momentum and Bloch spaces from `tensor`.
+
+    [`region_restrict(tensor, region)`][qten.geometries.fourier.region_restrict]
+        Accept a tuple of
+        [`Offset`][qten.geometries.spatials.Offset] values, construct the
+        corresponding real-space
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] via
+        [`region_hilbert`][qten.symbolics.ops.region_hilbert], then rebuild
+        the transform on that region. Here `region` means the target finite
+        real-space region written explicitly as an ordered tuple of offsets,
+        for example `(r0, r1, r2)`, rather than as a preconstructed
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace].
+
     Parameters
     ----------
     tensor : Tensor
         Fourier transform tensor whose first two dims are expected to be
         `(MomentumSpace, HilbertSpace)`.
     R : HilbertSpace
-        Target real-space region used as the new rightmost dimension.
+        Target real-space region used as the new rightmost dimension for the
+        form [`region_restrict(tensor, R)`][qten.geometries.fourier.region_restrict].
     device : Optional[Device], optional
         Device on which to construct the rebuilt transform.
 
@@ -217,10 +292,13 @@ def region_restrict(
 
     Notes
     -----
-    This is the runtime implementation of the overloaded
-    [`region_restrict`][qten.geometries.fourier.region_restrict] API. The
-    overload accepting a tuple of [`Offset`][qten.geometries.spatials.Offset]
-    first converts that tuple into a [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and then dispatches here.
+    The generated API docs for this module show overload signatures, but the
+    prose is rendered from this public implementation docstring. The overload
+    accepting a tuple of [`Offset`][qten.geometries.spatials.Offset] first
+    converts that tuple into a
+    [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and then
+    dispatches here. In that overload, `region` is the explicit tuple of
+    target real-space offsets.
     """
     K, B, _ = tensor.dims
     if not isinstance(K, MomentumSpace):
@@ -235,7 +313,7 @@ def region_restrict(
 
 
 @region_restrict.register
-def _(
+def _region_restrict_from_offsets(
     tensor: Tensor, region: Tuple[Offset, ...], *, device: Optional[Device] = None
 ) -> Tensor:
     B = tensor.dims[1]

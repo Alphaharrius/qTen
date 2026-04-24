@@ -1,4 +1,5 @@
 from .geometries.fourier import (
+    fourier_kernel as fourier_kernel,
     fourier_transform as fourier_transform,
     region_restrict as region_restrict,
 )
