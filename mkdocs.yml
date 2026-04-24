@@ -30,7 +30,9 @@ plugins:
           options:
             docstring_style: numpy
             filters:
+              - "!^_$"
               - "!^_[^_]"
+              - "!^NonNumericExpr$"
               - "!^__contains__$"
               - "!^__add__$"
               - "!^__neg__$"
@@ -50,6 +52,7 @@ plugins:
               - "!^__radd__$"
               - "!^__rsub__$"
               - "!^__rmul__$"
+              - "!^__rtruediv__$"
               - "!^[A-Z]$"
             inherited_members: true
             members_order: source
