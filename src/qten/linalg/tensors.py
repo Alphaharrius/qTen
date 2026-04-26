@@ -1,3 +1,57 @@
+"""
+StateSpace-aware tensor primitives and helpers for QTen.
+
+This module defines [`Tensor`][qten.linalg.tensors.Tensor], QTen's wrapper
+around `torch.Tensor`, together with the dimension-aware operations that
+preserve symbolic axis metadata during tensor algebra.
+
+Core API
+--------
+- [`Tensor`][qten.linalg.tensors.Tensor]
+  Tensor wrapper pairing raw torch data with symbolic
+  [`StateSpace`][qten.symbolics.state_space.StateSpace] dims.
+- [`at_device`][qten.linalg.tensors.at_device]
+  Context manager for forcing newly created QTen tensors onto a device.
+- [`matmul`][qten.linalg.tensors.matmul]
+  StateSpace-aware matrix multiplication.
+- [`align`][qten.linalg.tensors.align]
+  Reorder or expand a tensor axis so it matches a target symbolic dimension.
+- [`union_dims`][qten.linalg.tensors.union_dims]
+  Broadcast-compatible dimension merge used by arithmetic and comparison ops.
+
+Construction helpers
+--------------------
+- [`zeros`][qten.linalg.tensors.zeros]
+- [`ones`][qten.linalg.tensors.ones]
+- [`eye`][qten.linalg.tensors.eye]
+- [`kernel_tensor`][qten.linalg.tensors.kernel_tensor]
+- [`mapping_matrix`][qten.linalg.tensors.mapping_matrix]
+
+Shape and metadata transforms
+-----------------------------
+- [`permute`][qten.linalg.tensors.permute]
+- [`transpose`][qten.linalg.tensors.transpose]
+- [`replace_dim`][qten.linalg.tensors.replace_dim]
+- [`factorize_dim`][qten.linalg.tensors.factorize_dim]
+- [`product_dims`][qten.linalg.tensors.product_dims]
+- [`promote_rank`][qten.linalg.tensors.promote_rank]
+
+Indexing and selection
+----------------------
+- [`where`][qten.linalg.tensors.where]
+- [`nonzero`][qten.linalg.tensors.nonzero]
+- [`index_add`][qten.linalg.tensors.index_add]
+- [`index_add_`][qten.linalg.tensors.index_add_]
+
+Conventions
+-----------
+Every public helper in this module treats `tensor.dims` as part of the tensor's
+meaning, not just its shape. Functions therefore describe not only how data is
+transformed, but also how the symbolic
+[`StateSpace`][qten.symbolics.state_space.StateSpace] metadata is preserved,
+reordered, merged, or reduced.
+"""
+
 from typing import (
     Self,
     NamedTuple,
@@ -112,11 +166,11 @@ class at_device(ContextDecorator):
 
         Parameters
         ----------
-        exc_type : `type[BaseException] | None`
+        exc_type : type[BaseException] | None
             Exception type raised inside the context, if any.
-        exc : `BaseException | None`
+        exc : BaseException | None
             Exception instance raised inside the context, if any.
-        tb : `Any`
+        tb : Any
             Traceback object associated with `exc`, if any.
 
         Notes
@@ -145,10 +199,6 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
         )
 
 
-# TODO: Seems when we do torch.tensor(..., device=device) the tensor is created directly on the device
-# and thus takes only 1 allocation. Currently our workflow is to create the tensor on CPU and move it to
-# the target device, which involves 2 allocations and 1 copy. In future versions we should consider allowing
-# direct creation on the target device to optimize this workflow.
 @need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
 class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
@@ -170,6 +220,15 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
       permute one operand to match the other.
     - Singleton broadcast axes are represented symbolically by
       [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace].
+
+    Attributes
+    ----------
+    data : T
+        Underlying `torch.Tensor` storing the numeric values.
+    dims : Tuple[StateSpace, ...]
+        Symbolic dimension metadata, with one
+        [`StateSpace`][qten.symbolics.state_space.StateSpace] per axis of
+        `data`.
 
     Construction
     ------------
@@ -360,9 +419,9 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
         Parameters
         ----------
-        number : `Number`
+        number : Number
             The scalar value to convert into a tensor.
-        device : `Optional[Device]`, optional
+        device : Optional[Device], optional
             Device to place the scalar on, by default None (CPU).
 
         Returns
@@ -384,10 +443,24 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Return a new tensor with the same dims and converted data dtype.
 
+        This method delegates to [`astype(tensor, dtype)`][qten.linalg.tensors.astype],
+        which applies `tensor.data.to(dtype=...)` to the underlying torch data.
+
+        See Also
+        --------
+        [`astype(tensor, dtype)`][qten.linalg.tensors.astype]
+            Functional form with the same behavior.
+
         Parameters
         ----------
         dtype : torch.dtype
-            Target data type.
+            Target PyTorch dtype.
+
+            This must be a [`torch.dtype`](https://pytorch.org/docs/stable/tensor_attributes.html#torch-dtype)
+            object such as `torch.float32`, `torch.float64`,
+            `torch.complex64`, `torch.complex128`, `torch.int64`, or
+            `torch.bool`. Any dtype accepted by
+            `torch.Tensor.to(dtype=...)` is valid here.
 
         Returns
         -------
@@ -399,6 +472,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     def equal(self, other: "Tensor") -> bool:
         """
         Compare this tensor to another tensor for exact equality.
+
+        See Also
+        --------
+        [`equal(a, b)`][qten.linalg.tensors.equal]
+            Functional form with the full comparison semantics.
 
         Behavior
         --------
@@ -427,6 +505,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     ) -> bool:
         """
         Compare this tensor to another tensor for approximate equality.
+
+        See Also
+        --------
+        [`allclose(a, b, ...)`][qten.linalg.tensors.allclose]
+            Functional form with the full comparison semantics.
 
         Behavior
         --------
@@ -464,12 +547,58 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
         This is the mask-producing counterpart to `allclose`: it returns a bool
         [`Tensor`][qten.linalg.tensors.Tensor] instead of a Python bool.
+
+        Supported forms
+        ---------------
+        [`tensor.isclose(other)`][qten.linalg.tensors.Tensor.isclose]
+            Method form.
+
+        [`isclose(tensor, other)`][qten.linalg.tensors.isclose]
+            Functional equivalent.
+
+        Parameter forms
+        ---------------
+        `other : Tensor`
+            Compared after symbolic alignment and broadcast handling.
+
+        `other : Number`
+            Promoted through `Tensor.scalar(other)` before applying the same
+            comparison rules.
+
+        Parameters
+        ----------
+        other : Tensor | Number
+            Comparison target. If `other` is a
+            [`Tensor`][qten.linalg.tensors.Tensor], it is aligned and
+            broadcast against `self`. If `other` is a scalar number, it is
+            promoted through `Tensor.scalar(other)` before comparison.
+        rtol : float, optional
+            Relative tolerance passed to `torch.isclose`.
+        atol : float, optional
+            Absolute tolerance passed to `torch.isclose`.
+        equal_nan : bool, optional
+            Whether `NaN` values are considered equal.
+
+        Returns
+        -------
+        Self
+            Boolean tensor mask with the merged symbolic output dims.
+
+        See Also
+        --------
+        [`isclose(a, b, ...)`][qten.linalg.tensors.isclose]
+            Functional form with the full behavior description.
         """
         return isclose(self, other, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
     def conj(self) -> Self:
         """
         Compute the complex conjugate of the given tensor.
+
+        See Also
+        --------
+        [`conj(tensor)`][qten.linalg.tensors.conj]
+            Functional form with the same behavior.
 
         Returns
         -------
@@ -484,6 +613,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
         For complex-valued tensors this drops the imaginary component. For
         real-valued tensors this returns a tensor with the same values.
+
+        See Also
+        --------
+        [`real(tensor)`][qten.linalg.tensors.real]
+            Functional form with the same behavior.
         """
         return real(self)
 
@@ -493,6 +627,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
         For complex-valued tensors this returns the imaginary component. For
         real-valued tensors this returns zeros with the corresponding real dtype.
+
+        See Also
+        --------
+        [`imag(tensor)`][qten.linalg.tensors.imag]
+            Functional form with the same behavior.
         """
         return imag(self)
 
@@ -501,6 +640,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         Return the element-wise absolute value / magnitude of the tensor.
 
         For complex-valued tensors this returns the magnitude.
+
+        See Also
+        --------
+        [`abs(tensor)`][qten.linalg.tensors.abs]
+            Functional form with the same behavior.
         """
         return abs(self)
 
@@ -508,9 +652,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Permute the dimensions according to the specified order.
 
+        See Also
+        --------
+        [`permute(tensor, *order)`][qten.linalg.tensors.permute]
+            Functional form with the full permutation semantics.
+
         Parameters
         ----------
-        order : `Union[int, Sequence[int]]`
+        order : Union[int, Sequence[int]]
             The desired order of dimensions.
 
         Returns
@@ -524,11 +673,16 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Transpose the specified dimensions.
 
+        See Also
+        --------
+        [`transpose(tensor, dim0, dim1)`][qten.linalg.tensors.transpose]
+            Functional form with the full transpose semantics.
+
         Parameters
         ----------
-        dim0 : `int`
+        dim0 : int
             The first dimension to transpose.
-        dim1 : `int`
+        dim1 : int
             The second dimension to transpose.
 
         Returns
@@ -542,11 +696,16 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Hermitian transpose (conjugate transpose) of the specified dimensions.
 
+        See Also
+        --------
+        [`conj(tensor)`][qten.linalg.tensors.conj]
+        [`transpose(tensor, dim0, dim1)`][qten.linalg.tensors.transpose]
+
         Parameters
         ----------
-        dim0 : `int`
+        dim0 : int
             The first dimension to transpose.
-        dim1 : `int`
+        dim1 : int
             The second dimension to transpose.
 
         Returns
@@ -560,17 +719,36 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Align the specified dimension to the target StateSpace.
 
+        Behavior
+        --------
+        Delegates to [`align`][qten.linalg.tensors.align]. This may:
+
+        - leave the tensor unchanged if the axis already matches,
+        - expand a broadcast axis to `target_dim`,
+        - permute the axis if the same rays appear in a different order,
+        - raise if the axis is not symbolically compatible with `target_dim`.
+
+        Use cases
+        ---------
+        - reorder one axis to match another tensor before contraction,
+        - materialize a broadcast axis as a concrete symbolic space.
+
         Parameters
         ----------
-        dim : `int`
+        dim : int
             The dimension index to align.
-        target_dim : `StateSpace`
+        target_dim : StateSpace
             The target StateSpace to align to.
 
         Returns
         -------
         Self
             The aligned tensor.
+
+        See Also
+        --------
+        [`align(tensor, dim, target_dim)`][qten.linalg.tensors.align]
+            Functional form with the full behavior description.
         """
         return align(self, dim, target_dim)
 
@@ -578,9 +756,21 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Align all tensor dimensions to `dims`.
 
+        Behavior
+        --------
+        Delegates to [`align_all`][qten.linalg.tensors.align_all], aligning the
+        tensor axis-by-axis to the requested symbolic layout.
+
+        Use cases
+        ---------
+        - normalize one tensor to the metadata layout of another before
+          comparison or arithmetic,
+        - prepare a tensor for an API that expects a specific symbolic axis
+          ordering.
+
         Parameters
         ----------
-        dims : `Tuple[StateSpace, ...]`
+        dims : Tuple[StateSpace, ...]
             The target dimensions to align to.
 
         Returns
@@ -592,6 +782,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ------
         ValueError
             If the provided `dims` are not compatible with the tensor's current dimensions.
+
+        See Also
+        --------
+        [`align_all(tensor, dims)`][qten.linalg.tensors.align_all]
+            Functional form with the full behavior description.
         """
         return align_all(self, dims)
 
@@ -612,6 +807,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         -------
         Self
             Boolean tensor after reduction.
+
+        See Also
+        --------
+        [`all(tensor, dim=None, keepdim=False)`][qten.linalg.tensors.all]
+            Functional form with the full reduction semantics.
         """
         return all(self, dim=dim, keepdim=keepdim)
 
@@ -661,33 +861,34 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         Parameters
         ----------
         input : Optional[Tensor], optional
-            Tensor selected where `condition` is `True`.
+            Tensor selected where `condition` is `True` in the selection form
+            `condition.where(input, other)`.
         other : Optional[Tensor], optional
-            Tensor selected where `condition` is `False`.
+            Tensor selected where `condition` is `False` in the selection form
+            `condition.where(input, other)`.
         index_type : Type[Any], optional
-            Only used for the condition-only form. Supported values are
-            [`Tensor`][qten.linalg.tensors.Tensor], `tuple` / `Tuple`, and [`StateSpace`][qten.symbolics.state_space.StateSpace].
+            Only used for the condition-only form `condition.where(...)`.
+
+            Supported values are
+            [`Tensor`][qten.linalg.tensors.Tensor] to return one rank-1
+            integer tensor per axis, `tuple` / `Tuple` to return Python
+            coordinate tuples, and
+            [`StateSpace`][qten.symbolics.state_space.StateSpace] to return the
+            selected symbolic subspace for rank-1 conditions.
 
         Returns
         -------
         Union[Tensor, Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]
-            Return value depends on call form:
-            - For `condition.where(input, other)`, returns a single [`Tensor`][qten.linalg.tensors.Tensor]
-              with `dims == union_dims(condition.dims, input.dims, other.dims,
-              allow_merge=False)`. Data is selected elementwise after all
-              operands are aligned/broadcast to these merged dims.
-            - For `condition.where()`, returns `Tuple[Tensor, ...]` with one
-              1D index tensor per condition axis (same ordering as
-              torch.where(condition) / `torch.nonzero(as_tuple=True)`).
-              Each returned tensor has shape `(nnz,)` and
-              dims == (IndexSpace.linear(nnz),), where `nnz` is the number of
-              True entries in `condition`.
-            - For `condition.where(index_type=Tensor)`, returns
-              Tuple[Tensor, ...].
-            - For `condition.where(index_type=tuple)` or `Tuple`, returns one
-              Python coordinate tuple per `True` entry.
-            - For `condition.where(index_type=StateSpace)`, returns the
-              selected subspace for rank-1 conditions only.
+            Return value depends on call form. `condition.where(input, other)`
+            returns a single [`Tensor`][qten.linalg.tensors.Tensor] with
+            `dims == union_dims(condition.dims, input.dims, other.dims,
+            allow_merge=False)`, after all operands are aligned and broadcast.
+            `condition.where()` and `condition.where(index_type=Tensor)` return
+            `Tuple[Tensor, ...]` with one rank-1 index tensor per condition
+            axis, each with dims `(IndexSpace.linear(nnz),)`. Using
+            `index_type=tuple` or `Tuple` returns one Python coordinate tuple
+            per `True` entry. Using `index_type=StateSpace` returns the
+            selected subspace for rank-1 conditions only.
 
         Raises
         ------
@@ -698,6 +899,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ValueError
             If operands cannot be aligned/broadcast to shared union dims, or if
             index_type=StateSpace is requested for a non-rank-1 mask.
+
+        See Also
+        --------
+        [`where(...)`][qten.linalg.tensors.where]
+            Functional form with the full supported-form documentation.
         """
         if index_type is None:
             index_type = Tensor
@@ -729,8 +935,12 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         as_tuple : bool, optional
             Must be `True`.
         index_type : Type[Any], optional
-            Requested index representation. Supported values are [`Tensor`][qten.linalg.tensors.Tensor],
-            `tuple` / `Tuple`, and [`StateSpace`][qten.symbolics.state_space.StateSpace].
+            Requested index representation. Supported values are
+            [`Tensor`][qten.linalg.tensors.Tensor] to return one rank-1
+            integer tensor per axis, `tuple` / `Tuple` to return Python
+            coordinate tuples, and
+            [`StateSpace`][qten.symbolics.state_space.StateSpace] to return the
+            selected symbolic subspace for rank-1 conditions.
 
         Returns
         -------
@@ -741,6 +951,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         ------
         NotImplementedError
             If `as_tuple` is `False`.
+
+        See Also
+        --------
+        [`nonzero(condition, ...)`][qten.linalg.tensors.nonzero]
+            Functional form with the full supported-form documentation.
         """
         if index_type is None:
             index_type = Tensor
@@ -750,9 +965,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Unsqueeze the specified dimension.
 
+        See Also
+        --------
+        [`unsqueeze(tensor, dim)`][qten.linalg.tensors.unsqueeze]
+            Functional form with the full behavior description.
+
         Parameters
         ----------
-        dim : `int`
+        dim : int
             The dimension to unsqueeze.
 
         Returns
@@ -766,9 +986,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Squeeze the specified dimension.
 
+        See Also
+        --------
+        [`squeeze(tensor, dim)`][qten.linalg.tensors.squeeze]
+            Functional form with the full behavior description.
+
         Parameters
         ----------
-        dim : `int`
+        dim : int
             The dimension to squeeze.
 
         Returns
@@ -813,6 +1038,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         -------
         Self
             A new tensor with the same dimensions as `self`.
+
+        See Also
+        --------
+        [`index_add(tensor, dim, index, source, alpha=1)`][qten.linalg.tensors.index_add]
+            Functional form with the full behavior description.
         """
         return index_add(self, dim=dim, index=index, source=source, alpha=alpha)
 
@@ -841,12 +1071,22 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         -------
         Self
             This tensor after in-place accumulation.
+
+        See Also
+        --------
+        [`index_add_(tensor, dim, index, source, alpha=1)`][qten.linalg.tensors.index_add_]
+            Functional in-place form with the full behavior description.
         """
         return index_add_(self, dim=dim, index=index, source=source, alpha=alpha)
 
     def rank(self) -> int:
         """
         Get the rank (number of dimensions) of the tensor.
+
+        See Also
+        --------
+        [`rank(tensor)`][qten.linalg.tensors.rank]
+            Functional form.
 
         Returns
         -------
@@ -859,9 +1099,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Compute the mean over specified dimension(s).
 
+        See Also
+        --------
+        [`mean(tensor, dim=None)`][qten.linalg.tensors.mean]
+            Functional form with the full reduction semantics.
+
         Parameters
         ----------
-        dim : `Optional[Union[int, Tuple[int, ...]]]`, optional
+        dim : Optional[Union[int, Tuple[int, ...]]], optional
             Reduction axis (or axes). If `None`, reduce over all dimensions.
 
         Returns
@@ -879,17 +1124,51 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Compute a vector or matrix norm over the specified dimension(s).
 
+        This method delegates to [`norm(tensor, ord=None, dim=None)`][qten.linalg.tensors.norm],
+        which in turn forwards the numeric computation to
+        [`torch.linalg.norm`](https://docs.pytorch.org/docs/stable/generated/torch.linalg.norm.html).
+
+        Supported `ord` values
+        ----------------------
+        The accepted values depend on whether `dim` selects a vector norm or a
+        matrix norm:
+
+        - `dim` is an `int`: vector norm.
+          Supported `ord` values include `None`, `0`, any finite `int` or
+          `float`, `float("inf")`, and `-float("inf")`.
+        - `dim` is a 2-tuple: matrix norm.
+          Supported `ord` values include `None`, `"fro"`, `"nuc"`, `1`, `-1`,
+          `2`, `-2`, `float("inf")`, and `-float("inf")`.
+        - `dim is None`:
+          PyTorch decides whether to interpret the input as a flattened vector
+          or as a 1D/2D tensor norm depending on `ord`. See the linked
+          `torch.linalg.norm` reference for the exact dispatch rules.
+
         Parameters
         ----------
-        ord : `Optional[Union[int, float, str]]`, optional
-            Order of the norm, passed through to `torch.linalg.norm`.
-        dim : `Optional[Union[int, Tuple[int, int]]]`, optional
-            Reduction axis or axes. If `None`, reduce over the whole tensor.
+        ord : Optional[Union[int, float, str]], optional
+            Norm order forwarded to `torch.linalg.norm`.
+
+            Common choices are `None` for the default norm chosen by PyTorch,
+            `2` for the Euclidean vector norm or spectral matrix norm, `1` for
+            an L1 vector norm or induced 1 matrix norm, `float("inf")` for
+            max-based norms, `"fro"` for the Frobenius matrix norm, and
+            `"nuc"` for the nuclear matrix norm.
+        dim : Optional[Union[int, Tuple[int, int]]], optional
+            Reduction axis or axes. Use an `int` to compute a vector norm along
+            one axis, a `Tuple[int, int]` to compute a matrix norm over two
+            axes, or `None` to let PyTorch use its default
+            `torch.linalg.norm` semantics.
 
         Returns
         -------
         Self
             A new tensor with the specified dimensions reduced.
+
+        See Also
+        --------
+        [`norm(tensor, ord=None, dim=None)`][qten.linalg.tensors.norm]
+            Functional form with the full reduction semantics.
         """
         return norm(self, ord=ord, dim=dim)
 
@@ -897,9 +1176,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Compute the indices of the maximum values over a specified dimension.
 
+        See Also
+        --------
+        [`argmax(tensor, dim)`][qten.linalg.tensors.argmax]
+            Functional form with the full reduction semantics.
+
         Parameters
         ----------
-        dim : `int`
+        dim : int
             The dimension to reduce.
 
         Returns
@@ -913,9 +1197,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Compute the indices of the minimum values over a specified dimension.
 
+        See Also
+        --------
+        [`argmin(tensor, dim)`][qten.linalg.tensors.argmin]
+            Functional form with the full reduction semantics.
+
         Parameters
         ----------
-        dim : `int`
+        dim : int
             The dimension to reduce.
 
         Returns
@@ -929,9 +1218,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Expand the tensor to the union of the specified dimensions.
 
+        See Also
+        --------
+        [`expand_to_union(tensor, union_dims)`][qten.linalg.tensors.expand_to_union]
+            Functional form with the full broadcast-expansion semantics.
+
         Parameters
         ----------
-        union_dims : `list[StateSpace]`
+        union_dims : list[StateSpace]
             The dimensions to expand to the union of.
 
         Returns
@@ -966,6 +1260,12 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     def device(self) -> Device:
         """
         Return the logical device associated with the tensor data.
+
+        Raises
+        ------
+        ValueError
+            If the underlying torch device type is not one of the supported
+            QTen device mappings.
         """
         torch_device = self.data.device
         if torch_device.type == "cpu":
@@ -1099,6 +1399,11 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         Replace the StateSpace at the specified dimension with a new StateSpace.
 
+        See Also
+        --------
+        [`replace_dim(tensor, dim, new_dim)`][qten.linalg.tensors.replace_dim]
+            Functional form with the full metadata replacement semantics.
+
         Parameters
         ----------
         dim : int
@@ -1119,7 +1424,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
         Parameters
         ----------
-        key : `Any`
+        key : Any
             Index expression accepted by QTen tensor indexing. Supported tokens
             include Python integers, slices, `None`, `...`, [`StateSpace`][qten.symbolics.state_space.StateSpace]
             objects, [`Convertible`][qten.abstracts.Convertible] objects that can be converted to
@@ -1248,12 +1553,20 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         dim : int
             The index of the dimension to factorize.
         rule : StateSpaceFactorization
-            The factorization rule.
+            The factorization rule. Its `factorized` field gives the output
+            factor spaces that replace the selected axis, and its `align_dim`
+            field gives a compatible reordering of the original axis used
+            before reshape.
 
         Returns
         -------
         Self
             A new tensor of the same wrapper type with the specified dimension factorized.
+
+        See Also
+        --------
+        [`factorize_dim(tensor, dim, rule)`][qten.linalg.tensors.factorize_dim]
+            Functional form with the full factorization semantics.
         """
         return factorize_dim(self, dim, rule)
 
@@ -1272,6 +1585,12 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         method reorders axes internally, performs one reshape, and returns the
         result in the canonical output order.
 
+        Use cases
+        ---------
+        - flatten several symbolic axes into one composite axis before a
+          decomposition,
+        - build tensor-product state spaces explicitly in the metadata.
+
         Parameters
         ----------
         indices_group : Tuple[int, ...]
@@ -1282,8 +1601,14 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         Returns
         -------
         Self
-            A new tensor of the same wrapper type where each requested group is replaced by one product
-            dimension and all non-grouped dimensions are retained.
+            A new tensor of the same wrapper type where each requested group is
+            replaced by one product dimension and all non-grouped dimensions
+            are retained.
+
+        See Also
+        --------
+        [`product_dims(tensor, *indices_group)`][qten.linalg.tensors.product_dims]
+            Functional form with the full product-dimension semantics.
 
         Raises
         ------
@@ -1403,6 +1728,15 @@ def matmul(left: Tensor, right: Tensor) -> Tensor:
     Perform matrix multiplication between two Tensors with StateSpace-aware
     alignment and torch-style rank handling.
 
+    Supported forms
+    ---------------
+    [`matmul(left, right)`][qten.linalg.tensors.matmul]
+        Functional form.
+
+    [`left @ right`][qten.linalg.tensors.matmul]
+        Operator form provided by [`Operable`][qten.abstracts.Operable] and
+        dispatched to this function.
+
     Both operands must be at least 1D. If either operand is 1D, this follows
     `torch.matmul` behavior by temporarily unsqueezing it to 2D, performing the
     matmul, then squeezing out the added dimension(s).
@@ -1420,11 +1754,19 @@ def matmul(left: Tensor, right: Tensor) -> Tensor:
     dimensions (including any [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] that remain), drops the contracted
     dimension, and appends the right-most dimension from `right`.
 
+    Use cases
+    ---------
+    - contract two symbolic matrix/tensor operators while preserving axis
+      labels,
+    - multiply batched operators whose batch axes need symbolic alignment,
+    - handle vector-matrix, matrix-vector, and vector-vector products with the
+      same API used for higher-rank tensors.
+
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The left tensor operand.
-    right : `Tensor`
+    right : Tensor
         The right tensor operand.
 
     Returns
@@ -1486,9 +1828,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1523,9 +1865,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The left tensor to add.
-    right : `Tensor`
+    right : Tensor
         The right tensor to add.
 
     Returns
@@ -1569,9 +1911,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1683,9 +2025,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1703,9 +2045,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1723,9 +2065,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1743,9 +2085,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Left operand.
-    right : `Tensor`
+    right : Tensor
         Right operand.
 
     Returns
@@ -1763,9 +2105,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Tensor operand.
-    right : `Number`
+    right : Number
         Scalar operand promoted to `Tensor.scalar(right)`.
 
     Returns
@@ -1784,9 +2126,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         Scalar operand promoted to `Tensor.scalar(left)`.
-    right : `Tensor`
+    right : Tensor
         Tensor operand.
 
     Returns
@@ -1805,9 +2147,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Tensor operand.
-    right : `Number`
+    right : Number
         Scalar operand promoted to `Tensor.scalar(right)`.
 
     Returns
@@ -1825,9 +2167,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         Scalar operand promoted to `Tensor.scalar(left)`.
-    right : `Tensor`
+    right : Tensor
         Tensor operand.
 
     Returns
@@ -1845,9 +2187,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Tensor operand.
-    right : `Number`
+    right : Number
         Scalar operand promoted to `Tensor.scalar(right)`.
 
     Returns
@@ -1865,9 +2207,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         Scalar operand promoted to `Tensor.scalar(left)`.
-    right : `Tensor`
+    right : Tensor
         Tensor operand.
 
     Returns
@@ -1885,9 +2227,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         Tensor operand.
-    right : `Number`
+    right : Number
         Scalar operand promoted to `Tensor.scalar(right)`.
 
     Returns
@@ -1905,9 +2247,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         Scalar operand promoted to `Tensor.scalar(left)`.
-    right : `Tensor`
+    right : Tensor
         Tensor operand.
 
     Returns
@@ -1925,7 +2267,7 @@ def _(tensor: Tensor) -> Tensor:
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to negate.
 
     Returns
@@ -1945,9 +2287,9 @@ def _(left: Tensor, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The tensor from which to subtract.
-    right : `Tensor`
+    right : Tensor
         The tensor to subtract.
 
     Returns
@@ -1965,9 +2307,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         The scalar value.
-    right : `Tensor`
+    right : Tensor
         The tensor.
 
     Returns
@@ -1985,9 +2327,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The tensor.
-    right : `Number`
+    right : Number
         The scalar value.
 
     Returns
@@ -2009,9 +2351,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         The scalar value to add to the diagonal.
-    right : `Tensor`
+    right : Tensor
         The target tensor (must be at least rank 2).
 
     Returns
@@ -2034,9 +2376,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The target tensor (must be at least rank 2).
-    right : `Number`
+    right : Number
         The scalar value to add to the diagonal.
 
     Returns
@@ -2059,9 +2401,9 @@ def _(left: Number, right: Tensor) -> Tensor:
 
     Parameters
     ----------
-    left : `Number`
+    left : Number
         The scalar value.
-    right : `Tensor`
+    right : Tensor
         The tensor to subtract.
 
     Returns
@@ -2084,9 +2426,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The tensor.
-    right : `Number`
+    right : Number
         The scalar value to subtract from the diagonal.
 
     Returns
@@ -2105,9 +2447,9 @@ def _(left: Tensor, right: Number) -> Tensor:
 
     Parameters
     ----------
-    left : `Tensor`
+    left : Tensor
         The tensor.
-    right : `Number`
+    right : Number
         The scalar divisor.
 
     Returns
@@ -2120,19 +2462,30 @@ def _(left: Tensor, right: Number) -> Tensor:
 
 def permute(tensor: TensorType, *order: Union[int, Sequence[int]]) -> TensorType:
     """
-    Permute the dimensions of the tensor according to the specified order.
+    Reorder tensor axes and their symbolic dimensions.
+
+    This is the metadata-aware analogue of `torch.Tensor.permute`. It applies
+    the same permutation to `tensor.data` and `tensor.dims`, so the returned
+    tensor keeps its symbolic axes in sync with the raw data layout.
 
     Parameters
     ----------
-    tensor : `Tensor`
-        The tensor to permute.
-    order : `Union[int, Sequence[int]]`
-        The desired order of dimensions.
+    tensor : Tensor
+        Tensor whose axes will be reordered.
+    order : Union[int, Sequence[int]]
+        Desired axis order. This may be passed either as variadic integers or
+        as a single tuple/list.
 
     Returns
     -------
     TensorType
-        The permuted tensor, preserving the input wrapper type.
+        Tensor with permuted data and correspondingly permuted `dims`,
+        preserving the input wrapper type.
+
+    Raises
+    ------
+    ValueError
+        If the permutation length does not match `tensor.rank()`.
     """
     _order: Tuple[int, ...]
     if len(order) == 1 and isinstance(order[0], (tuple, list)):
@@ -2154,21 +2507,27 @@ def permute(tensor: TensorType, *order: Union[int, Sequence[int]]) -> TensorType
 
 def transpose(tensor: TensorType, dim0: int, dim1: int) -> TensorType:
     """
-    Transpose the specified dimensions of the tensor.
+    Swap two tensor axes and their symbolic dimensions.
+
+    This is a two-axis specialization of
+    [`permute`][qten.linalg.tensors.permute]. Both the raw data and the
+    corresponding [`StateSpace`][qten.symbolics.state_space.StateSpace]
+    metadata are transposed together.
 
     Parameters
     ----------
-    tensor : `Tensor`
-        The tensor to transpose.
-    dim0 : `int`
+    tensor : Tensor
+        Tensor whose axes will be swapped.
+    dim0 : int
         The first dimension to transpose.
-    dim1 : `int`
+    dim1 : int
         The second dimension to transpose.
 
     Returns
     -------
     TensorType
-        The transposed tensor, preserving the input wrapper type.
+        Tensor with the selected axes exchanged, preserving the input wrapper
+        type.
     """
     new_data = tensor.data.transpose(dim0, dim1)
 
@@ -2182,33 +2541,38 @@ def transpose(tensor: TensorType, dim0: int, dim1: int) -> TensorType:
 
 def conj(tensor: TensorType) -> TensorType:
     """
-    Compute the complex conjugate of the given tensor.
+    Return the element-wise complex conjugate of a tensor.
 
     Parameters
     ----------
-    tensor : `Tensor`
-        The tensor to conjugate.
+    tensor : Tensor
+        Input tensor.
 
     Returns
     -------
     TensorType
-        The complex conjugate of the tensor, preserving the input wrapper type.
+        Tensor with conjugated data and unchanged dims, preserving the input
+        wrapper type.
     """
     return replace(tensor, data=tensor.data.conj())
 
 
 def real(tensor: TensorType) -> TensorType:
     """
-    Return the real part of a tensor, preserving dims and wrapper type.
+    Return the real part of a tensor.
+
+    The symbolic dimensions are unchanged. The returned tensor uses the real
+    dtype associated with the input data.
     """
     return replace(tensor, data=cast(T, tensor.data.real))
 
 
 def imag(tensor: TensorType) -> TensorType:
     """
-    Return the imaginary part of a tensor, preserving dims and wrapper type.
+    Return the imaginary part of a tensor.
 
-    For real-valued tensors this is a zero tensor with the corresponding real dtype.
+    The symbolic dimensions are unchanged. For real-valued tensors this returns
+    a zero tensor with the corresponding real dtype.
     """
     if tensor.data.is_complex():
         return replace(tensor, data=cast(T, tensor.data.imag))
@@ -2217,27 +2581,35 @@ def imag(tensor: TensorType) -> TensorType:
 
 def abs(tensor: TensorType) -> TensorType:
     """
-    Return the element-wise absolute value / magnitude of a tensor, preserving
-    dims and wrapper type.
+    Return the element-wise absolute value or magnitude of a tensor.
+
+    The symbolic dimensions are unchanged. Complex inputs produce a real-valued
+    magnitude tensor following PyTorch semantics.
     """
     return replace(tensor, data=cast(T, tensor.data.abs()))
 
 
 def unsqueeze(tensor: TensorType, dim: int) -> TensorType:
     """
-    Unsqueeze the specified dimension of the tensor.
+    Insert a singleton broadcast axis into a tensor.
+
+    This is the metadata-aware analogue of `torch.unsqueeze`. The new axis is
+    labeled with [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace]
+    so later alignment and broadcasting operations can treat it as a symbolic
+    singleton axis.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to unsqueeze.
-    dim : `int`
+    dim : int
         The dimension to unsqueeze.
 
     Returns
     -------
     TensorType
-        The unsqueezed tensor, preserving the input wrapper type.
+        Tensor with one extra singleton axis and a matching inserted
+        [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] dim.
     """
     if dim < 0:
         dim = dim + len(tensor.dims) + 1
@@ -2249,19 +2621,25 @@ def unsqueeze(tensor: TensorType, dim: int) -> TensorType:
 
 def squeeze(tensor: TensorType, dim: int) -> TensorType:
     """
-    Squeeze the specified dimension of the tensor.
+    Remove a singleton broadcast axis from a tensor.
+
+    Only axes labeled by
+    [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] are
+    removed. If the specified axis is not a broadcast axis, the input tensor is
+    returned unchanged.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to squeeze.
-    dim : `int`
+    dim : int
         The dimension to squeeze.
 
     Returns
     -------
     TensorType
-        The squeezed tensor, preserving the input wrapper type.
+        Tensor with the requested broadcast axis removed, preserving the input
+        wrapper type.
     """
     if dim < 0:
         dim = dim + len(tensor.dims)
@@ -2350,6 +2728,20 @@ def index_add(
     This is a metadata-aware wrapper over `torch.index_add`. It preserves the
     dimensions of `tensor`, requires a rank-1 integer `index`, and aligns
     `source` to `tensor` on all non-indexed axes before dispatch.
+
+    Behavior
+    --------
+    - `index` describes destination positions along axis `dim`.
+    - `index.dims[0]` is treated as the symbolic ordering of the updates.
+    - `source` is aligned to `tensor` on every non-indexed axis.
+    - on the indexed axis, `source` must already match the ordering and length
+      implied by `index`.
+
+    Use cases
+    ---------
+    - scatter-add updates coming from a symbolic subspace or sampled index set,
+    - accumulate block contributions into a larger tensor while preserving the
+      destination tensor metadata.
     """
     dim, promoted_tensor, promoted_index, aligned_source = _prepare_index_add_operands(
         tensor, dim, index, source
@@ -2374,7 +2766,16 @@ def index_add_(
     """
     In-place metadata-aware wrapper over `torch.Tensor.index_add_`.
 
-    The returned object is `tensor` itself.
+    Supported forms
+    ---------------
+    [`index_add_(tensor, dim, index, source, alpha=1)`][qten.linalg.tensors.index_add_]
+        Functional in-place form.
+
+    [`tensor.index_add_(dim, index, source, alpha=1)`][qten.linalg.tensors.Tensor.index_add_]
+        Method form.
+
+    The returned object is `tensor` itself. This is useful when you want the
+    side effect of accumulation without allocating a new wrapper object.
     """
     dim = _normalize_dim(dim, tensor.rank())
 
@@ -2392,21 +2793,41 @@ def index_add_(
 
 def align(tensor: TensorType, dim: int, target_dim: StateSpace) -> TensorType:
     """
-    Align the specified dimension of the tensor to the target StateSpace.
+    Align one tensor axis to a target symbolic dimension.
+
+    Alignment is QTen's core metadata-aware axis reordering operation:
+
+    - if the source axis already matches `target_dim`, the tensor is returned
+      unchanged,
+    - if the source axis is
+      [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace], it is
+      expanded to the size of `target_dim`,
+    - if the source and target axes span the same rays in a different order,
+      the data is permuted along that axis to match `target_dim`,
+    - otherwise alignment fails.
 
     Parameters
     ----------
-    tensor : `Tensor`
-        The tensor to align.
-    dim : `int`
+    tensor : Tensor
+        Input tensor.
+    dim : int
         The dimension index to align.
-    target_dim : `StateSpace`
+    target_dim : StateSpace
         The target StateSpace to align to.
 
     Returns
     -------
     TensorType
-        The aligned tensor, preserving the input wrapper type.
+        Tensor whose selected axis matches `target_dim`, preserving the input
+        wrapper type.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
+    ValueError
+        If the source and target dimensions are not symbolically compatible for
+        alignment.
     """
     if dim < 0:
         dim = dim + len(tensor.dims)
@@ -2472,19 +2893,24 @@ def align(tensor: TensorType, dim: int, target_dim: StateSpace) -> TensorType:
 
 def align_all(tensor: TensorType, dims: Tuple[StateSpace, ...]) -> TensorType:
     """
-    Align all dimensions of `tensor` to `dims`.
+    Align every tensor axis to a target symbolic layout.
+
+    This applies [`align`][qten.linalg.tensors.align] axis-by-axis and is the
+    standard utility used before value comparisons and metadata-aware
+    broadcasting.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to align.
-    dims : `Tuple[StateSpace, ...]`
+    dims : Tuple[StateSpace, ...]
         Target dimensions for each axis.
 
     Returns
     -------
     TensorType
-        The aligned tensor, preserving the input wrapper type.
+        Tensor whose `dims` match the requested target layout, preserving the
+        input wrapper type.
 
     Raises
     ------
@@ -2523,7 +2949,19 @@ def all(
     Returns
     -------
     TensorType
-        Boolean tensor with reduced dimensions, preserving the input wrapper type.
+        Boolean tensor with reduced dimensions, preserving the input wrapper
+        type.
+
+    Notes
+    -----
+    When `keepdim=True`, reduced axes are retained as
+    [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] dimensions
+    rather than their original concrete spaces.
+
+    Raises
+    ------
+    IndexError
+        If any requested reduction axis is out of range for the tensor rank.
     """
     if dim is None:
         return replace(tensor, data=torch.all(tensor.data), dims=())
@@ -2567,7 +3005,7 @@ def rank(tensor: Tensor) -> int:
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor whose rank is to be determined.
 
     Returns
@@ -2582,19 +3020,28 @@ def mean(
     tensor: TensorType, dim: Optional[Union[int, Tuple[int, ...]]] = None
 ) -> TensorType:
     """
-    Compute the mean over specified dimension(s), matching `torch.mean` dim forms.
+    Compute the mean over one or more tensor axes.
+
+    This mirrors `torch.mean` for the supported `dim` forms while updating the
+    symbolic dimension metadata to remove the reduced axes.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to reduce.
-    dim : `Optional[Union[int, Tuple[int, ...]]]`, optional
+    dim : Optional[Union[int, Tuple[int, ...]]], optional
         Reduction axis (or axes). If `None`, reduce over all dimensions.
 
     Returns
     -------
     TensorType
-        A new tensor with the specified dimensions reduced, preserving the input wrapper type.
+        Tensor with the requested axes reduced and removed from `dims`,
+        preserving the input wrapper type.
+
+    Raises
+    ------
+    IndexError
+        If any requested reduction axis is out of range for the tensor rank.
     """
     if dim is None:
         return replace(tensor, data=tensor.data.mean(), dims=())
@@ -2630,21 +3077,80 @@ def norm(
     dim: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> TensorType:
     """
-    Compute a vector or matrix norm, matching `torch.linalg.norm` dim forms.
+    Compute a vector or matrix norm with metadata-aware dimension reduction.
+
+    This forwards to `torch.linalg.norm` for the numeric computation, then
+    removes the reduced axes from the symbolic output dims.
+
+    See Also
+    --------
+    [`torch.linalg.norm`](https://docs.pytorch.org/docs/stable/generated/torch.linalg.norm.html)
+        Official PyTorch reference for the underlying numeric operation.
+    [`torch.linalg.vector_norm`](https://docs.pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html)
+        Clearer vector-only norm API in PyTorch.
+    [`torch.linalg.matrix_norm`](https://docs.pytorch.org/docs/stable/generated/torch.linalg.matrix_norm.html)
+        Clearer matrix-only norm API in PyTorch.
+
+    Behavior
+    --------
+    The interpretation of `ord` depends on `dim`:
+
+    - `dim` is an `int`: compute a vector norm along that axis.
+    - `dim` is a 2-tuple: compute a matrix norm over those two axes.
+    - `dim is None`: follow PyTorch's `torch.linalg.norm` rules. In
+      particular, `ord=None` flattens the tensor and computes a vector 2-norm,
+      while `ord != None` expects PyTorch's documented 1D/2D behavior.
+
+    Supported `ord` values
+    ----------------------
+    Vector-norm forms (`dim` is an `int`)
+    - `None`
+    - `0`
+    - any finite `int` or `float`
+    - `float("inf")`
+    - `-float("inf")`
+
+    Matrix-norm forms (`dim` is a 2-tuple)
+    - `None`
+    - `"fro"`
+    - `"nuc"`
+    - `1`, `-1`
+    - `2`, `-2`
+    - `float("inf")`
+    - `-float("inf")`
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to reduce.
-    ord : `Optional[Union[int, float, str]]`, optional
-        Order of the norm, forwarded to `torch.linalg.norm`.
-    dim : `Optional[Union[int, Tuple[int, int]]]`, optional
-        Reduction axis or axes. If `None`, reduce over the whole tensor.
+    ord : Optional[Union[int, float, str]], optional
+        Order of the norm forwarded to `torch.linalg.norm`.
+
+        Common examples:
+        - `ord=2` for the Euclidean vector norm or spectral matrix norm
+        - `ord=1` for an L1 vector norm or induced 1 matrix norm
+        - `ord=float("inf")` for max-based norms
+        - `ord="fro"` for the Frobenius matrix norm
+        - `ord="nuc"` for the nuclear matrix norm
+    dim : Optional[Union[int, Tuple[int, int]]], optional
+        Reduction axis or axes.
+
+        - `int`: vector norm
+        - `Tuple[int, int]`: matrix norm
+        - `None`: use PyTorch's default `torch.linalg.norm` behavior
 
     Returns
     -------
     TensorType
-        A new tensor with the specified dimensions reduced, preserving the input wrapper type.
+        Tensor containing the requested norm values with reduced axes removed
+        from `dims`.
+
+    Raises
+    ------
+    IndexError
+        If any requested reduction axis is out of range for the tensor rank.
+    ValueError
+        If `dim` contains duplicate axes.
     """
     reduced = torch.linalg.norm(tensor.data, ord=ord, dim=dim)
     if dim is None:
@@ -2679,19 +3185,25 @@ def norm(
 
 def argmax(tensor: TensorType, dim: int) -> TensorType:
     """
-    Compute the indices of the maximum values over a specified dimension.
+    Return indices of maximum values along one tensor axis.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to reduce.
-    dim : `int`
+    dim : int
         The dimension to reduce.
 
     Returns
     -------
     TensorType
-        A new tensor with the specified dimension reduced, preserving the input wrapper type.
+        Integer-valued tensor with the reduced axis removed from `dims`,
+        preserving the input wrapper type.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
     """
     if dim < 0:
         dim += tensor.rank()
@@ -2707,19 +3219,25 @@ def argmax(tensor: TensorType, dim: int) -> TensorType:
 
 def argmin(tensor: TensorType, dim: int) -> TensorType:
     """
-    Compute the indices of the minimum values over a specified dimension.
+    Return indices of minimum values along one tensor axis.
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to reduce.
-    dim : `int`
+    dim : int
         The dimension to reduce.
 
     Returns
     -------
     TensorType
-        A new tensor with the specified dimension reduced, preserving the input wrapper type.
+        Integer-valued tensor with the reduced axis removed from `dims`,
+        preserving the input wrapper type.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
     """
     if dim < 0:
         dim += tensor.rank()
@@ -2744,9 +3262,9 @@ def one_hot(
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         Input tensor containing class indices.
-    dim : `StateSpace`
+    dim : StateSpace
         Output class dimension. Class indices are assumed to be ordered as
         `[0, 1, ..., dim.dim - 1]`.
 
@@ -2754,6 +3272,13 @@ def one_hot(
     -------
     Tensor
         A new tensor with one extra trailing dimension for class channels.
+
+    Raises
+    ------
+    TypeError
+        If `tensor.data` is not integer-valued.
+    ValueError
+        If any class index is outside the range `0 <= index < dim.dim`.
     """
     if tensor.data.is_floating_point() or tensor.data.is_complex():
         raise TypeError("one_hot expects integer-valued tensor data")
@@ -2775,12 +3300,26 @@ def astype(tensor: TensorType, dtype: torch.dtype) -> TensorType:
     """
     Return a new tensor with data converted to `dtype`.
 
+    This is the metadata-preserving dtype-conversion helper for QTen tensors.
+    Only the underlying torch data dtype changes; `tensor.dims` is left
+    unchanged.
+
+    See Also
+    --------
+    [`torch.Tensor.to`](https://pytorch.org/docs/stable/generated/torch.Tensor.to.html)
+        Underlying PyTorch dtype/device conversion API.
+
     Parameters
     ----------
     tensor : Tensor
         Input tensor.
     dtype : torch.dtype
-        Target data type.
+        Target PyTorch dtype.
+
+        This must be a [`torch.dtype`](https://pytorch.org/docs/stable/tensor_attributes.html#torch-dtype)
+        object such as `torch.float32`, `torch.float64`, `torch.complex64`,
+        `torch.complex128`, `torch.int64`, or `torch.bool`. Any dtype
+        accepted by `torch.Tensor.to(dtype=...)` is valid here.
 
     Returns
     -------
@@ -2799,6 +3338,14 @@ def allclose(
 ) -> bool:
     """
     Compare two tensors for approximate equality with dimension-aware alignment.
+
+    Supported forms
+    ---------------
+    [`allclose(a, b, ...)`][qten.linalg.tensors.allclose]
+        Functional form.
+
+    [`a.allclose(b, ...)`][qten.linalg.tensors.Tensor.allclose]
+        Method form.
 
     This function first aligns `b` to `a` by calling `b.align_all(a.dims)`.
     If alignment fails (for example, mismatched rank or non-alignable
@@ -2827,6 +3374,12 @@ def allclose(
     bool
         True if values are close after successful alignment; `False` if
         alignment fails or values are not close.
+
+    Use cases
+    ---------
+    - compare tensors that may differ only by symbolic axis ordering,
+    - validate numerical results in tests without manually aligning metadata
+      first.
     """
     a, b = _promote_to_device(a, b)
 
@@ -2853,6 +3406,55 @@ def isclose(
 
     This returns a bool [`Tensor`][qten.linalg.tensors.Tensor] mask, unlike `allclose`, which reduces to a
     Python bool.
+
+    Supported forms
+    ---------------
+    [`isclose(a, b, ...)`][qten.linalg.tensors.isclose]
+        Functional form.
+
+    [`a.isclose(b, ...)`][qten.linalg.tensors.Tensor.isclose]
+        Method form.
+
+    Parameter forms
+    ---------------
+    `b : Tensor`
+        Compare two tensors after symbolic alignment and broadcast handling.
+
+    `b : Number`
+        The scalar is promoted through `Tensor.scalar(b)` before applying the
+        same tensor-tensor comparison logic.
+
+    Parameters
+    ----------
+    a : TensorType
+        Left-hand tensor operand.
+    b : Tensor | Number
+        Right-hand comparison target. If `b` is a
+        [`Tensor`][qten.linalg.tensors.Tensor], it is aligned and broadcast
+        against `a`. If `b` is a scalar number, it is promoted through
+        `Tensor.scalar(b)` before comparison.
+    rtol : float, optional
+        Relative tolerance passed to `torch.isclose`.
+    atol : float, optional
+        Absolute tolerance passed to `torch.isclose`.
+    equal_nan : bool, optional
+        Whether `NaN` values are considered equal.
+
+    Returns
+    -------
+    TensorType
+        Boolean tensor mask on the merged symbolic output dims.
+
+    See Also
+    --------
+    [`torch.isclose`](https://pytorch.org/docs/stable/generated/torch.isclose.html)
+        Underlying PyTorch element-wise closeness check.
+
+    Use cases
+    ---------
+    - build boolean masks for thresholding numerical errors,
+    - compare a tensor against another tensor or a scalar tolerance target
+      while preserving symbolic output dims.
     """
     if not isinstance(b, Tensor):
         b = Tensor.scalar(b)
@@ -2869,6 +3471,14 @@ def equal(a: Tensor, b: Tensor) -> bool:
     """
     Compare two tensors for exact equality with dimension-aware alignment.
 
+    Supported forms
+    ---------------
+    [`equal(a, b)`][qten.linalg.tensors.equal]
+        Functional form.
+
+    [`a.equal(b)`][qten.linalg.tensors.Tensor.equal]
+        Method form.
+
     This function first aligns `b` to `a` by calling `b.align_all(a.dims)`.
     If alignment fails (for example, mismatched rank or non-alignable
     [`StateSpace`][qten.symbolics.state_space.StateSpace]s), this function returns `False` instead of raising.
@@ -2880,9 +3490,9 @@ def equal(a: Tensor, b: Tensor) -> bool:
 
     Parameters
     ----------
-    a : `Tensor`
+    a : Tensor
         Reference tensor defining the target dimension layout.
-    b : `Tensor`
+    b : Tensor
         Tensor that will be aligned to `a` before comparison.
 
     Returns
@@ -2903,8 +3513,35 @@ def equal(a: Tensor, b: Tensor) -> bool:
 
 def expand_to_union(tensor: TensorType, union_dims: list[StateSpace]) -> TensorType:
     """
-    Expand BroadcastSpace dimensions in the tensor to match union_dims sizes.
-    Performs expansion in a single pass to avoid intermediate Tensor creation.
+    Expand broadcast axes to match a merged symbolic dimension layout.
+
+    This helper is typically used after
+    [`union_dims`][qten.linalg.tensors.union_dims] determines the target dims
+    for a broadcasted operation. Only axes labeled by
+    [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] are
+    expanded; concrete non-broadcast axes are preserved as-is.
+
+    Parameters
+    ----------
+    tensor : TensorType
+        Input tensor whose broadcast axes may need to be materialized.
+    union_dims : list[StateSpace]
+        Target symbolic dimensions, typically produced by
+        [`union_dims(...)`][qten.linalg.tensors.union_dims]. This must have the
+        same length as `tensor.dims`.
+
+    Returns
+    -------
+    TensorType
+        Tensor whose broadcast axes have been expanded to the corresponding
+        concrete sizes in `union_dims`. If no expansion is needed, returns the
+        input tensor unchanged.
+
+    Raises
+    ------
+    ValueError
+        If `union_dims` does not match the tensor rank or does not describe a
+        layout compatible with the underlying data shape.
     """
 
     if not any(isinstance(d, BroadcastSpace) for d in tensor.dims):
@@ -2933,6 +3570,15 @@ def union_dims(
 ) -> Tuple[StateSpace, ...]:
     """
     Compute a broadcast-compatible union of multiple dimension tuples.
+
+    Use cases
+    ---------
+    - determine the target metadata layout for broadcasted arithmetic,
+    - validate whether two or more symbolic tensor layouts can participate in a
+      common operation,
+    - build the merged dims later passed to
+      [`align_all`][qten.linalg.tensors.align_all] and
+      [`expand_to_union`][qten.linalg.tensors.expand_to_union].
 
     This function merges dimension metadata axis-by-axis across one or more
     tuples of [`StateSpace`][qten.symbolics.state_space.StateSpace]s. All input tuples must have the same rank.
@@ -3038,7 +3684,34 @@ def cat(tensors: Sequence[TensorType], dim: int = 0) -> TensorType:
     Non-concatenated dimensions must represent the same rays and are aligned to
     the ordering of the first tensor before concatenation. The concatenated
     output dimension is rebuilt by ordered append. [`IndexSpace`][qten.symbolics.state_space.IndexSpace] dimensions are
-    resized linearly; structured dimensions require disjoint labels.
+    resized linearly; structured dimensions require fully disjoint labels.
+    Any overlap at all, even partial overlap, raises `ValueError` rather than
+    being merged.
+
+    Parameters
+    ----------
+    tensors : Sequence[TensorType]
+        Tensors to concatenate. All tensors must have the same rank.
+    dim : int, default `0`
+        Axis along which to concatenate.
+
+    Returns
+    -------
+    TensorType
+        Concatenated tensor whose non-concatenated dims match the first input
+        and whose concatenated dim is rebuilt to describe the appended axis.
+
+    Raises
+    ------
+    ValueError
+        If `tensors` is empty, if the input tensors do not all have the same
+        rank, if any non-concatenated axes do not span the same rays, or if
+        the concatenated symbolic dimension cannot be rebuilt consistently
+        (for example because dimension types differ, concatenation is attempted
+        along [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace], or
+        structured labels overlap in any amount).
+    IndexError
+        If `dim` is out of range for the input tensor rank.
     """
     if not tensors:
         raise ValueError("cat expects at least one tensor")
@@ -3097,6 +3770,14 @@ def mapping_matrix(
     """
     Create a sector-wise mapping matrix between two state spaces.
 
+    Use cases
+    ---------
+    - build explicit basis-change or selection matrices between symbolic
+      spaces,
+    - embed one set of labeled states into another using a sparse symbolic
+      correspondence,
+    - construct structured linear maps for use in tensor contractions.
+
     For each `(from_marker, to_marker)` pair in `mapping`, this function inserts
     an identity block from the corresponding sector in `from_space` to the
     corresponding sector in `to_space`. Each block can be scaled by
@@ -3149,8 +3830,29 @@ def mapping_matrix(
 
 def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
-    Create an identity tensor based on the last two dimensions.
-    Returns a rank-2 Tensor corresponding to the identity of the matrix part.
+    Create an identity matrix tensor from the last two symbolic dimensions.
+
+    This helper interprets `dims[-2:]` as the matrix axes and returns a rank-2
+    identity tensor on those spaces. Any leading dimensions in `dims` are
+    ignored; this function does not build a batched identity tensor.
+
+    Parameters
+    ----------
+    dims : Tuple[StateSpace, ...]
+        Dimension tuple whose last two entries define the row and column
+        spaces of the identity matrix.
+    device : Optional[Device], optional
+        Device on which to place the returned tensor.
+
+    Returns
+    -------
+    Tensor
+        Rank-2 identity tensor with dims `(dims[-2], dims[-1])`.
+
+    Raises
+    ------
+    ValueError
+        If `dims` has rank less than 2.
     """
     if len(dims) < 2:
         raise ValueError(
@@ -3165,19 +3867,20 @@ def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Ten
 
 def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
-    Create a zero-filled tensor with shape defined by `dims`.
+    Create a zero-filled tensor on the requested symbolic dimensions.
 
     Parameters
     ----------
-    dims : `Tuple[StateSpace, ...]`
+    dims : Tuple[StateSpace, ...]
         StateSpace dimensions defining the tensor shape.
-    device : `Optional[Device]`, optional
+    device : Optional[Device], optional
         Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
     Tensor
-        A tensor of zeros with `shape == tuple(dim.dim for dim in dims)`.
+        Tensor of zeros with `shape == tuple(dim.dim for dim in dims)` and
+        dims equal to `dims`.
     """
     shape = tuple(dim.dim for dim in dims)
     torch_device = device.torch_device() if device is not None else None
@@ -3186,19 +3889,20 @@ def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> T
 
 def ones(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
-    Create a one-filled tensor with shape defined by `dims`.
+    Create a one-filled tensor on the requested symbolic dimensions.
 
     Parameters
     ----------
-    dims : `Tuple[StateSpace, ...]`
+    dims : Tuple[StateSpace, ...]
         StateSpace dimensions defining the tensor shape.
-    device : `Optional[Device]`, optional
+    device : Optional[Device], optional
         Device to place the tensor on, by default None (CPU).
 
     Returns
     -------
     Tensor
-        A tensor of ones with `shape == tuple(dim.dim for dim in dims)`.
+        Tensor of ones with `shape == tuple(dim.dim for dim in dims)` and dims
+        equal to `dims`.
     """
     shape = tuple(dim.dim for dim in dims)
     torch_device = device.torch_device() if device is not None else None
@@ -3230,6 +3934,17 @@ def kernel_tensor(
     -------
     Tensor
         Tensor with `dims` and values produced by `ker`.
+
+    Notes
+    -----
+    This is the most direct construction helper when tensor entries are defined
+    by symbolic basis elements rather than by raw numeric arrays.
+
+    Raises
+    ------
+    ValueError
+        If any state space reports a number of elements different from its
+        declared `dim`.
     """
     torch_device = device.torch_device() if device is not None else None
     if not dims:
@@ -3252,21 +3967,33 @@ def kernel_tensor(
 
 def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType:
     """
-    Replace the StateSpace at the specified dimension with a new StateSpace.
+    Replace one symbolic dimension without changing tensor data values.
+
+    This is a metadata-only operation. It is valid only when `new_dim` has the
+    same size as the underlying data axis (or is
+    [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] for a
+    singleton axis).
 
     Parameters
     ----------
-    tensor : `Tensor`
+    tensor : Tensor
         The tensor to modify.
-    dim : `int`
+    dim : int
         The index of the dimension to replace.
-    new_dim : `StateSpace`
+    new_dim : StateSpace
         The new StateSpace to assign to the dimension.
 
     Returns
     -------
     TensorType
-        A new tensor with the updated dimension, preserving the input wrapper type.
+        Tensor with unchanged data and the requested replacement dimension.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
+    ValueError
+        If `new_dim` is not size-compatible with the selected data axis.
     """
     if dim < 0:
         dim += len(tensor.dims)
@@ -3299,11 +4026,66 @@ def factorize_dim(
     tensor: TensorType, dim: int, rule: StateSpaceFactorization
 ) -> TensorType:
     """
-    Factorize one [`StateSpace`][qten.symbolics.state_space.StateSpace]-like dimension into multiple subspaces.
+    Factorize one symbolic dimension into multiple output axes.
 
     For a tensor with shape `(A, B)`, factorizing the `0`th dimension with
     `factorized=(A1, A2)` and a compatible `align_dim` produces shape
     `(A1, A2, B)`.
+
+    The source axis is first aligned to `rule.align_dim`, then reshaped into
+    the factor spaces listed in `rule.factorized`.
+
+    How to construct `rule`
+    -----------------------
+    [`StateSpaceFactorization`][qten.symbolics.state_space.StateSpaceFactorization]
+    has two fields:
+
+    - `factorized`: the tuple of output spaces that should replace the selected
+      axis after reshaping.
+    - `align_dim`: a symbolic dimension with the same total size as the input
+      axis, but with an ordering compatible with flattening/unflattening into
+      `factorized`.
+
+    The key requirement is:
+    `prod(subspace.dim for subspace in rule.factorized) == rule.align_dim.dim`.
+
+    In practice, you usually do not construct this object by hand. When the
+    target axis is a
+    [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace], the usual
+    workflow is to derive the rule from
+    [`HilbertSpace.factorize(...)`][qten.symbolics.hilbert_space.HilbertSpace.factorize].
+
+    Use cases
+    ---------
+    - split a flattened composite axis into its constituent symbolic factors,
+    - recover tensor-product structure after linear-algebra operations that
+      temporarily flattened an axis.
+
+    Example
+    -------
+    ```python
+    space = tensor.dims[0]  # suppose this is a homogeneous HilbertSpace
+    rule = space.factorize((int,), (str,))
+
+    # `rule.factorized` is the tuple of output factor spaces.
+    # `rule.align_dim` is the reordered version of `space` whose basis order is
+    # compatible with reshaping into those factors.
+
+    out = factorize_dim(tensor, 0, rule)
+    ```
+
+    If you want to see the equivalent low-level structure, the rule behaves
+    like:
+
+    ```python
+    left_factor, right_factor = rule.factorized
+    align_dim = rule.align_dim
+
+    # Equivalent internal steps:
+    aligned = tensor.align(0, align_dim)
+    out = factorize_dim(tensor, 0, rule)
+    # out.dims == (left_factor, right_factor, *tensor.dims[1:])
+    ```
 
     Parameters
     ----------
@@ -3317,7 +4099,17 @@ def factorize_dim(
     Returns
     -------
     TensorType
-        A new tensor with the specified dimension factorized, preserving the input wrapper type.
+        Tensor with the requested axis replaced by multiple factor axes,
+        preserving the input wrapper type.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
+    ValueError
+        If the product of `rule.factorized` sizes does not match
+        `rule.align_dim.dim`, or if the selected axis cannot be aligned to
+        `rule.align_dim`.
     """
     rank = tensor.rank()
     if dim < 0:
@@ -3411,6 +4203,12 @@ def product_dims(tensor: TensorType, *indices_group: Tuple[int, ...]) -> TensorT
     method reorders axes internally, performs one reshape, and returns the
     result in the canonical output order.
 
+    Use cases
+    ---------
+    - flatten several symbolic axes into one composite Hilbert or state space,
+    - prepare tensors for matrix decompositions or contractions that expect a
+      single product axis.
+
     Parameters
     ----------
     tensor : Tensor
@@ -3493,8 +4291,14 @@ def promote_rank(tensor: Tensor, target_rank: int) -> Tensor:
     Returns
     -------
     Tensor
-        tensor if no promotion is needed; otherwise a tensor with prepended
+        `tensor` if no promotion is needed; otherwise a tensor with prepended
         broadcast axes and matching prepended [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] dims.
+
+    Use cases
+    ---------
+    - normalize ranks before symmetric binary operations,
+    - make scalar/vector/tensor operands participate in one broadcast-aware
+      code path without losing symbolic meaning.
 
     Raises
     ------
@@ -3553,9 +4357,9 @@ def _(
 
     Parameters
     ----------
-    condition : `Tensor`
+    condition : Tensor
         Boolean tensor whose nonzero entries are to be reported.
-    index_type : `Type[Any]`, optional
+    index_type : Type[Any], optional
         Output representation. Supported values are:
 
         - [`Tensor`][qten.linalg.tensors.Tensor]: return one integer index tensor per axis,
@@ -3598,7 +4402,24 @@ def _(
 
 def where(*args, **kwargs):
     """
-    Dispatch to the overloaded public [`where`][qten.linalg.tensors.where] implementations.
+    Dispatch to the overloaded public [`where`][qten.linalg.tensors.where]
+    implementations.
+
+    Supported forms
+    ---------------
+    [`where(condition, input, other)`][qten.linalg.tensors.where]
+        Element-wise selection, analogous to `torch.where(condition, input, other)`.
+
+    [`where(condition, index_type=Tensor)`][qten.linalg.tensors.where]
+        Return nonzero locations as one integer [`Tensor`][qten.linalg.tensors.Tensor]
+        per axis.
+
+    [`where(condition, index_type=tuple)`][qten.linalg.tensors.where]
+        Return nonzero locations as Python coordinate tuples.
+
+    [`where(condition, index_type=StateSpace)`][qten.linalg.tensors.where]
+        For rank-1 conditions only, return the selected
+        [`StateSpace`][qten.symbolics.state_space.StateSpace].
 
     This wrapper exists so multimethod dispatch errors can be translated into
     user-facing `TypeError` exceptions when the underlying implementation
@@ -3640,10 +4461,21 @@ def nonzero(
     StateSpace,
 ]:
     """
-    Return indices of non-zero / `True` entries.
+    Return indices of non-zero or `True` entries.
 
     This currently supports only `as_tuple=True` and follows
     `torch.nonzero(condition.data, as_tuple=True)` semantics.
+
+    Supported forms
+    ---------------
+    [`nonzero(condition)`][qten.linalg.tensors.nonzero]
+        Return one integer [`Tensor`][qten.linalg.tensors.Tensor] per axis.
+
+    [`nonzero(condition, index_type=tuple)`][qten.linalg.tensors.nonzero]
+        Return Python coordinate tuples.
+
+    [`nonzero(condition, index_type=StateSpace)`][qten.linalg.tensors.nonzero]
+        For rank-1 conditions only, return the selected symbolic subspace.
 
     Parameters
     ----------
@@ -3659,6 +4491,12 @@ def nonzero(
     -------
     Union[Tuple[Tensor, ...], Tuple[Tuple[int, ...], ...], StateSpace]
         Index representation selected by `index_type`.
+
+    Notes
+    -----
+    This is the public nonzero helper. [`where(condition)`][qten.linalg.tensors.where]
+    provides the same index extraction behavior through the overloaded `where`
+    API.
 
     Raises
     ------
@@ -3781,6 +4619,10 @@ class TensorIndexing:
     -----
     This class compiles indexing intent; execution strategy (one-shot vs
     stepwise) is chosen by `Tensor.__getitem__` using `has_tensor_index`.
+
+    Most users should not construct this class directly. It exists as the
+    implementation detail behind QTen tensor indexing and is documented here so
+    the generated API explains how symbolic index forms are interpreted.
     """
 
     def __init__(
