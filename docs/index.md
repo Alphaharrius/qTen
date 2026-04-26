@@ -11,5 +11,7 @@ Use this site for two things:
 
 - User-facing guidance for installing and previewing docs locally.
 - Generated API pages for both `qten` and `qten_plots`.
+- A [Plot Methods](plot-methods.md) reference for registered `obj.plot(...)`
+  calls provided by `qten-plots`.
 
 The generated reference lives under `API Reference` in the navigation sidebar.

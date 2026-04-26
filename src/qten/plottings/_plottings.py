@@ -12,7 +12,20 @@ from typing import (
 
 class Plottable(ABC):
     """
-    An object that supports dynamic plotting backends.
+    Base class for objects that dispatch plotting calls to registered backends.
+
+    `Plottable` does not implement plotting directly. Instead, backend packages
+    register functions under `(object type, method name, backend name)` keys.
+    Users call [`plot()`][qten.plottings.Plottable.plot] on the object they want
+    to visualize, and the dispatcher finds the matching registered function
+    through the object's method-resolution order.
+
+    Repository usage
+    ----------------
+    The `qten-plots` extension registers Plotly and Matplotlib implementations
+    through the `qten.plottings` entry-point group. Those implementations remain
+    private backend details; the public user-facing API is the dispatcher call,
+    for example `tensor.plot("heatmap", backend="plotly")`.
     """
 
     _registry: ClassVar[Dict[Tuple[Type, str, str], Callable]] = {}
@@ -37,8 +50,27 @@ class Plottable(ABC):
     @classmethod
     def register_plot_method(cls, name: str, backend: str = "plotly"):
         """
-        Decorator to register a plotting function for a specific class.
-        Usage: @MyClass.register_plot_method("scatter")
+        Register a backend plotting function for this plottable class.
+
+        The returned decorator stores the function in the global plotting
+        registry. Registered functions receive the object being plotted as their
+        first argument, followed by any extra positional and keyword arguments
+        supplied to [`plot()`][qten.plottings.Plottable.plot].
+
+        Parameters
+        ----------
+        name : str
+            User-facing plot method name, such as `scatter`, `structure`, or
+            `heatmap`.
+        backend : str
+            Backend name that selects the implementation. The `qten-plots`
+            extension currently uses `plotly` and `matplotlib`.
+
+        Returns
+        -------
+        Callable
+            Decorator that registers the provided plotting function and returns
+            it unchanged.
         """
 
         def decorator(func: Callable):
@@ -50,7 +82,41 @@ class Plottable(ABC):
 
     def plot(self, method: str, backend: str = "plotly", *args, **kwargs):
         """
-        Dispatch the plot method to the registered function via MRO.
+        Dispatch a named plot method to a registered backend implementation.
+
+        The dispatcher first loads plotting entry points, then searches the
+        instance type and its base classes for a matching `(type, method,
+        backend)` registration. Additional arguments are forwarded unchanged to
+        the selected backend function.
+
+        Parameters
+        ----------
+        method : str
+            Plot method name registered for this object's type.
+        backend : str
+            Backend implementation to use. The `qten-plots` extension currently
+            registers `plotly` and `matplotlib`.
+        args
+            Positional arguments forwarded to the registered plotting function.
+        kwargs
+            Keyword arguments forwarded to the registered plotting function.
+
+        Returns
+        -------
+        object
+            Backend-specific figure object returned by the registered plotting
+            function, such as a Plotly or Matplotlib figure.
+
+        Raises
+        ------
+        ValueError
+            If no plotting function is registered for the requested method and
+            backend on this object.
+
+        See Also
+        --------
+        qten_plots.plottables.PointCloud
+            Public plottable helper object provided by the plotting extension.
         """
         Plottable._ensure_backends_loaded()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import posixpath
 from pathlib import Path
 
 import mkdocs_gen_files
@@ -13,16 +14,30 @@ PACKAGES = (
     ("qten", ROOT / "src" / "qten"),
     ("qten_plots", ROOT / "ext" / "plots" / "src" / "qten_plots"),
 )
+PLOT_METHOD_INDEX_MODULES = {"qten.plottings", "qten_plots"}
+
+
+def relative_doc_link(from_doc_path: Path, target_doc_path: Path) -> str:
+    return posixpath.relpath(
+        target_doc_path.as_posix(),
+        start=from_doc_path.parent.as_posix(),
+    )
 
 
 def write_module_page(module_name: str, doc_path: Path, source_path: Path) -> None:
     with mkdocs_gen_files.open(doc_path, "w") as fd:
-        title = module_name.split(".")[-1]
         fd.write(f"# `{module_name}`\n\n")
         if source_path.name == "__init__.py":
             fd.write(f"Package reference for `{module_name}`.\n\n")
         else:
             fd.write(f"Module reference for `{module_name}`.\n\n")
+        if module_name in PLOT_METHOD_INDEX_MODULES:
+            plot_methods_link = relative_doc_link(doc_path, Path("plot-methods.md"))
+            fd.write("## Registered Plot Methods\n\n")
+            fd.write(
+                "For the user-facing `obj.plot(...)` methods registered by "
+                f"the plotting extension, see [Plot Methods]({plot_methods_link}).\n\n"
+            )
         fd.write(f"::: {module_name}\n")
         if source_path.name == "__init__.py":
             exports = public_reexports(source_path)
@@ -85,6 +100,7 @@ with mkdocs_gen_files.open(REFERENCE_ROOT / "index.md", "w") as fd:
 with mkdocs_gen_files.open(ROOT_SUMMARY, "w") as nav_file:
     nav_file.write("* [Home](index.md)\n")
     nav_file.write("* [Build Docs](build-docs.md)\n")
+    nav_file.write("* [Plot Methods](plot-methods.md)\n")
     nav_file.write("* [API Reference](reference/index.md)\n")
     for line in nav.build_literate_nav():
         nav_file.write(f"    {line}")
