@@ -44,6 +44,7 @@ Subpackages
 For broader domain APIs, see:
 - [`qten.geometries`][qten.geometries]
 - [`qten.linalg`][qten.linalg]
+- [`qten.phys`][qten.phys]
 - [`qten.pointgroups`][qten.pointgroups]
 - [`qten.symbolics`][qten.symbolics]
 - [`qten.utils`][qten.utils]
