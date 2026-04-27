@@ -97,6 +97,19 @@ class U1Basis(
     irrep multiplicities must be unity. This guarantees that type-based updates
     via [`replace`][qten.symbolics.hilbert_space.U1Basis.replace] are unambiguous and fast.
 
+    Mathematical convention
+    -----------------------
+    A basis state is represented symbolically as
+
+    $$
+    |\psi\rangle = c\,|\rho_1,\rho_2,\ldots,\rho_m\rangle,
+    $$
+
+    where `coef` stores \(c\), `base` stores the construction-order tuple
+    \((\rho_1,\rho_2,\ldots,\rho_m)\), and `rep` stores the canonical
+    type-sorted tuple used for equality, hashing, and lookup. The object is a
+    basis label with a U(1) prefactor, not a dense state vector.
+
     Attributes
     ----------
     coef : sy.Expr
@@ -135,6 +148,16 @@ class U1Basis(
     $$
     c_{a \otimes b} = c_a c_b.
     $$
+
+    Equivalently,
+
+    $$
+    (c_a|\alpha\rangle) \otimes (c_b|\beta\rangle)
+        = c_a c_b\,|\alpha,\beta\rangle.
+    $$
+
+    In code, this is `a @ b` and is implemented as
+    `U1Basis(simplify(a.coef * b.coef), a.base + b.base)`.
 
     The `|` dispatch overloads build a
     [`U1Span`][qten.symbolics.hilbert_space.U1Span] of distinct
@@ -466,7 +489,7 @@ def _(a: U1Basis, b: U1Basis) -> bool:
 
 @dataclass(frozen=True)
 class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
-    """
+    r"""
     Finite span of distinct single-particle basis states.
 
     [`U1Span`][qten.symbolics.hilbert_space.U1Span] is the additive container used by [`U1Basis`][qten.symbolics.hilbert_space.U1Basis]'s `*` operator. It
@@ -478,6 +501,18 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
     coefficients, or perform linear-algebra simplification. Duplicate handling
     is implemented in `__or__` overloads, which keep only one copy of an
     existing state when building a span.
+
+    Mathematical convention
+    -----------------------
+    If the span contains basis labels \(\psi_0,\ldots,\psi_{n-1}\), it
+    represents the ordered symbolic basis
+
+    $$
+    \mathrm{span}\{|\psi_0\rangle,\ldots,|\psi_{n-1}\rangle\}.
+    $$
+
+    The order is part of the object: it determines row/column ordering in Gram
+    matrices and tensor dimensions.
 
     Parameters
     ----------
@@ -553,8 +588,19 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
         return U1Span(tuple(m.rays() for m in self.span))
 
     def cross_gram(self, ket: "U1Span") -> sy.ImmutableDenseMatrix:
-        """
+        r"""
         Compute the overlap matrix between this span and another span.
+
+        For left span states \(\psi_i\) and right span states \(\phi_j\), the
+        returned SymPy matrix has entries
+
+        $$
+        G_{ij} = \langle \psi_i \mid \phi_j \rangle.
+        $$
+
+        The implementation only emits a nonzero entry when the two symbolic
+        states have the same ray; the stored U(1) coefficients supply the
+        overlap phase.
 
         Parameters
         ----------
@@ -590,13 +636,35 @@ def _(basis: U1Basis) -> U1Span:
 @need_validation()
 @dataclass(frozen=True)
 class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
-    """
+    r"""
     Composite local Hilbert space built from states and state spans.
 
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] is the symbolic basis container used by tensor-network style
     operators in this module. It extends [`StateSpace`][qten.symbolics.state_space.StateSpace] with [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] sectors.
     The inherited `structure` mapping stores each sector together with its
     integer index in basis order.
+
+    Mathematical convention
+    -----------------------
+    A Hilbert space is an ordered finite basis
+
+    $$
+    \mathcal{H} = \mathrm{span}\{|e_0\rangle,\ldots,|e_{d-1}\rangle\},
+    $$
+
+    where each \(|e_i\rangle\) is a [`U1Basis`][qten.symbolics.hilbert_space.U1Basis].
+    The code-level `structure` mapping stores the correspondence
+    `U1Basis -> i`. That index \(i\) is the coordinate used by
+    [`Tensor`][qten.linalg.tensors.Tensor] axes.
+
+    Ray normalization removes U(1) prefactors from the labels:
+
+    $$
+    \mathrm{ray}(c\,|\rho\rangle) = |\rho\rangle.
+    $$
+
+    Phase information is not lost when constructing overlap maps: it is stored
+    in the matrix entries produced by `cross_gram`.
 
     The class provides helpers for common basis-management workflows:
     `elements()` returns the flattened basis states as `Tuple[U1Basis, ...]`.
@@ -924,7 +992,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
     def factorize(
         self, *irrep_types: Tuple[Type, ...], coef_on: Optional[int] = None
     ) -> StateSpaceFactorization:
-        """
+        r"""
         Factorize a homogeneous Hilbert space into irrep-type tensor factors.
 
         Each argument in `irrep_types` defines one output factor as a tuple of
@@ -932,6 +1000,23 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         this space must appear exactly once. The result describes both the
         factor spaces and the basis reindexing needed to move between the
         original basis order and the factorized tensor-product structure.
+
+        Mathematical convention
+        -----------------------
+        For a homogeneous basis whose labels split into groups \(a\) and \(b\),
+        factorization checks that the basis is a complete Cartesian product:
+
+        $$
+        \mathcal{H}
+            \cong \mathcal{H}_a \otimes \mathcal{H}_b,
+        \qquad
+        |a_i,b_j\rangle \leftrightarrow |a_i\rangle \otimes |b_j\rangle.
+        $$
+
+        More generally, the requested `irrep_types` define factors
+        \(\mathcal{H}_0,\ldots,\mathcal{H}_{m-1}\). The returned `align_dim`
+        is the original basis reordered so that its flattened order matches
+        `factorized[0] @ ... @ factorized[m-1]` in code.
 
         Notes
         -----
@@ -1147,12 +1232,27 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
 
     @override
     def tensor_product(self, other: "HilbertSpace") -> "HilbertSpace":
-        """
+        r"""
         Build the tensor-product space of this space with another [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace].
 
         The resulting basis is generated by taking every ordered pair
         `(a, b)` from `self.elements()` and `other.elements()`, then forming the
         basis-level tensor product `a @ b` for each pair.
+
+        Mathematically, if
+
+        $$
+        \mathcal{H}_L = \mathrm{span}\{|a_i\rangle\},
+        \qquad
+        \mathcal{H}_R = \mathrm{span}\{|b_j\rangle\},
+        $$
+
+        then the result is ordered as
+
+        $$
+        \mathcal{H}_L \otimes \mathcal{H}_R
+            = \mathrm{span}\{|a_i\rangle \otimes |b_j\rangle\}_{i,j}.
+        $$
 
         Ordering follows `itertools.product(self.elements(), other.elements())`:
         basis elements from `self` vary slowest, and basis elements from `other`
@@ -1176,13 +1276,21 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
 
     @override
     def rays(self) -> "HilbertSpace":
-        """
+        r"""
         Return the Hilbert space obtained by ray-normalizing every basis state.
 
         The output keeps the same basis order after converting each
         [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] element to
         `element.rays()`. This removes U(1) coefficients from the symbolic
         basis labels while preserving the projective sector structure.
+
+        In formula form:
+
+        $$
+        \{c_i|\rho_i\rangle\}_i
+            \longmapsto
+        \{|\rho_i\rangle\}_i.
+        $$
 
         Returns
         -------

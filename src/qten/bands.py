@@ -1,4 +1,4 @@
-"""
+r"""
 Band-structure helpers for momentum-resolved QTen tensors.
 
 This module provides utilities for transforming, folding, unfolding, filling,
@@ -9,6 +9,33 @@ objects. The common convention is that a band tensor has dimensions
 crystal momenta and the two
 [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] axes form the
 Hamiltonian or operator matrix at each momentum.
+
+Mathematical convention
+-----------------------
+A band tensor represents a family of matrices indexed by crystal momentum:
+
+$$
+H : k \mapsto H(k),
+\qquad
+H(k)_{ab} = \langle a | H(k) | b \rangle.
+$$
+
+In code this is stored as a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with
+dims `(K, B_left, B_right)`, where `K` is a
+[`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] and the two
+Hilbert-space axes provide the row and column basis labels for each matrix
+block.
+
+Geometry transformations act on both parts of this object:
+
+$$
+k \mapsto k',
+\qquad
+H(k) \mapsto U(k)\,H(k)\,U(k)^\dagger,
+$$
+
+where the \(k\)-dependent change-of-basis matrix \(U(k)\) is assembled from
+symbolic Hilbert-space relabeling and finite Fourier transforms.
 
 Repository usage
 ----------------
@@ -180,7 +207,7 @@ def _momentum_match_indices(
     *,
     device: Optional[Device] = None,
 ) -> Tensor[torch.LongTensor]:
-    """
+    r"""
     Batch-compute destination indices for a momentum-space mapping via
     integer grid lookup.
 
@@ -190,6 +217,15 @@ def _momentum_match_indices(
     k-points, followed by fractional wrapping and determinant-scaled
     integer snapping (correct for both diagonal and non-diagonal
     boundaries).
+
+    In fractional reciprocal coordinates, affine mappings have the form
+
+    $$
+    \kappa' = M\kappa + c \pmod{1}.
+    $$
+
+    In code, source fractional coordinates are rows, so the matrix product is
+    `src_frac @ M.T`, followed by optional `+ c`.
     """
     src_elements = src.elements()
     if not src_elements:
@@ -320,7 +356,7 @@ def bandtransform(
     t: Opr,
     tensor: Tensor,
 ) -> Tensor:
-    """
+    r"""
     Apply a basis transform to a momentum-resolved operator tensor.
 
     The expected tensor shape is `(K, B_left, B_right)` where `K` is a
@@ -333,6 +369,21 @@ def bandtransform(
     For each transformed side, a k-dependent matrix is built from the action of
     `t` on the Hilbert-space basis and Fourier transforms that connect Bloch and
     real-space sectors.
+
+    Mathematical action
+    -------------------
+    Let \(B\) be the input Hilbert-space basis and \(tB\) the transformed basis.
+    After wrapping transformed sites back to the home unit cell, the finite
+    Fourier transform contributes a momentum-dependent phase. The resulting
+    basis-change matrix is denoted \(U_t(k)\). The transformed band block is
+
+    $$
+    H'(t k) = U_t(k)\,H(k)\,U_t(k)^\dagger.
+    $$
+
+    In code, `left_fourier` and `right_fourier` are the two \(U_t(k)\)-style
+    maps, and the products are `left_fourier @ tensor` and
+    `tensor @ right_fourier.h(-2, -1)`.
 
     Momentum handling
     -----------------
@@ -449,7 +500,7 @@ def bandfold(
     transform: BasisTransform,
     tensor: Tensor,
 ) -> Tensor:
-    """
+    r"""
     Fold a momentum-resolved band tensor into the Brillouin zone of a
     transformed lattice basis.
 
@@ -462,6 +513,24 @@ def bandfold(
     to match the transformed unit cell, a Fourier-space change of basis is
     applied, and the momentum sectors are then gathered into the new momentum
     grid.
+
+    Mathematical action
+    -------------------
+    A forward basis transform coarsens the direct lattice basis, so the
+    reciprocal Brillouin zone shrinks and multiple old momenta fold onto one
+    new momentum sector. If \(F(k)\) is the Fourier map from the old cell basis
+    into the enlarged transformed-cell basis, each block is transformed as
+
+    $$
+    H_{\mathrm{fold}}(k') \mathrel{+}=
+        F(k)^\dagger H(k) F(k),
+    \qquad
+    k' = \mathrm{fold}(k).
+    $$
+
+    The code-level implementation uses `fh @ tensor @ f` for the block
+    transform and `index_add(0, k_indices, transformed)` to accumulate old
+    sectors into the folded momentum axis.
 
     Parameters
     ----------
@@ -581,7 +650,7 @@ def bandunfold(
     inverse_transform: InverseBasisTransform,
     tensor: Tensor,
 ) -> Tensor:
-    """
+    r"""
     Unfold a folded momentum-resolved band tensor using an inverse basis transform.
 
     The input is expected to have dimensions `(MomentumSpace, HilbertSpace,
@@ -590,6 +659,20 @@ def bandunfold(
     transformed (folded) Brillouin zone. The inverse transform maps that folded
     lattice back to the primitive one and recovers dimensions
     `(K_primitive, B_primitive, B_primitive)`.
+
+    Mathematical action
+    -------------------
+    Unfolding routes each primitive momentum \(k\) to its parent folded
+    momentum \(\bar{k}\), gathers \(H_{\mathrm{fold}}(\bar{k})\), and then
+    projects it back to the primitive-cell basis with a Fourier map \(F(k)\):
+
+    $$
+    H_{\mathrm{unfold}}(k)
+        = F(k)\,H_{\mathrm{fold}}(\bar{k})\,F(k)^\dagger.
+    $$
+
+    In code, the parent-sector lookup is `tensor.data[k_indices.data]`, and the
+    final basis projection is `f @ gathered @ f.h(-2, -1)`.
 
     Parameters
     ----------
@@ -713,7 +796,7 @@ def bandunfold(
 
 
 def bandfillings(tensor: Tensor, frac: float) -> Tensor:
-    """
+    r"""
     Return eigenvectors for occupied bands up to a filling fraction.
 
     The input tensor is expected to have dimensions
@@ -725,6 +808,25 @@ def bandfillings(tensor: Tensor, frac: float) -> Tensor:
     momentum, then eigenvectors with energies below the global filling
     threshold are packed into an output
     [`IndexSpace`][qten.symbolics.state_space.IndexSpace].
+
+    Mathematical convention
+    -----------------------
+    Each momentum block is diagonalized as
+
+    $$
+    H(k) V(k) = V(k) E(k),
+    $$
+
+    and the eigenvectors whose energies fall below the global filling threshold
+    are retained. If `frac = f`, the target number of occupied states is
+
+    $$
+    N_{\mathrm{occ}} = \left\lfloor f\,N_k\,N_b \right\rfloor,
+    $$
+
+    where \(N_k\) is the number of momentum sectors and \(N_b\) is the number
+    of bands per sector. Degenerate states at the threshold are included
+    together.
 
     Degenerate threshold behavior
     -----------------------------
@@ -824,7 +926,7 @@ def bandselect(
         str, Union[slice, Tuple[int, ...], Tuple[float, float], Callable[[float], bool]]
     ],
 ) -> Dict[str, Tensor]:
-    """
+    r"""
     Select specific bands from a band-resolved [`Tensor`][qten.linalg.tensors.Tensor] based on criteria provided in `kwargs`.
 
     The input [`Tensor`][qten.linalg.tensors.Tensor] is diagonalized at each
@@ -835,6 +937,19 @@ def bandselect(
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] labels the band
     basis and [`IndexSpace`][qten.symbolics.state_space.IndexSpace] labels the
     selected states for each criterion.
+
+    Mathematical convention
+    -----------------------
+    For each momentum sector,
+
+    $$
+    H(k) v_n(k) = \epsilon_n(k) v_n(k),
+    $$
+
+    and each criterion selects a subset of band labels \(n\). The returned
+    tensor packs the matching eigenvectors \(v_n(k)\) into an
+    [`IndexSpace`][qten.symbolics.state_space.IndexSpace], padding sectors with
+    fewer matches by zero columns.
 
     Supported criteria
     ------------------
