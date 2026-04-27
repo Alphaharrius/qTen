@@ -33,12 +33,8 @@ direct/reciprocal coordinates. In code, the exponent is assembled from the
 Cartesian arrays as `-1j * torch.matmul(ten_K, ten_R)`.
 
 In matrix form, the sampled kernel has entries
-
-$$
-K_{\alpha\beta}
-    = \exp\!\left(-\mathrm{i}\, k_\alpha \cdot r_\beta\right)
-    = \exp\!\left(-2\pi\mathrm{i}\, \kappa_\alpha \cdot n_\beta\right).
-$$
+\(K_{\alpha\beta} = \exp(-\mathrm{i}\, k_\alpha \cdot r_\beta)
+= \exp(-2\pi\mathrm{i}\, \kappa_\alpha \cdot n_\beta)\).
 
 Repository usage
 ----------------
@@ -93,11 +89,7 @@ def fourier_kernel(
     In code this is the `torch.exp` of `-1j * torch.matmul(ten_K, ten_R)`.
 
     The returned matrix is
-
-    $$
-    K_{\alpha\beta}
-        = \exp\!\left(-\mathrm{i}\, k_\alpha \cdot r_\beta\right).
-    $$
+    \(K_{\alpha\beta} = \exp(-\mathrm{i}\, k_\alpha \cdot r_\beta)\).
 
     Parameters
     ----------

@@ -13,12 +13,8 @@ Hamiltonian or operator matrix at each momentum.
 Mathematical convention
 -----------------------
 A band tensor represents a family of matrices indexed by crystal momentum:
-
-$$
-H : k \mapsto H(k),
-\qquad
-H(k)_{ab} = \langle a | H(k) | b \rangle.
-$$
+\(H : k \mapsto H(k)\), with
+\(H(k)_{ab} = \langle a | H(k) | b \rangle\).
 
 In code this is stored as a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with
 dims `(K, B_left, B_right)`, where `K` is a
@@ -27,12 +23,8 @@ Hilbert-space axes provide the row and column basis labels for each matrix
 block.
 
 Geometry transformations act on both parts of this object:
-
-$$
-k \mapsto k',
-\qquad
-H(k) \mapsto U(k)\,H(k)\,U(k)^\dagger,
-$$
+\(k \mapsto k'\) and
+\(H(k) \mapsto U(k)\,H(k)\,U(k)^\dagger\).
 
 where the \(k\)-dependent change-of-basis matrix \(U(k)\) is assembled from
 symbolic Hilbert-space relabeling and finite Fourier transforms.
@@ -173,9 +165,7 @@ def _probe_affine(
     r"""
     Probe *raw_opr* with ``d + 1`` reference momenta to extract its affine
     decomposition
-    $$
-    \mathrm{output\_frac} = \mathrm{input\_frac}\, M^{\mathsf{T}} + c.
-    $$
+    \(\mathrm{output\_frac} = \mathrm{input\_frac}\, M^{\mathsf{T}} + c\).
     In code, this is represented by the row-vector expression
     `input_frac @ M.T + c`.
 
@@ -219,12 +209,7 @@ def _momentum_match_indices(
     boundaries).
 
     In fractional reciprocal coordinates, affine mappings have the form
-
-    $$
-    \kappa' = M\kappa + c \pmod{1}.
-    $$
-
-    In code, source fractional coordinates are rows, so the matrix product is
+    \(\kappa' = M\kappa + c \pmod{1}\). In code, source fractional coordinates are rows, so the matrix product is
     `src_frac @ M.T`, followed by optional `+ c`.
     """
     src_elements = src.elements()
@@ -376,12 +361,7 @@ def bandtransform(
     After wrapping transformed sites back to the home unit cell, the finite
     Fourier transform contributes a momentum-dependent phase. The resulting
     basis-change matrix is denoted \(U_t(k)\). The transformed band block is
-
-    $$
-    H'(t k) = U_t(k)\,H(k)\,U_t(k)^\dagger.
-    $$
-
-    In code, `left_fourier` and `right_fourier` are the two \(U_t(k)\)-style
+    \(H'(t k) = U_t(k)\,H(k)\,U_t(k)^\dagger\). In code, `left_fourier` and `right_fourier` are the two \(U_t(k)\)-style
     maps, and the products are `left_fourier @ tensor` and
     `tensor @ right_fourier.h(-2, -1)`.
 
@@ -520,15 +500,8 @@ def bandfold(
     reciprocal Brillouin zone shrinks and multiple old momenta fold onto one
     new momentum sector. If \(F(k)\) is the Fourier map from the old cell basis
     into the enlarged transformed-cell basis, each block is transformed as
-
-    $$
-    H_{\mathrm{fold}}(k') \mathrel{+}=
-        F(k)^\dagger H(k) F(k),
-    \qquad
-    k' = \mathrm{fold}(k).
-    $$
-
-    The code-level implementation uses `fh @ tensor @ f` for the block
+    \(H_{\mathrm{fold}}(k') \mathrel{+}= F(k)^\dagger H(k) F(k)\), with
+    \(k' = \mathrm{fold}(k)\). The code-level implementation uses `fh @ tensor @ f` for the block
     transform and `index_add(0, k_indices, transformed)` to accumulate old
     sectors into the folded momentum axis.
 
@@ -665,13 +638,8 @@ def bandunfold(
     Unfolding routes each primitive momentum \(k\) to its parent folded
     momentum \(\bar{k}\), gathers \(H_{\mathrm{fold}}(\bar{k})\), and then
     projects it back to the primitive-cell basis with a Fourier map \(F(k)\):
-
-    $$
-    H_{\mathrm{unfold}}(k)
-        = F(k)\,H_{\mathrm{fold}}(\bar{k})\,F(k)^\dagger.
-    $$
-
-    In code, the parent-sector lookup is `tensor.data[k_indices.data]`, and the
+    \(H_{\mathrm{unfold}}(k)
+    = F(k)\,H_{\mathrm{fold}}(\bar{k})\,F(k)^\dagger\). In code, the parent-sector lookup is `tensor.data[k_indices.data]`, and the
     final basis projection is `f @ gathered @ f.h(-2, -1)`.
 
     Parameters
@@ -811,20 +779,10 @@ def bandfillings(tensor: Tensor, frac: float) -> Tensor:
 
     Mathematical convention
     -----------------------
-    Each momentum block is diagonalized as
-
-    $$
-    H(k) V(k) = V(k) E(k),
-    $$
-
-    and the eigenvectors whose energies fall below the global filling threshold
+    Each momentum block is diagonalized as \(H(k) V(k) = V(k) E(k)\), and the eigenvectors whose energies fall below the global filling threshold
     are retained. If `frac = f`, the target number of occupied states is
 
-    $$
-    N_{\mathrm{occ}} = \left\lfloor f\,N_k\,N_b \right\rfloor,
-    $$
-
-    where \(N_k\) is the number of momentum sectors and \(N_b\) is the number
+    \(N_{\mathrm{occ}} = \left\lfloor f\,N_k\,N_b \right\rfloor\), where \(N_k\) is the number of momentum sectors and \(N_b\) is the number
     of bands per sector. Degenerate states at the threshold are included
     together.
 
@@ -940,13 +898,7 @@ def bandselect(
 
     Mathematical convention
     -----------------------
-    For each momentum sector,
-
-    $$
-    H(k) v_n(k) = \epsilon_n(k) v_n(k),
-    $$
-
-    and each criterion selects a subset of band labels \(n\). The returned
+    For each momentum sector, \(H(k) v_n(k) = \epsilon_n(k) v_n(k)\), and each criterion selects a subset of band labels \(n\). The returned
     tensor packs the matching eigenvectors \(v_n(k)\) into an
     [`IndexSpace`][qten.symbolics.state_space.IndexSpace], padding sectors with
     fewer matches by zero columns.

@@ -164,16 +164,8 @@ def pointgroup(query: str) -> AbelianGroup:
     orientation. In 3D cyclic rotations, the remaining axis is unchanged.
 
     The active plane receives the block
-
-    $$
-    R(\theta) =
-    \begin{pmatrix}
-    \cos\theta & -\sin\theta \\
-    \sin\theta & \cos\theta
-    \end{pmatrix},
-    \qquad
-    \theta = \frac{2\pi}{n}.
-    $$
+    \(R(\theta) = \begin{pmatrix}\cos\theta & -\sin\theta \\
+    \sin\theta & \cos\theta\end{pmatrix}\), where \(\theta = 2\pi/n\).
 
     In code, this block is inserted into the returned `irrep` matrix; target
     axis order chooses the sign of `theta`.

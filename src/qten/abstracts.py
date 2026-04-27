@@ -647,32 +647,32 @@ class Functional(ABC):
 
     def __call__(self, obj: Any, **kwargs) -> Any:
         """
-                Apply this functional to `obj`.
+        Apply this functional to `obj`.
 
-                This is a thin wrapper around [`invoke()`][qten.abstracts.Functional.invoke].
+        This is a thin wrapper around [`invoke()`][qten.abstracts.Functional.invoke].
 
-                Parameters
-                ----------
-                obj : Any
-                    Runtime object to dispatch on.
-                **kwargs : Any
-                    Additional keyword arguments forwarded to the resolved
-                    implementation.
+        Parameters
+        ----------
+        obj : Any
+            Runtime object to dispatch on.
+        **kwargs : Any
+            Additional keyword arguments forwarded to the resolved
+            implementation.
 
-                Returns
-                -------
-                Any
-                    Result produced by the resolved registered method.
+        Returns
+        -------
+        Any
+            Result produced by the resolved registered method.
 
-                Raises
-                ------
-                NotImplementedError
-                    If no registration exists for the runtime pair after MRO fallback.
+        Raises
+        ------
+        NotImplementedError
+            If no registration exists for the runtime pair after MRO fallback.
 
-                See Also
-                --------
-                [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke]
-                    Full dispatch method used by this call wrapper.
+        See Also
+        --------
+        [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke]
+            Full dispatch method used by this call wrapper.
         """
         return self.invoke(obj, **kwargs)
 

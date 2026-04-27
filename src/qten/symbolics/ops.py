@@ -194,12 +194,8 @@ def hilbert_opr_repr(
     \(\mathrm{span}\{\mathrm{opr}\,|e_j\rangle\}\). In code, the transformed
     basis is produced by `opr @ space`. This function constructs the
     corresponding representation matrix
-
-    $$
-    M_{ij} = \langle e_i | \mathrm{opr} | e_j \rangle,
-    $$
-
-    implemented as the cross-Gram matrix between the original basis and its
+    \(M_{ij} = \langle e_i | \mathrm{opr} | e_j \rangle\), implemented as the
+    cross-Gram matrix between the original basis and its
     transformed image. The resulting [`Tensor`][qten.linalg.tensors.Tensor] therefore represents `opr` in the
     basis supplied by `space`.
 

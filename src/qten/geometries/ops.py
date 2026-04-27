@@ -261,17 +261,12 @@ def get_strip_region_2d(
     satisfies both of the following:
 
     - Longitudinal bound:
-      $$
-      \mathrm{trim\_step}(d_x^2 + d_y^2)
+      \(\mathrm{trim\_step}(d_x^2 + d_y^2)
       \le d_x(r_x-r_{0x}) + d_y(r_y-r_{0y})
-      \le (\mathrm{length\_step}-1)(d_x^2+d_y^2).
-      $$
+      \le (\mathrm{length\_step}-1)(d_x^2+d_y^2)\).
     - Transverse bound:
-      $$
-      0
-      \le s[-p_y(r_x-r_{0x}) + p_x(r_y-r_{0y})]
-      \le \mathrm{width\_step}-1.
-      $$
+      \(0 \le s[-p_y(r_x-r_{0x}) + p_x(r_y-r_{0y})]
+      \le \mathrm{width\_step}-1\).
 
     where \(s = 1\) for `"lhs"` and \(s = -1\) for `"rhs"`.
 
@@ -521,9 +516,7 @@ def region_tile(
     The returned region contains translations of every point in `region` by
     offsets
 
-    $$
-    \sum_i n_i b_i, \qquad 0 \le n_i < \mathrm{counts}[i],
-    $$
+    \(\sum_i n_i b_i\), with \(0 \le n_i < \mathrm{counts}[i]\),
 
     where `b_i` are the entries of `bases`.
 

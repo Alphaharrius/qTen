@@ -256,11 +256,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
 
     For ordinary rank-2 matrix axes this is the contraction
 
-    $$
-    (A B)_{ik} = \sum_j A_{ij} B_{jk},
-    $$
-
-    with the contracted index matched through symbolic
+    \((A B)_{ik} = \sum_j A_{ij} B_{jk}\), with the contracted index matched through symbolic
     [`StateSpace`][qten.symbolics.state_space.StateSpace] metadata.
 
     Addition and subtraction

@@ -100,12 +100,8 @@ class U1Basis(
     Mathematical convention
     -----------------------
     A basis state is represented symbolically as
-
-    $$
-    |\psi\rangle = c\,|\rho_1,\rho_2,\ldots,\rho_m\rangle,
-    $$
-
-    where `coef` stores \(c\), `base` stores the construction-order tuple
+    \(|\psi\rangle = c\,|\rho_1,\rho_2,\ldots,\rho_m\rangle\), where `coef`
+    stores \(c\), `base` stores the construction-order tuple
     \((\rho_1,\rho_2,\ldots,\rho_m)\), and `rep` stores the canonical
     type-sorted tuple used for equality, hashing, and lookup. The object is a
     basis label with a U(1) prefactor, not a dense state vector.
@@ -143,20 +139,9 @@ class U1Basis(
     type is rejected by the unity-multiplicity invariant.
 
     In coefficient notation, tensor-product composition multiplies the U(1)
-    weights:
-
-    $$
-    c_{a \otimes b} = c_a c_b.
-    $$
-
-    Equivalently,
-
-    $$
-    (c_a|\alpha\rangle) \otimes (c_b|\beta\rangle)
-        = c_a c_b\,|\alpha,\beta\rangle.
-    $$
-
-    In code, this is `a @ b` and is implemented as
+    weights as \(c_{a \otimes b} = c_a c_b\). Equivalently,
+    \((c_a|\alpha\rangle) \otimes (c_b|\beta\rangle)
+    = c_a c_b\,|\alpha,\beta\rangle\). In code, this is `a @ b` and is implemented as
     `U1Basis(simplify(a.coef * b.coef), a.base + b.base)`.
 
     The `|` dispatch overloads build a
@@ -506,12 +491,7 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
     -----------------------
     If the span contains basis labels \(\psi_0,\ldots,\psi_{n-1}\), it
     represents the ordered symbolic basis
-
-    $$
-    \mathrm{span}\{|\psi_0\rangle,\ldots,|\psi_{n-1}\rangle\}.
-    $$
-
-    The order is part of the object: it determines row/column ordering in Gram
+    \(\mathrm{span}\{|\psi_0\rangle,\ldots,|\psi_{n-1}\rangle\}\). The order is part of the object: it determines row/column ordering in Gram
     matrices and tensor dimensions.
 
     Parameters
@@ -593,12 +573,7 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
 
         For left span states \(\psi_i\) and right span states \(\phi_j\), the
         returned SymPy matrix has entries
-
-        $$
-        G_{ij} = \langle \psi_i \mid \phi_j \rangle.
-        $$
-
-        The implementation only emits a nonzero entry when the two symbolic
+        \(G_{ij} = \langle \psi_i \mid \phi_j \rangle\). The implementation only emits a nonzero entry when the two symbolic
         states have the same ray; the stored U(1) coefficients supply the
         overlap phase.
 
@@ -647,23 +622,14 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
     Mathematical convention
     -----------------------
     A Hilbert space is an ordered finite basis
-
-    $$
-    \mathcal{H} = \mathrm{span}\{|e_0\rangle,\ldots,|e_{d-1}\rangle\},
-    $$
-
+    \(\mathcal{H} = \mathrm{span}\{|e_0\rangle,\ldots,|e_{d-1}\rangle\}\),
     where each \(|e_i\rangle\) is a [`U1Basis`][qten.symbolics.hilbert_space.U1Basis].
     The code-level `structure` mapping stores the correspondence
     `U1Basis -> i`. That index \(i\) is the coordinate used by
     [`Tensor`][qten.linalg.tensors.Tensor] axes.
 
     Ray normalization removes U(1) prefactors from the labels:
-
-    $$
-    \mathrm{ray}(c\,|\rho\rangle) = |\rho\rangle.
-    $$
-
-    Phase information is not lost when constructing overlap maps: it is stored
+    \(\mathrm{ray}(c\,|\rho\rangle) = |\rho\rangle\). Phase information is not lost when constructing overlap maps: it is stored
     in the matrix entries produced by `cross_gram`.
 
     The class provides helpers for common basis-management workflows:
@@ -1005,14 +971,8 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         -----------------------
         For a homogeneous basis whose labels split into groups \(a\) and \(b\),
         factorization checks that the basis is a complete Cartesian product:
-
-        $$
-        \mathcal{H}
-            \cong \mathcal{H}_a \otimes \mathcal{H}_b,
-        \qquad
-        |a_i,b_j\rangle \leftrightarrow |a_i\rangle \otimes |b_j\rangle.
-        $$
-
+        \(\mathcal{H} \cong \mathcal{H}_a \otimes \mathcal{H}_b\), with
+        \(|a_i,b_j\rangle \leftrightarrow |a_i\rangle \otimes |b_j\rangle\).
         More generally, the requested `irrep_types` define factors
         \(\mathcal{H}_0,\ldots,\mathcal{H}_{m-1}\). The returned `align_dim`
         is the original basis reordered so that its flattened order matches
@@ -1240,20 +1200,10 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         basis-level tensor product `a @ b` for each pair.
 
         Mathematically, if
-
-        $$
-        \mathcal{H}_L = \mathrm{span}\{|a_i\rangle\},
-        \qquad
-        \mathcal{H}_R = \mathrm{span}\{|b_j\rangle\},
-        $$
-
-        then the result is ordered as
-
-        $$
-        \mathcal{H}_L \otimes \mathcal{H}_R
-            = \mathrm{span}\{|a_i\rangle \otimes |b_j\rangle\}_{i,j}.
-        $$
-
+        \(\mathcal{H}_L = \mathrm{span}\{|a_i\rangle\}\) and
+        \(\mathcal{H}_R = \mathrm{span}\{|b_j\rangle\}\), then the result is
+        ordered as \(\mathcal{H}_L \otimes \mathcal{H}_R
+        = \mathrm{span}\{|a_i\rangle \otimes |b_j\rangle\}_{i,j}\).
         Ordering follows `itertools.product(self.elements(), other.elements())`:
         basis elements from `self` vary slowest, and basis elements from `other`
         vary fastest. This deterministic order is important for tensor reshape
@@ -1285,12 +1235,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         basis labels while preserving the projective sector structure.
 
         In formula form:
-
-        $$
-        \{c_i|\rho_i\rangle\}_i
-            \longmapsto
-        \{|\rho_i\rangle\}_i.
-        $$
+        \(\{c_i|\rho_i\rangle\}_i \longmapsto \{|\rho_i\rangle\}_i\).
 
         Returns
         -------
@@ -1323,9 +1268,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         Build the cross-Gram overlap matrix between this basis and another basis.
 
         Matrix entries are computed from concrete basis overlaps
-        $$
-        G_{ij} = \langle \mathrm{self}_i \mid \mathrm{another}_j \rangle,
-        $$
+        \(G_{ij} = \langle \mathrm{self}_i \mid \mathrm{another}_j \rangle\),
         so any nontrivial U(1) irrep phase in basis vectors is encoded in
         `data`.
 

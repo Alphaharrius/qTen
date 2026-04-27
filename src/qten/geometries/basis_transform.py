@@ -131,9 +131,7 @@ class BasisTransform(AbstractBasisTransform):
     throughout the geometry and band-folding code. For a direct-lattice basis
     matrix `A`, the transformed basis is
 
-    $$
-    A' = A M.
-    $$
+    \(A' = A M\).
 
     The same physical point is then re-expressed in the new basis rather than
     moved in space. In other words, `BasisTransform` changes coordinates by
@@ -163,10 +161,7 @@ class BasisTransform(AbstractBasisTransform):
     matrix.
 
     On [`AffineSpace`][qten.geometries.spatials.AffineSpace]
-    :
-      $$
-      A' = A M
-      $$
+    : \(A' = A M\).
 
     On [`Lattice`][qten.geometries.spatials.Lattice]
     : the lattice basis becomes \(A M\), while periodic boundary generators are
@@ -177,26 +172,20 @@ class BasisTransform(AbstractBasisTransform):
 
     On [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]
     : because reciprocal bases transform contragrediently,
-      $$
-      B' = B M^{-\mathsf{T}}.
-      $$
+      \(B' = B M^{-\mathsf{T}}\).
 
     On [`Offset`][qten.geometries.spatials.Offset]
     : an offset with
       [`Lattice`][qten.geometries.spatials.Lattice]-fractional coordinates \(r\)
       is rebased into the transformed space, giving
-      $$
-      r' = M^{-1} r.
-      $$
+      \(r' = M^{-1} r\).
 
     On [`Momentum`][qten.geometries.spatials.Momentum]
     : a momentum with
       [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]-
       fractional coordinates \(\kappa\) are rebased into the transformed
       reciprocal space, giving
-      $$
-      \kappa' = M^{\mathsf{T}}\kappa.
-      $$
+      \(\kappa' = M^{\mathsf{T}}\kappa\).
 
     In implementation terms, these rules correspond to matrix products such as
     `A @ M`, `B @ M.inv().T`, `M.inv() @ r`, and `M.T @ kappa`.
@@ -266,9 +255,7 @@ class InverseBasisTransform(AbstractBasisTransform):
     [`Lattice`][qten.geometries.spatials.Lattice]-basis matrix `A`, the
     transformed basis is
 
-    $$
-    A' = A M^{-1}.
-    $$
+    \(A' = A M^{-1}\).
 
     This is the "undo the supercell / recover the primitive description"
     convention used when unfolding folded lattices, offsets, and band
@@ -297,10 +284,7 @@ class InverseBasisTransform(AbstractBasisTransform):
     matrix.
 
     On [`AffineSpace`][qten.geometries.spatials.AffineSpace]
-    :
-      $$
-      A' = A M^{-1}
-      $$
+    : \(A' = A M^{-1}\).
 
     On [`Lattice`][qten.geometries.spatials.Lattice]
     : the lattice basis becomes \(A M^{-1}\), while periodic boundary
@@ -311,23 +295,17 @@ class InverseBasisTransform(AbstractBasisTransform):
 
     On [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]
     : duality gives
-      $$
-      B' = B M^{\mathsf{T}}.
-      $$
+      \(B' = B M^{\mathsf{T}}\).
 
     On [`Offset`][qten.geometries.spatials.Offset]
     : [`Lattice`][qten.geometries.spatials.Lattice]-fractional coordinates are
       rebased by
-      $$
-      r' = M r.
-      $$
+      \(r' = M r\).
 
     On [`Momentum`][qten.geometries.spatials.Momentum]
     : [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]-
       fractional coordinates are rebased by
-      $$
-      \kappa' = M^{-\mathsf{T}}\kappa.
-      $$
+      \(\kappa' = M^{-\mathsf{T}}\kappa\).
 
     In implementation terms, these rules correspond to matrix products such as
     `A @ M.inv()`, `B @ M.T`, `M @ r`, and `M.inv().T @ kappa`.

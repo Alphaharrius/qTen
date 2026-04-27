@@ -223,13 +223,8 @@ class AbelianGroup(Opr):
     Mathematical meaning
     --------------------
     Let the coordinate vector be \(x = (x_1, \ldots, x_d)^{\mathsf{T}}\).
-    The matrix `irrep` defines a linear action
-
-    $$
-    x \mapsto Gx,
-    $$
-
-    where \(G\) is the stored `irrep` matrix.
+    The matrix `irrep` defines a linear action \(x \mapsto Gx\), where \(G\)
+    is the stored `irrep` matrix.
 
     From this degree-1 action, the class constructs higher-order polynomial
     representations on homogeneous monomials of total degree `order`. For
@@ -448,12 +443,8 @@ class AbelianGroup(Opr):
         r"""
         Return the order of this represented group element.
 
-        The order is the smallest positive integer `n` such that
-        $$
-        G^n = I,
-        $$
-        where \(G\) is `irrep` and \(I\) is the identity matrix of matching
-        size.
+        The order is the smallest positive integer `n` such that \(G^n = I\),
+        where \(G\) is `irrep` and \(I\) is the identity matrix of matching size.
 
         Parameters
         ----------
@@ -802,9 +793,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
         For the affine action \(x \mapsto R x + t\), requiring \(r\) to be
         fixed means \(Rr + t = r\), so the translation must be
-        $$
-        t = (I - R)r.
-        $$
+        \(t = (I - R)r\).
 
         Parameters
         ----------
@@ -979,9 +968,7 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
 
     If \(R\) is the real-space linear map in those coordinates, then reciprocal
     fractional coordinates transform contravariantly as
-    $$
-    k' = (R^{-1})^{\mathsf{T}} k.
-    $$
+    \(k' = (R^{-1})^{\mathsf{T}} k\).
 
     Parameters
     ----------

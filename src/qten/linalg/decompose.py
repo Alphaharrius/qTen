@@ -60,21 +60,14 @@ class EigH(NamedTuple):
       `result.eigenvalues`, then evaluating the code expression
       `V @ W @ V.h(...)`, where `V = result.eigenvectors` and `W` is that
       diagonal matrix.
-      In conventional notation:
-      $$
-      A = V \Lambda V^\dagger.
-      $$
+      In conventional notation, \(A = V \Lambda V^\dagger\).
     - For [`eig`][qten.linalg.decompose.eig], the returned tensors satisfy the
       eigenvalue equation \(A V = V\Lambda\). If the matrix is diagonalizable,
       then it can be reconstructed as \(V\Lambda V^{-1}\), where \(\Lambda\)
       is the diagonal matrix of eigenvalues. In code, this corresponds to
       products like `A @ V`, `V @ W`, and `V @ W @ V.inv()`.
-      In conventional notation:
-      $$
-      A V = V \Lambda,
-      \qquad
-      A = V \Lambda V^{-1}.
-      $$
+      In conventional notation, \(A V = V \Lambda\) and
+      \(A = V \Lambda V^{-1}\).
 
     Attributes
     ----------
@@ -372,11 +365,7 @@ class QR(NamedTuple):
     Reconstruct the original matrix as \(Q R\) on the last two axes. In code,
     this is `Q @ R`.
 
-    $$
-    A = Q R,
-    \qquad
-    Q^\dagger Q = I.
-    $$
+    In conventional notation, \(A = Q R\) and \(Q^\dagger Q = I\).
 
     Attributes
     ----------
@@ -465,11 +454,7 @@ class SVD(NamedTuple):
     `values_as_matrix=True`, or the diagonal matrix formed from the singular
     values when `result.S` is returned as a vector.
 
-    In conventional notation:
-
-    $$
-    A = U \Sigma V^\dagger.
-    $$
+    In conventional notation, \(A = U \Sigma V^\dagger\).
 
     Attributes
     ----------

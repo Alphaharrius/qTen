@@ -133,11 +133,7 @@ class FFObservable:
         resulting insertion-ordered unique rays. Off-diagonal entries are
         mirrored by complex conjugation so the returned tensor is Hermitian.
 
-        The resulting data satisfy
-
-        $$
-        O_{ij} = O_{ji}^{*}.
-        $$
+        The resulting data satisfy \(O_{ij} = O_{ji}^{*}\).
 
         Parameters
         ----------
