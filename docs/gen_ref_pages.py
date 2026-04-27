@@ -99,7 +99,7 @@ with mkdocs_gen_files.open(REFERENCE_ROOT / "index.md", "w") as fd:
 
 with mkdocs_gen_files.open(ROOT_SUMMARY, "w") as nav_file:
     nav_file.write("* [Home](index.md)\n")
-    nav_file.write("* [Build Docs](build-docs.md)\n")
+    nav_file.write("* [Installation](installation.md)\n")
     nav_file.write("* [Plot Methods](plot-methods.md)\n")
     nav_file.write("* [API Reference](reference/index.md)\n")
     for line in nav.build_literate_nav():
