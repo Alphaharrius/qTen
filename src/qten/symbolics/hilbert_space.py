@@ -1,3 +1,24 @@
+"""
+Symbolic Hilbert-space bases and operators.
+
+This module defines QTen's symbolic single-particle basis labels, spans, and
+operators. [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] represents a
+single symbolic basis state, [`U1Span`][qten.symbolics.hilbert_space.U1Span]
+collects compatible basis states, and
+[`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] provides the indexed
+state space used by labelled tensors. Operator classes such as
+[`Opr`][qten.symbolics.hilbert_space.Opr] and
+[`FuncOpr`][qten.symbolics.hilbert_space.FuncOpr] encode symbolic actions on
+those basis labels.
+
+Repository usage
+----------------
+Use this module when defining, combining, converting, or applying symbolic
+Hilbert-space basis data. Spatial state-space containers live in
+[`qten.symbolics.state_space`][qten.symbolics.state_space], while convenience
+operators for common transformations live in [`qten.symbolics.ops`][qten.symbolics.ops].
+"""
+
 from abc import ABC
 from dataclasses import dataclass, replace
 from typing import (

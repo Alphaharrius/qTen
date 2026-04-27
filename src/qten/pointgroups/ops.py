@@ -1,3 +1,21 @@
+"""
+Point-group operations on symbolic bases and tensors.
+
+This module contains functional helpers that combine abelian point-group
+representations with QTen Hilbert spaces and tensors. The functions compute
+joint abelian eigen-bases, project Hilbert spaces into symmetry sectors, and
+assemble representation tensors for point-group actions.
+
+Repository usage
+----------------
+Use [`joint_abelian_basis()`][qten.pointgroups.ops.joint_abelian_basis] and the
+related projection helpers when an existing
+[`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] or
+[`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr] should act on symbolic
+Hilbert-space data. The group definitions themselves live in
+[`qten.pointgroups.abelian`][qten.pointgroups.abelian].
+"""
+
 from itertools import product
 from math import prod
 from typing import Sequence, cast

@@ -1,3 +1,19 @@
+"""
+Convenience operators for symbolic Hilbert-space transformations.
+
+This module provides small functional constructors for common symbolic
+operations: translating or rebasing spatial irreps, expanding Bloch Hilbert
+spaces across real-space regions, constructing Hamiltonian representations, and
+building basis transforms between position and momentum descriptions.
+
+Repository usage
+----------------
+Use these helpers when composing [`FuncOpr`][qten.symbolics.hilbert_space.FuncOpr]
+or converting between [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]
+representations. The underlying basis, span, and operator classes are defined in
+[`qten.symbolics.hilbert_space`][qten.symbolics.hilbert_space].
+"""
+
 from collections import OrderedDict
 from typing import Callable, Dict, Optional, Sequence, TypeVar, Union, cast, overload
 import numpy as np
@@ -17,7 +33,7 @@ S = TypeVar("S", bound=AffineSpace)
 
 
 def translate_opr(d: OffsetType) -> FuncOpr[OffsetType]:
-    """
+    r"""
     Build an operator that translates irreps of the same concrete type by `d`.
 
     Parameters
@@ -28,15 +44,15 @@ def translate_opr(d: OffsetType) -> FuncOpr[OffsetType]:
     Returns
     -------
     FuncOpr
-        Operator applying `x -> x + d` to irreps whose concrete type matches
-        type(d).
+        Operator applying \(x \mapsto x + d\) to irreps whose concrete type
+        matches `type(d)`.
     """
     point_type = cast(type[OffsetType], type(d))
     return FuncOpr(point_type, lambda r: cast(OffsetType, r + d))
 
 
 def rebase_opr(space: S) -> FuncOpr[OffsetType]:
-    """
+    r"""
     Build an operator that rebases spatial irreps into `space`.
 
     For affine spaces this targets [`Offset`][qten.geometries.spatials.Offset] irreps. For reciprocal lattices it
@@ -50,7 +66,8 @@ def rebase_opr(space: S) -> FuncOpr[OffsetType]:
     Returns
     -------
     FuncOpr
-        Operator applying `r -> r.rebase(space)` to matching spatial irreps.
+        Operator applying \(r \mapsto r.\mathrm{rebase}(\mathrm{space})\) to
+        matching spatial irreps. In code, this calls `r.rebase(space)`.
     """
     point_type = cast(
         type[OffsetType], Momentum if isinstance(space, ReciprocalLattice) else Offset
@@ -168,14 +185,19 @@ def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> Hilbe
 def hilbert_opr_repr(
     opr: Opr, space: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
-    """
+    r"""
     Return the matrix representation of an operator on a Hilbert-space basis.
 
-    Let `space = span{ |e_i> }` be the input [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and let `opr` act
-    on each basis state to produce `opr @ space = span{ opr |e_j> }`. This
-    function constructs the corresponding representation matrix
+    Let \(\mathrm{space} = \mathrm{span}\{|e_i\rangle\}\) be the input
+    [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and let `opr`
+    act on each basis state to produce
+    \(\mathrm{span}\{\mathrm{opr}\,|e_j\rangle\}\). In code, the transformed
+    basis is produced by `opr @ space`. This function constructs the
+    corresponding representation matrix
 
-    `M_{ij} = ⟨e_i | opr | e_j⟩`,
+    \[
+    M_{ij} = \langle e_i | \mathrm{opr} | e_j \rangle,
+    \]
 
     implemented as the cross-Gram matrix between the original basis and its
     transformed image. The resulting [`Tensor`][qten.linalg.tensors.Tensor] therefore represents `opr` in the

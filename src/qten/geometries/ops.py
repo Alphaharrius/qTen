@@ -1,3 +1,22 @@
+"""
+Geometry helper operations for lattice regions and momentum paths.
+
+This module contains functional helpers built on top of
+[`AffineSpace`][qten.geometries.spatials.AffineSpace],
+[`Lattice`][qten.geometries.spatials.Lattice],
+[`Offset`][qten.geometries.spatials.Offset], and
+[`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]. The helpers
+construct common real-space regions, nearest-neighbor site selections, strip
+geometries, reciprocal-space paths, and related geometry data without adding
+stateful wrapper classes.
+
+Repository usage
+----------------
+Use this module when an operation derives a new region or path from existing
+geometry objects rather than defining a new geometry type. Class definitions
+and the core spatial algebra live in [`qten.geometries.spatials`][qten.geometries.spatials].
+"""
+
 from __future__ import annotations
 
 import math

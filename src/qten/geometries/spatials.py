@@ -880,31 +880,39 @@ class Offset(Generic[S], Spatial, HasBase[S]):
     basis it lives in, not the Cartesian vector `space.basis @ rep`
     (mathematically \(A r\)).
 
-    Let :math:`x = (r_x, S_x)` and :math:`y = (r_y, S_y)`, where
-    :math:`r_x, r_y \\in \\mathbb{R}^{d \\times 1}` are coordinate columns and
-    :math:`S_x, S_y` are affine spaces with basis matrices :math:`B_x, B_y`.
+    Let \(x = (r_x, S_x)\) and \(y = (r_y, S_y)\), where
+    \(r_x, r_y \in \mathbb{R}^{d \times 1}\) are coordinate columns and
+    \(S_x, S_y\) are affine spaces with basis matrices \(B_x, B_y\).
 
     Algebra
     -------
-    :math:`-x = (-r_x, S_x)`.
+    \[
+    -x = (-r_x, S_x).
+    \]
 
-    :math:`x + y = (r_x + \\tilde r_y, S_x)`, where
-    :math:`\\tilde r_y = B_x^{-1} B_y r_y` if :math:`S_x \\neq S_y`
-    (equivalently, rebase :math:`y` into :math:`S_x` first).
+    \[
+    x + y = (r_x + \tilde r_y, S_x),
+    \qquad
+    \tilde r_y = B_x^{-1} B_y r_y
+    \]
+    if \(S_x \ne S_y\) (equivalently, rebase \(y\) into \(S_x\) first).
 
-    :math:`x - y = x + (-y)`.
+    \[
+    x - y = x + (-y).
+    \]
 
     Equality
     --------
-    :math:`x = y \\iff (r_x = r_y) \\land (S_x = S_y)`.
+    \[
+    x = y \iff (r_x = r_y) \land (S_x = S_y).
+    \]
     This is exact structural equality; no implicit rebasing is applied.
 
     Order
     -----
-    For :math:`x < y` and :math:`x > y`:
-    compare :math:`d_x` and :math:`d_y` first.
-    If :math:`d_x = d_y`, compare Cartesian tuples
-    :math:`\\mathrm{tuple}(B_x r_x)` and :math:`\\mathrm{tuple}(B_y r_y)`
+    For \(x < y\) and \(x > y\): compare \(d_x\) and \(d_y\) first.
+    If \(d_x = d_y\), compare Cartesian tuples
+    \(\mathrm{tuple}(B_x r_x)\) and \(\mathrm{tuple}(B_y r_y)\)
     lexicographically.
 
     Attributes

@@ -1,3 +1,20 @@
+"""
+Indexed symbolic state-space containers.
+
+This module defines ordered finite state spaces used as tensor dimensions in
+QTen. [`StateSpace`][qten.symbolics.state_space.StateSpace] stores arbitrary
+spatial or symbolic elements with stable integer indices, while specialized
+spaces such as [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] and
+[`BzPath`][qten.symbolics.state_space.BzPath] describe reciprocal-space grids
+and paths.
+
+Repository usage
+----------------
+Use state spaces as labelled tensor dimensions and as the finite index sets
+that connect symbolic geometry to numeric tensor data. Hilbert-space basis
+objects live in [`qten.symbolics.hilbert_space`][qten.symbolics.hilbert_space].
+"""
+
 from dataclasses import dataclass, replace, field
 from typing import Any, Callable, NamedTuple, Tuple, TypeVar, Generic, Union, Self, cast
 from typing_extensions import override

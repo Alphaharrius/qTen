@@ -1,3 +1,19 @@
+"""
+Compact point-group constructors.
+
+This module provides the user-facing [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup]
+factory for constructing common [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup]
+instances from short query strings. The query language covers simple cyclic
+rotations and mirror reflections on Cartesian axes and returns the symbolic
+point-group representation used by the rest of QTen.
+
+Repository usage
+----------------
+Use [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] for convenient
+interactive construction. Use [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup]
+directly when a custom symbolic representation matrix is needed.
+"""
+
 import re
 
 import sympy as sy

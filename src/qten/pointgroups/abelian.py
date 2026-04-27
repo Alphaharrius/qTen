@@ -1,3 +1,21 @@
+"""
+Symbolic abelian point-group representations.
+
+This module defines the core point-group objects used by QTen's symmetry
+machinery. [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] stores an
+abelian generator representation, derives Euclidean polynomial bases, and
+computes symbolic eigen-basis sectors. [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis]
+labels those sectors, while [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]
+couples a group action with an affine offset for use as a symbolic operator.
+
+Repository usage
+----------------
+Use this module for explicit point-group construction and algebra. Higher-level
+query-string construction is available through
+[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], and tensor/Hilbert
+space projection helpers live in [`qten.pointgroups.ops`][qten.pointgroups.ops].
+"""
+
 from dataclasses import dataclass
 from typing import Dict, Tuple, cast
 from collections import OrderedDict
@@ -262,7 +280,7 @@ class AbelianGroup(Opr):
     Notes
     -----
     [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] is the linear object. To obtain an affine operator of the
-    form `x -> g x + t`, wrap it in [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]. In that sense, [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]
+    form \(x \mapsto gx + t\), wrap it in [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]. In that sense, [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]
     is the affine extension of [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup].
 
     `AbelianGroup @ AbelianGroup` composes linear maps in the same algebraic
@@ -666,11 +684,13 @@ def _(g: AbelianGroup, f: AbelianBasis) -> Multiple[AbelianBasis]:
 
 @dataclass(frozen=True, init=False)
 class AbelianOpr(Opr, HasBase[AffineSpace]):
-    """
+    r"""
     Abelian operator acting on polynomial coordinate functions.
 
     This class combines an abelian linear representation with a translation:
-    `x -> g x + t`, where `g` is carried by [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] and `t` by `offset`.
+    \(x \mapsto gx + t\), where `g` is carried by
+    [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] and \(t\) by
+    `offset`.
 
     Parameters
     ----------
@@ -701,9 +721,10 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
     ordered coordinate axes of the operator's ambient affine space.
     """
     offset: Offset
-    """
+    r"""
     Translation part of the affine transformation, stored in the same affine
-    space on which `g` acts so the full map has the form `x -> g x + offset`.
+    space on which `g` acts so the full map has the form
+    \(x \mapsto gx + \mathrm{offset}\).
     """
 
     @classmethod
@@ -776,11 +797,14 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
         )
 
     def fixpoint_at(self, r: Offset, rebase: bool = False) -> "AbelianOpr":
-        """
+        r"""
         Return a transform with the same linear part whose invariant fixed point is `r`.
 
-        For the affine action `x -> R x + t`, requiring `r` to be fixed means
-        `R r + t = r`, so the translation must be `t = (I - R) r`.
+        For the affine action \(x \mapsto R x + t\), requiring \(r\) to be
+        fixed means \(Rr + t = r\), so the translation must be
+        \[
+        t = (I - R)r.
+        \]
 
         Parameters
         ----------
