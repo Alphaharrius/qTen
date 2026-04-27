@@ -10,7 +10,7 @@ class Bond(Multiple[Tuple[U1Basis, U1Basis]]):
     """
     Weighted directed transition between two [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] states.
 
-    `Bond` specializes [`Multiple`][qten.symbolics.base.Multiple] for the common physics case where the base
+    `Bond` specializes [`Multiple`][qten.symbolics.Multiple] for the common physics case where the base
     object is an ordered pair `(src, dst)` of basis states. The scalar
     coefficient is kept separate from the endpoint states so symbolic
     manipulations can preserve the structural meaning of the bond until a later

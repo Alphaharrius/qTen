@@ -127,37 +127,34 @@ def pointgroup(query: str) -> AbelianGroup:
 
     Group tokens
     ------------
-    - `c{n}`: Cyclic rotation of order `n`, such as `c2`, `c3`, or `c6`.
-    - `m`: Mirror reflection.
+    Use `c{n}` for a cyclic rotation of order `n`, such as `c2`, `c3`, or
+    `c6`. Use `m` for a mirror reflection.
 
     Axis tokens
     -----------
-    - `<ambient>`: Ordered ambient axis string using `x`, `y`, and `z`
-      without repeats. It defines the space dimension and basis-axis order in
-      the returned transform.
-    - `<target>`: Axis subset selecting where the group action lives.
+    `<ambient>` is an ordered ambient axis string using `x`, `y`, and `z`
+    without repeats. It defines the space dimension and basis-axis order in the
+    returned transform. `<target>` is an axis subset selecting where the group
+    action lives.
 
     Group semantics
     ---------------
-    - Cyclic groups are interpreted as 2D rotation blocks with angle
-      `2*pi/n`.
-    - For cyclic groups, `<target>` must have exactly two axes and defines the
-      rotation plane.
-    - In 2D ambient spaces, the cyclic target plane must use the same two axes
-      as the ambient space.
-    - Cyclic target order controls orientation: `c3-xy:xy` and `c3-xy:yx`
-      act on the same plane with inverse orientation.
-    - In 3D cyclic rotations, the remaining axis is unchanged.
-    - In 1D mirrors, `<target>` must match the ambient axis and the action is
-      sign flip.
-    - In 2D mirrors, `<target>` has one axis and denotes the fixed axis.
-    - In 3D mirrors, `<target>` has two axes and denotes the fixed plane.
+    Cyclic groups are interpreted as 2D rotation blocks with angle `2*pi/n`.
+    For cyclic groups, `<target>` must have exactly two axes and defines the
+    rotation plane. In 2D ambient spaces, the cyclic target plane must use the
+    same two axes as the ambient space. Cyclic target order controls
+    orientation: `c3-xy:xy` and `c3-xy:yx` act on the same plane with inverse
+    orientation. In 3D cyclic rotations, the remaining axis is unchanged.
+
+    In 1D mirrors, `<target>` must match the ambient axis and the action is a
+    sign flip. In 2D mirrors, `<target>` has one axis and denotes the fixed
+    axis. In 3D mirrors, `<target>` has two axes and denotes the fixed plane.
 
     Validation rules
     ----------------
-    - `ambient` and `target` cannot contain repeated axis letters.
-    - `target` must be a subset of `ambient`.
-    - Invalid dimensional/group combinations raise `ValueError`.
+    `ambient` and `target` cannot contain repeated axis letters. `target` must
+    be a subset of `ambient`. Invalid dimensional or group combinations raise
+    `ValueError`.
 
     Parameters
     ----------
