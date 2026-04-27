@@ -135,9 +135,9 @@ class FFObservable:
 
         The resulting data satisfy
 
-        \[
+        $$
         O_{ij} = O_{ji}^{*}.
-        \]
+        $$
 
         Parameters
         ----------

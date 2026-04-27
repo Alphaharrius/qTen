@@ -209,9 +209,9 @@ def abelian_column_symmetrize(
     builds the full operator representation `G` on the ambient Hilbert space
     `w.dims[0]` and applies the projector
 
-    \[
+    $$
     P_\omega = \frac{1}{n}\sum_{k=0}^{n-1}\omega^{-k}G^k
-    \]
+    $$
 
     which is the rendered form of the code-level convention
     `P_omega = (1/n) * sum_{k=0}^{n-1} omega^(-k) G^k`.

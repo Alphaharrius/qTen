@@ -132,9 +132,9 @@ class U1Basis(
     In coefficient notation, tensor-product composition multiplies the U(1)
     weights:
 
-    \[
+    $$
     c_{a \otimes b} = c_a c_b.
-    \]
+    $$
 
     The `|` dispatch overloads build a
     [`U1Span`][qten.symbolics.hilbert_space.U1Span] of distinct
@@ -1215,9 +1215,9 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         Build the cross-Gram overlap matrix between this basis and another basis.
 
         Matrix entries are computed from concrete basis overlaps
-        \[
+        $$
         G_{ij} = \langle \mathrm{self}_i \mid \mathrm{another}_j \rangle,
-        \]
+        $$
         so any nontrivial U(1) irrep phase in basis vectors is encoded in
         `data`.
 

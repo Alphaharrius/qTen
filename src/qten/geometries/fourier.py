@@ -34,11 +34,11 @@ Cartesian arrays as `-1j * torch.matmul(ten_K, ten_R)`.
 
 In matrix form, the sampled kernel has entries
 
-\[
+$$
 K_{\alpha\beta}
     = \exp\!\left(-\mathrm{i}\, k_\alpha \cdot r_\beta\right)
     = \exp\!\left(-2\pi\mathrm{i}\, \kappa_\alpha \cdot n_\beta\right).
-\]
+$$
 
 Repository usage
 ----------------
@@ -94,10 +94,10 @@ def fourier_kernel(
 
     The returned matrix is
 
-    \[
+    $$
     K_{\alpha\beta}
         = \exp\!\left(-\mathrm{i}\, k_\alpha \cdot r_\beta\right).
-    \]
+    $$
 
     Parameters
     ----------

@@ -23,11 +23,11 @@ The central convention is:
 With direct basis matrix \(A\), fractional coordinates \(r\), and reciprocal
 basis \(G = 2\pi(A^{-1})^{\mathsf{T}}\), the core coordinate convention is
 
-\[
+$$
 x = A r,
 \qquad
 \exp(-\mathrm{i}\, k \cdot x)
-\]
+$$
 
 for Cartesian positions \(x\) and Cartesian reciprocal vectors \(k\).
 The corresponding code expression for the coordinate map is `basis @ rep`.
@@ -102,9 +102,9 @@ class AffineSpace(Spatial):
     Mathematically, if the basis matrix is \(A = [a_1,\ldots,a_d]\), then a
     column of coordinates \(r\) represents the Cartesian vector
 
-    \[
+    $$
     x = A r = \sum_j r_j a_j.
-    \]
+    $$
 
     This class does not by itself impose periodicity or discreteness. It is the
     ambient continuous coordinate frame in which lattice vectors and unit-cell
@@ -405,9 +405,11 @@ class Lattice(AbstractLattice["Offset"]):
 
         If the direct basis is `A`, the reciprocal basis is
         \(G = 2\pi (A^{-1})^{\mathsf{T}}\). This convention ensures
-        \[
+
+        $$
         \exp(\mathrm{i}\, G_j \cdot A_k) = 1
-        \]
+        $$
+
         for primitive direct/reciprocal basis pairs and lets Fourier phases be
         written directly as \(\exp(-\mathrm{i}\, k \cdot r)\).
         """
@@ -676,9 +678,9 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
         Notes
         -----
         The allowed points are representatives of the quotient
-        \[
+        $$
         \mathbb{Z}^d / N^{\mathsf{T}}\mathbb{Z}^d,
-        \]
+        $$
         where \(N\) is the direct-lattice boundary matrix. In fractional
         reciprocal coordinates this means points of the form
         \(\kappa = N^{-\mathsf{T}}m\) modulo integers, which are then wrapped
@@ -886,26 +888,26 @@ class Offset(Generic[S], Spatial, HasBase[S]):
 
     Algebra
     -------
-    \[
+    $$
     -x = (-r_x, S_x).
-    \]
+    $$
 
-    \[
+    $$
     x + y = (r_x + \tilde r_y, S_x),
     \qquad
     \tilde r_y = B_x^{-1} B_y r_y
-    \]
+    $$
     if \(S_x \ne S_y\) (equivalently, rebase \(y\) into \(S_x\) first).
 
-    \[
+    $$
     x - y = x + (-y).
-    \]
+    $$
 
     Equality
     --------
-    \[
+    $$
     x = y \iff (r_x = r_y) \land (S_x = S_y).
-    \]
+    $$
     This is exact structural equality; no implicit rebasing is applied.
 
     Order
@@ -1003,10 +1005,10 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         Rebasing changes only the coordinates, not the physical vector. If
         \(x = A_{\mathrm{old}}r_{\mathrm{old}} =
         A_{\mathrm{new}}r_{\mathrm{new}}\), this method computes
-        \[
+        $$
         r_{\mathrm{new}}
             = A_{\mathrm{new}}^{-1}A_{\mathrm{old}}r_{\mathrm{old}}.
-        \]
+        $$
         In code, the transform matrix is `space.basis.inv() @ self.space.basis`.
         """
         rebase_transform_mat = _rebase_transform_matrix(self.space, space)

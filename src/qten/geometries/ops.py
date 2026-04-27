@@ -261,17 +261,17 @@ def get_strip_region_2d(
     satisfies both of the following:
 
     - Longitudinal bound:
-      \[
+      $$
       \mathrm{trim\_step}(d_x^2 + d_y^2)
       \le d_x(r_x-r_{0x}) + d_y(r_y-r_{0y})
       \le (\mathrm{length\_step}-1)(d_x^2+d_y^2).
-      \]
+      $$
     - Transverse bound:
-      \[
+      $$
       0
       \le s[-p_y(r_x-r_{0x}) + p_x(r_y-r_{0y})]
       \le \mathrm{width\_step}-1.
-      \]
+      $$
 
     where \(s = 1\) for `"lhs"` and \(s = -1\) for `"rhs"`.
 

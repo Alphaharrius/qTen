@@ -146,9 +146,9 @@ def _probe_affine(
     r"""
     Probe *raw_opr* with ``d + 1`` reference momenta to extract its affine
     decomposition
-    \[
+    $$
     \mathrm{output\_frac} = \mathrm{input\_frac}\, M^{\mathsf{T}} + c.
-    \]
+    $$
     In code, this is represented by the row-vector expression
     `input_frac @ M.T + c`.
 

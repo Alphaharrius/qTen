@@ -83,9 +83,9 @@ class BoundaryCondition(ABC):
     translations that should be treated as equivalent. The quotient by that
     subgroup determines:
 
-    \[
+    $$
     \mathbb{Z}^d / B\mathbb{Z}^d,
-    \]
+    $$
 
     where \(B\) is the boundary basis matrix, stored in code as `basis`.
 
@@ -161,9 +161,9 @@ class BoundaryCondition(ABC):
         The columns of this square matrix specify the lattice translations
         that are declared equivalent to zero under the boundary condition.
         Equivalently, the boundary identifies coordinates modulo the subgroup
-        \[
+        $$
         B\mathbb{Z}^d.
-        \]
+        $$
         In code, \(B\) is the returned `basis` matrix.
 
         Repository code uses this matrix as the canonical description of the
@@ -445,9 +445,9 @@ class PeriodicBoundary(BoundaryCondition):
 
         For diagonal periodicities, the representatives are the obvious
         integer box
-        \[
+        $$
         0 \le n_i < \mathrm{basis}_{ii}.
-        \]
+        $$
         In code, the upper bound is `basis[i, i]`.
         For non-diagonal cells, the method enumerates the quotient described by
         the Smith normal form and then maps those elements back into canonical

@@ -165,7 +165,7 @@ def pointgroup(query: str) -> AbelianGroup:
 
     The active plane receives the block
 
-    \[
+    $$
     R(\theta) =
     \begin{pmatrix}
     \cos\theta & -\sin\theta \\
@@ -173,7 +173,7 @@ def pointgroup(query: str) -> AbelianGroup:
     \end{pmatrix},
     \qquad
     \theta = \frac{2\pi}{n}.
-    \]
+    $$
 
     In code, this block is inserted into the returned `irrep` matrix; target
     axis order chooses the sign of `theta`.
