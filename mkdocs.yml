@@ -54,6 +54,9 @@ plugins:
               - "!^__rmul__$"
               - "!^__rtruediv__$"
               - "!^[A-Z]$"
+              - "!^eigenvalues$"
+              - "!^eigenvectors$"
+              - "!^Vh$"
             inherited_members: true
             members_order: source
             merge_init_into_class: true

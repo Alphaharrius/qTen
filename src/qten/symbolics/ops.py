@@ -41,6 +41,16 @@ def rebase_opr(space: S) -> FuncOpr[OffsetType]:
 
     For affine spaces this targets [`Offset`][qten.geometries.spatials.Offset] irreps. For reciprocal lattices it
     targets [`Momentum`][qten.geometries.spatials.Momentum] irreps.
+
+    Parameters
+    ----------
+    space : AffineSpace | ReciprocalLattice
+        Target space into which matching spatial irreps are rebased.
+
+    Returns
+    -------
+    FuncOpr
+        Operator applying `r -> r.rebase(space)` to matching spatial irreps.
     """
     point_type = cast(
         type[OffsetType], Momentum if isinstance(space, ReciprocalLattice) else Offset
@@ -76,6 +86,11 @@ def fractional_opr(
         Exact irrep type to target. Because [`FuncOpr`][qten.symbolics.hilbert_space.FuncOpr] matches exact runtime
         types, reciprocal-space basis states should use
         [`fractional_opr(Momentum)`][qten.symbolics.ops.fractional_opr]. If omitted, [`Offset`][qten.geometries.spatials.Offset] is targeted.
+
+    Returns
+    -------
+    FuncOpr
+        Operator replacing matching spatial irreps by `r.fractional()`.
     """
     if T is None:
         return FuncOpr(Offset, Offset.fractional)
@@ -264,7 +279,42 @@ def interpolate_reciprocal_path(
     labels: Optional[Sequence[str]] = None,
     points: Optional[Dict[str, tuple[float, ...]]] = None,
 ) -> BzPath:
-    """Build a dense reciprocal-space sample along a piecewise-linear path."""
+    """
+    Build a dense reciprocal-space sample along a piecewise-linear path.
+
+    Waypoints are interpreted as fractional reciprocal coordinates unless they
+    are strings. String waypoints are resolved through `points` and also supply
+    default labels when `labels` is omitted.
+
+    Parameters
+    ----------
+    recip : ReciprocalLattice
+        Reciprocal lattice whose basis converts fractional waypoints to
+        Cartesian coordinates for distance allocation.
+    waypoints : Sequence[tuple[float, ...] | str]
+        At least two waypoint coordinates or names. Named waypoints must appear
+        in `points`.
+    n_points : int, default 100
+        Total number of dense path samples, including all waypoints.
+    labels : Optional[Sequence[str]], optional
+        Labels for waypoints. If omitted, names or coordinate strings are used.
+    points : Optional[Dict[str, tuple[float, ...]]], optional
+        Mapping used to resolve string waypoints to fractional coordinates.
+
+    Returns
+    -------
+    BzPath
+        Path metadata containing the unique momentum space, waypoint labels,
+        dense-sample-to-momentum mapping, and cumulative path positions.
+
+    Raises
+    ------
+    ValueError
+        If fewer than two waypoints are supplied, a named waypoint is missing,
+        waypoint dimensions do not match the reciprocal lattice, `n_points` is
+        too small, all waypoints are identical, or `labels` has the wrong
+        length.
+    """
     if len(waypoints) < 2:
         raise ValueError("At least two waypoints are required to define a path.")
 

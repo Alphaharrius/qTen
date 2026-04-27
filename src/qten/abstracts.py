@@ -649,30 +649,50 @@ class Functional(ABC):
         """
         Apply this functional to `obj`.
 
+<<<<<<< dev/auto-doc-2nd-part
         This is a thin wrapper around [`invoke()`][qten.abstracts.Functional.invoke].
+=======
+        This is shorthand for [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke].
+        Subclasses such as [`Opr`][qten.symbolics.hilbert_space.Opr] may refine
+        the return-value contract, but dispatch still uses the same registered
+        functional handlers.
+>>>>>>> dev/auto-doc
 
         Parameters
         ----------
         obj : Any
             Runtime object to dispatch on.
         **kwargs : Any
+<<<<<<< dev/auto-doc-2nd-part
             Additional keyword arguments forwarded to the resolved
             implementation.
+=======
+            Additional keyword arguments forwarded to `invoke`.
+>>>>>>> dev/auto-doc
 
         Returns
         -------
         Any
+<<<<<<< dev/auto-doc-2nd-part
             Result produced by the resolved registered method.
+=======
+            Result returned by the resolved registered handler.
+>>>>>>> dev/auto-doc
 
         Raises
         ------
         NotImplementedError
+<<<<<<< dev/auto-doc-2nd-part
             If no registration exists for the runtime pair after MRO fallback.
 
         See Also
         --------
         [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke]
             Full dispatch method used by this call wrapper.
+=======
+            If no registered handler applies to the runtime input and
+            functional types.
+>>>>>>> dev/auto-doc
         """
         return self.invoke(obj, **kwargs)
 

@@ -60,6 +60,31 @@ def joint_abelian_basis(
 ) -> FrozenDict[tuple[sy.Expr, ...], tuple[AbelianBasis, ...]]:
     """
     Compute common Euclidean eigenfunctions for a commuting family of abelian operators.
+
+    The returned table is keyed by one phase per input operator. Each value is
+    the tuple of normalized [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis]
+    functions spanning the simultaneous eigenspace for that joint phase sector.
+
+    Parameters
+    ----------
+    oprs : Sequence[AbelianGroup | AbelianOpr]
+        Non-empty sequence of operators. Affine
+        [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr] inputs contribute
+        only their linear part.
+    order : int
+        Homogeneous polynomial degree used for all Euclidean representations.
+
+    Returns
+    -------
+    FrozenDict[tuple[sy.Expr, ...], tuple[AbelianBasis, ...]]
+        Mapping from joint phase tuple to the simultaneous eigen-basis
+        functions for that sector.
+
+    Raises
+    ------
+    ValueError
+        If `oprs` is empty, if the operators do not share the same ordered
+        axes, or if their Euclidean representations at `order` do not commute.
     """
     if not oprs:
         raise ValueError("oprs must be non-empty.")
@@ -176,6 +201,32 @@ def abelian_column_symmetrize(
     The output column count can differ from the input one only when
     `full_sector=True`, because symmetry projection may split one approximate
     column into multiple exact sectors.
+
+    Parameters
+    ----------
+    opr : AbelianOpr
+        Finite-order abelian operator used to build symmetry projectors.
+    w : Tensor
+        Rank-2 tensor whose first dimension is a
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and whose
+        columns are vectors to project.
+    full_sector : bool, default False
+        If `True`, return every nonzero sector component of each input column.
+        If `False`, keep only the largest nonzero sector component per input
+        column.
+
+    Returns
+    -------
+    Tensor
+        Rank-2 tensor with the same row Hilbert space and a column
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] labelled by
+        symmetry-sector basis data.
+
+    Raises
+    ------
+    ValueError
+        If `w` is not rank 2, if `w.dims[0]` is not a `HilbertSpace`, or if
+        `w.dims[1]` is neither an `IndexSpace` nor a `HilbertSpace`.
     """
     if w.rank() != 2:
         raise ValueError("w must be a rank-2 tensor of ambient-space columns.")
@@ -282,6 +333,34 @@ def joint_abelian_column_symmetrize(
     returned. When `False`, only the dominant nonzero joint-sector component of
     each input column is kept. Returned columns carry a representative common
     [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] for the corresponding joint phase sector.
+
+    Parameters
+    ----------
+    oprs : Sequence[AbelianOpr]
+        Non-empty sequence of finite-order abelian operators. They are expected
+        to commute on the row Hilbert space of `w`.
+    w : Tensor
+        Rank-2 tensor whose first dimension is a
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and whose
+        columns are vectors to project.
+    full_sector : bool, default False
+        If `True`, return every nonzero joint-sector component of each input
+        column. If `False`, keep only the largest nonzero joint-sector
+        component per input column.
+
+    Returns
+    -------
+    Tensor
+        Rank-2 tensor with the same row Hilbert space and a column
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] labelled by
+        representative joint-sector basis data.
+
+    Raises
+    ------
+    ValueError
+        If `oprs` is empty, if `w` is not rank 2, if `w.dims[0]` is not a
+        `HilbertSpace`, or if `w.dims[1]` is neither an `IndexSpace` nor a
+        `HilbertSpace`.
     """
     if not oprs:
         raise ValueError("oprs must be non-empty.")

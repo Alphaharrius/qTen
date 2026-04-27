@@ -136,11 +136,32 @@ class AbelianBasis(Spatial):
         return len(self.axes)
 
     def __str__(self):
+        """
+        Return the compact symbolic label for this basis function.
+
+        Returns
+        -------
+        str
+            `"e"` for the constant identity basis function, otherwise the
+            string form of `expr`.
+        """
         if sy.simplify(self.expr - 1) == 0:
             return "e"
         return str(self.expr)
 
     def __repr__(self):
+        """
+        Return the developer representation of this basis function.
+
+        The representation intentionally matches
+        [`__str__`][qten.pointgroups.abelian.AbelianBasis.__str__] so basis
+        labels render compactly inside tuples, containers, and logs.
+
+        Returns
+        -------
+        str
+            Same value as `str(self)`.
+        """
         return self.__str__()
 
 
@@ -176,10 +197,11 @@ class AbelianGroup(Opr):
     representations on homogeneous monomials of total degree `order`. For
     example:
 
-    - `order = 0` acts on constant functions and is always the trivial `1x1`
-      representation `[1]`
-    - `order = 1` is the original Euclidean representation `irrep`
-    - `order = 2` acts on quadratic monomials such as `x^2`, `xy`, `y^2`
+    For `order = 0`, the representation acts on constant functions and is
+    always the trivial `1x1` representation `[1]`. For `order = 1`, the
+    representation is the original Euclidean representation `irrep`. For
+    `order = 2`, the representation acts on quadratic monomials such as `x^2`,
+    `xy`, and `y^2`.
 
     Because coordinate symbols commute, the raw tensor-product representation is
     symmetrized onto the commuting monomial basis. The resulting matrix is
@@ -195,19 +217,16 @@ class AbelianGroup(Opr):
 
     Main API
     --------
-    - [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr]
-      Symmetrized linear action on homogeneous commuting monomials of degree
-      `order`.
-    - [`basis(order)`][qten.pointgroups.abelian.AbelianGroup.basis]
-      Eigen-basis functions of [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr] returned as
-      [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] objects keyed by eigenvalue.
-    - [`basis_table`][qten.pointgroups.abelian.AbelianGroup.basis_table]
-      Aggregate lookup table of eigen-basis functions collected across
-      increasing polynomial orders until all characters/eigenvalues of the
-      finite represented element are found.
-    - [`group_order(max_order=128)`][qten.pointgroups.abelian.AbelianGroup.group_order]
-      Order of the represented matrix, i.e. the smallest positive integer `n`
-      such that `irrep**n = I`.
+    [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr]
+    returns the symmetrized linear action on homogeneous commuting monomials of
+    degree `order`. [`basis(order)`][qten.pointgroups.abelian.AbelianGroup.basis]
+    returns eigen-basis functions of that representation as
+    [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] objects keyed by
+    eigenvalue. [`basis_table`][qten.pointgroups.abelian.AbelianGroup.basis_table]
+    collects representative eigen-basis functions across increasing polynomial
+    orders until all characters of the finite represented element are found.
+    [`group_order(max_order=128)`][qten.pointgroups.abelian.AbelianGroup.group_order]
+    returns the smallest positive integer `n` such that `irrep**n = I`.
 
     Notes
     -----
@@ -267,6 +286,12 @@ class AbelianGroup(Opr):
         """
         Return commuting Euclidean monomials spanning the polynomial basis.
 
+        Parameters
+        ----------
+        order : int
+            Homogeneous polynomial degree. `order=0` returns the constant
+            monomial basis.
+
         Returns
         -------
         sy.ImmutableDenseMatrix
@@ -280,19 +305,24 @@ class AbelianGroup(Opr):
     @lru_cache
     def _get_contract_select_rules(indices: Tuple[Tuple[sy.Symbol, ...], ...]):
         """
-        Compute contraction and selection rules for commutative symmetrization.
+            Compute contraction and selection rules for commutative symmetrization.
 
-        Parameters
-        ----------
-        indices : Tuple[Tuple[sy.Symbol, ...], ...]
-            Full ordered tensor-product indices.
+        Returned maps
+        -------------
+        Contract rules map each full tensor-product index position to a
+        commutative monomial class. Select rules pick one representative full index
+        position for each commutative monomial class.
 
-        Returns
-        -------
-        Tuple[list[Tuple[int, int]], list[Tuple[int, int]]]
-            Two index maps:
-            - contract rules mapping each full index position to a commutative class
-            - select rules picking one representative position per class
+            Parameters
+            ----------
+            indices : Tuple[Tuple[sy.Symbol, ...], ...]
+                Full ordered tensor-product indices.
+
+            Returns
+            -------
+            Tuple[list[Tuple[int, int]], list[Tuple[int, int]]]
+                Pair `(contract_rules, select_rules)` used to contract the raw
+                tensor-product representation onto commuting monomials.
         """
         commute_index_table: OrderedDict[Tuple[sy.Symbol, ...], int] = OrderedDict()
         contract_indices = []
@@ -330,6 +360,12 @@ class AbelianGroup(Opr):
         """
         Symmetrized representation on the commuting polynomial basis.
 
+        Parameters
+        ----------
+        order : int
+            Homogeneous polynomial degree for the induced representation.
+            `order=0` returns the trivial one-dimensional representation.
+
         Returns
         -------
         sy.ImmutableDenseMatrix
@@ -356,6 +392,11 @@ class AbelianGroup(Opr):
 
         The order is the smallest positive integer `n` such that
         `irrep**n = I`, where `I` is the identity matrix of matching size.
+
+        Parameters
+        ----------
+        max_order : int, default 128
+            Maximum positive exponent to test during the exact search.
 
         Returns
         -------
@@ -403,6 +444,12 @@ class AbelianGroup(Opr):
     def basis(self, order: int) -> FrozenDict:
         """
         Compute abelian eigen-basis functions from [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr] eigenvectors.
+
+        Parameters
+        ----------
+        order : int
+            Homogeneous polynomial degree used to build the Euclidean
+            representation before diagonalization.
 
         Returns
         -------
@@ -471,21 +518,38 @@ def _(left: AbelianGroup, right: AbelianGroup) -> AbelianGroup:
     If `left.axes` and `right.axes` differ, both operators are first embedded
     into a common axis basis before multiplication:
 
-    - the merged axis order preserves all of `left.axes`
-    - any right-only axes are appended in their original order
-    - shared axes are aligned by symbol, even if their positions differ
-    - axes missing from one operator act trivially and therefore contribute an
-      identity block along that coordinate
+    The merged axis order preserves all of `left.axes`, then appends any
+    right-only axes in their original order. Shared axes are aligned by symbol,
+    even if their positions differ. Axes missing from one operator act
+    trivially and therefore contribute an identity block along that coordinate.
 
     For example:
 
-    - `(x, y)` composed with `(y, x)` aligns both to `(x, y)` by permutation
-    - `(x, y)` composed with `(y, z)` aligns both to `(x, y, z)`, with the
-      first operator acting as identity on `z` and the second as identity on `x`
+    For example, `(x, y)` composed with `(y, x)` aligns both operators to
+    `(x, y)` by permutation. `(x, y)` composed with `(y, z)` aligns both to
+    `(x, y, z)`, with the first operator acting as identity on `z` and the
+    second as identity on `x`.
 
     Composition requires each operand's axis tuple to contain unique symbols.
     Repeated axes are rejected because they do not define an unambiguous
     coordinate alignment.
+
+    Parameters
+    ----------
+    left : AbelianGroup
+        Operator applied after `right`.
+    right : AbelianGroup
+        Operator applied before `left`.
+
+    Returns
+    -------
+    AbelianGroup
+        Composed linear operator expressed on the merged ordered axis basis.
+
+    Raises
+    ------
+    ValueError
+        If either operand has repeated axes.
     """
     _require_unique_axes(left.axes, role="left")
     _require_unique_axes(right.axes, role="right")
@@ -717,10 +781,9 @@ def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
 
     Returns
     -------
-    Tuple[sy.Expr, AbelianBasis]
-        A symbolic phase factor (sy.Expr) such that
-        t.g.euclidean_repr(f.order) @ f.rep == phase * f.rep;
-        and the original [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] (unchanged).
+    Multiple[AbelianBasis]
+        Symbolic phase factor paired with the original
+        [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis].
 
     Raises
     ------
@@ -776,9 +839,10 @@ def _(t: AbelianOpr, offset: Offset) -> Offset:
 
     Returns
     -------
-    Tuple[sy.Expr | None, Offset]
-        The irrep of this transformation, `None` if the `offset` is not a fix point; and new [`Offset`][qten.geometries.spatials.Offset]
-        expressed in the same [`AffineSpace`][qten.geometries.spatials.AffineSpace] as the input `offset`.
+    Offset
+        Transformed offset expressed in the same
+        [`AffineSpace`][qten.geometries.spatials.AffineSpace] as the input
+        `offset`.
 
     Notes
     -----
@@ -822,11 +886,12 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
     """
     Apply an affine operator to a Momentum in fractional reciprocal coordinates.
 
-    This implementation assumes:
-    - `k.rep` stores fractional coordinates in the reciprocal lattice basis.
-    - after `t.rebase(real_space)`, `t.g.irrep` is expressed in the same real-space
-      coordinates as `real_space.basis`.
-    - translations do not act on momenta, so only the linear part is used.
+    Assumptions
+    -----------
+    `k.rep` stores fractional coordinates in the reciprocal lattice basis.
+    After `t.rebase(real_space)`, `t.g.irrep` is expressed in the same
+    real-space coordinates as `real_space.basis`. Translations do not act on
+    momenta, so only the linear part is used.
 
     If `R` is the real-space linear map in those coordinates, then reciprocal
     fractional coordinates transform contravariantly as `k' = (R^{-1})^T k`.
@@ -842,8 +907,7 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
 
     Returns
     -------
-    Tuple[sy.Expr | None, Momentum]
-        The irrep of this transformation, `None` if `k` is not a fix point;
-        and the transformed momentum in the same reciprocal lattice space as `k`.
+    Momentum
+        Transformed momentum in the same reciprocal lattice space as `k`.
     """
     return _apply_abelian_opr_to_momentum_cached(t, k)

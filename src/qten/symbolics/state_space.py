@@ -76,27 +76,47 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         """Iterate over spatial elements."""
         return iter(self.structure.keys())
 
-    def __hash__(self):
-        # TODO: Do we need to consider the order of the structure?
+    def __hash__(self) -> int:
+        """
+        Return a hash derived from the ordered state-space structure.
+
+        The hash is computed from `tuple(self.structure.items())`, so it
+        depends on both the spatial elements and their stored integer indices in
+        insertion order. Two state spaces with the same elements but a different
+        order, or with the same elements mapped to different integer positions,
+        intentionally produce different hashes.
+
+        This custom implementation is required because `structure` is an
+        `OrderedDict`, which is mutable and unhashable by itself. The state-space
+        dataclasses are frozen, so the tuple snapshot is stable as long as the
+        contained spatial elements are themselves hashable and immutable.
+
+        Returns
+        -------
+        int
+            Hash value for the ordered `(element, index)` mapping.
+        """
         return hash(tuple(self.structure.items()))
 
     def __getitem__(
-        self, v: Union[int, slice, range, Sequence[int]]
+        self, key: Union[int, slice, range, Sequence[int]]
     ) -> Union[T, "StateSpace[T]"]:
         """
         Index into the state-space by element position.
 
+        Supported forms
+        ---------------
+        `space[i]` returns a single spatial element by position, including
+        negative indices. `space[start:stop:step]` returns a new space with the
+        selected elements in slice order. `space[range(...)]` returns a new
+        space with the range-selected elements. `space[[i, j, ...]]` returns a
+        new space with elements in explicit index order.
+
         Parameters
         ----------
-        v : Union[int, slice, range, Sequence[int]]
-            - `int` returns a single spatial element by position (supports negative
-              indices).
-            - `slice` returns a new instance containing the selected elements in
-              order, with slices re-packed to be contiguous.
-            - `range` returns a new instance containing the elements at the given
-              indices (in the range order), with slices re-packed to be contiguous.
-            - `Sequence[int]` returns a new instance containing the elements at
-              the given indices in exactly that order.
+        key : Union[int, slice, range, Sequence[int]]
+            Index selector. Sequences must contain unique integers; negative
+            integers are normalized relative to `len(self)`.
 
         Returns
         -------
@@ -110,27 +130,29 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         IndexError
             If an integer index is out of bounds.
         TypeError
-            If `v` is not an `int`, `slice`, `range`, or sequence of integers.
+            If `key` is not an `int`, `slice`, `range`, or sequence of integers.
+        ValueError
+            If a sequence selector contains duplicate indices.
         """
-        if isinstance(v, int):
-            if v < 0:
-                v += len(self.structure)
-            if v < 0 or v >= len(self.structure):
+        if isinstance(key, int):
+            if key < 0:
+                key += len(self.structure)
+            if key < 0 or key >= len(self.structure):
                 raise IndexError("StateSpace index out of range")
-            return next(islice(self.structure.keys(), v, None))
-        if isinstance(v, slice):
-            keys = tuple(self.structure.keys())[v]
+            return next(islice(self.structure.keys(), key, None))
+        if isinstance(key, slice):
+            keys = tuple(self.structure.keys())[key]
             new_structure = OrderedDict((k, self.structure[k]) for k in keys)
             return replace(self, structure=restructure(new_structure))
-        if isinstance(v, range):
+        if isinstance(key, range):
             keys = tuple(self.structure.keys())
-            new_structure = OrderedDict((keys[i], self.structure[keys[i]]) for i in v)
+            new_structure = OrderedDict((keys[i], self.structure[keys[i]]) for i in key)
             return replace(self, structure=restructure(new_structure))
-        if isinstance(v, Sequence) and not isinstance(v, (str, bytes)):
+        if isinstance(key, Sequence) and not isinstance(key, (str, bytes)):
             keys = tuple(self.structure.keys())
             indices: list[int] = []
             seen = set()
-            for idx in v:
+            for idx in key:
                 if isinstance(idx, bool) or not isinstance(idx, int):
                     raise TypeError(
                         "StateSpace sequence indices must contain only integers"
@@ -150,7 +172,7 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
             return replace(self, structure=restructure(new_structure))
         raise TypeError(
             "StateSpace indices must be int, slice, range, or a sequence of ints, "
-            f"not {type(v)}"
+            f"not {type(key)}"
         )
 
     def same_rays(self, other: "StateSpace") -> bool:
@@ -211,17 +233,39 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
 
     def tensor_product(self, other: Self) -> Self:
         """
-        Return the tensor product of this state space with another.
+        Return the tensor-product state space of this space and another space.
+
+        This method defines the protocol used by the `@` operator on
+        [`StateSpace`][qten.symbolics.state_space.StateSpace] instances. The
+        base class cannot construct a generic product because it does not know
+        how to combine two elements of type `T`. Concrete subclasses must
+        implement the element-level product and rebuild a contiguous
+        `structure` for the resulting basis.
+
+        Implementations should preserve deterministic product ordering. The
+        convention used by concrete tensor-product spaces in QTen is the
+        Cartesian product order of `self.elements()` and `other.elements()`,
+        where elements from `self` vary slowest and elements from `other` vary
+        fastest. The returned space should be the same concrete state-space
+        family when the operation is closed over that family.
 
         Parameters
         ----------
         other : StateSpace
-            The other state space to tensor with.
+            Right-hand tensor factor. Implementations may require `other` to be
+            the same concrete state-space type as `self`.
 
         Returns
         -------
         StateSpace
-            A new state space representing the tensor product of the two.
+            New state space representing `self ⊗ other`, with contiguous
+            integer indices in the implementation-defined product order.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised by the base class. Subclasses that support tensor
+            products must override this method.
         """
         raise NotImplementedError(f"Tensor product not implemented for {type(self)}!")
 
@@ -232,6 +276,21 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
 
         Subclasses may register specialized implementations for supported
         target types.
+
+        Parameters
+        ----------
+        info_type : type[Any]
+            Type of metadata or object to extract from this state space.
+
+        Returns
+        -------
+        Any
+            Extracted object produced by a registered specialization.
+
+        Raises
+        ------
+        NotImplementedError
+            If no extraction rule is registered for `info_type`.
         """
         raise NotImplementedError(
             f"Extraction of {info_type} from {type(self)} is not supported!"
@@ -257,7 +316,7 @@ def restructure(
 
     Parameters
     ----------
-    structure : `OrderedDict[Spatial, int]`
+    structure : OrderedDict[Spatial, int]
         The original structure with possibly non-contiguous indices.
 
     Returns
@@ -280,9 +339,9 @@ def permutation_order(src: "StateSpace", dest: "StateSpace") -> Tuple[int, ...]:
 
     Parameters
     ----------
-    src : `StateSpace`
+    src : StateSpace
         The source state space defining the original ordering.
-    dest : `StateSpace`
+    dest : StateSpace
         The destination state space defining the target ordering.
 
     Returns
@@ -310,19 +369,35 @@ def permutation_order(src: "StateSpace", dest: "StateSpace") -> Tuple[int, ...]:
 @lru_cache
 def embedding_order(sub: StateSpace, sup: StateSpace) -> Tuple[int, ...]:
     """
-    Return indices mapping `sub` into `sup` (assumes `sub` ⊆ `sup`).
+    Return the positions of `sub` elements inside `sup`.
+
+    The returned tuple has one integer for each element of `sub`, in
+    `sub.elements()` order. Each integer is the stored basis index of that same
+    element in `sup.structure`. This is useful when a tensor axis represents a
+    smaller state space and its data must be scattered into, gathered from, or
+    aligned against a larger state space.
+
+    For example, if `sup` contains elements `(a, b, c)` with indices
+    `(0, 1, 2)` and `sub` contains `(c, a)`, then this function returns
+    `(2, 0)`. The result follows the order of `sub`, not the order of `sup`.
 
     Parameters
     ----------
-    sub : `StateSpace`
-        The subspace whose indices are to be embedded.
-    sup : `StateSpace`
-        The superspace providing the full index set.
+    sub : StateSpace
+        State space whose elements should be located in `sup`.
+    sup : StateSpace
+        State space providing the reference element-to-index mapping.
 
     Returns
     -------
     Tuple[int, ...]
-        Flattened indices mapping `sub` into `sup`.
+        Indices in `sup` corresponding to each element of `sub`, ordered like
+        `sub.elements()`.
+
+    Raises
+    ------
+    ValueError
+        If any element of `sub` is not present as a key in `sup.structure`.
     """
     indices: list[int] = []
     sup_indices = sup.structure
@@ -422,14 +497,44 @@ class MomentumSpace(StateSpace[Momentum]):
     hashable despite storing an `OrderedDict`.
     """
 
-    # Ensure that __hash__ is inherited from StateSpace since the hash of StateSpace is specifically
-    # designed to account for the structure attribute which is an un-hashable type OrderedDict.
-    __hash__ = StateSpace.__hash__
+    def __hash__(self) -> int:
+        """
+        Return a hash derived from the ordered momentum structure.
+
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] uses the
+        same structure-based hash as
+        [`StateSpace`][qten.symbolics.state_space.StateSpace]. The hash includes
+        every [`Momentum`][qten.geometries.spatials.Momentum] key and its stored
+        integer basis index in insertion order. This means two momentum spaces
+        with the same momentum set but different basis order hash differently.
+
+        Returns
+        -------
+        int
+            Hash value for the ordered `(Momentum, index)` mapping.
+        """
+        return StateSpace.__hash__(self)
 
     def __str__(self):
+        """
+        Return a compact momentum-space summary.
+
+        Returns
+        -------
+        str
+            Summary containing the momentum-space dimension.
+        """
         return f"MomentumSpace({self.dim})"
 
     def __repr__(self):
+        """
+        Return a multiline representation with indexed momentum elements.
+
+        Returns
+        -------
+        str
+            Header plus one line per momentum element in basis order.
+        """
         header = f"{str(self)}:\n"
         body = "\t" + "\n\t".join(
             [f"{n}: {k}" for n, k in enumerate(self.structure.keys())]
@@ -439,7 +544,23 @@ class MomentumSpace(StateSpace[Momentum]):
 
 @dataclass(frozen=True)
 class BzPath:
-    """A Brillouin-zone path through high-symmetry waypoints."""
+    """
+    A Brillouin-zone path through high-symmetry waypoints.
+
+    Attributes
+    ----------
+    k_space : MomentumSpace
+        Unique momentum points sampled along the path.
+    labels : tuple
+        Labels for the waypoints in path order.
+    waypoint_indices : tuple
+        Indices into the dense path where each waypoint occurs.
+    path_order : tuple
+        For each dense path sample, index of the corresponding unique momentum
+        in `k_space`.
+    path_positions : tuple
+        Cumulative Cartesian arc-length coordinate for each dense path sample.
+    """
 
     k_space: MomentumSpace
     labels: tuple
@@ -450,7 +571,19 @@ class BzPath:
 
 @Momentum.add_conversion(StateSpace)
 def momentum_to_momentumspace(k: Momentum) -> StateSpace:
-    """Convert a [`Momentum`][qten.geometries.spatials.Momentum] to a [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] containing only that momentum."""
+    """
+    Convert one momentum point to a one-element momentum space.
+
+    Parameters
+    ----------
+    k : Momentum
+        Momentum point to wrap.
+
+    Returns
+    -------
+    MomentumSpace
+        One-element momentum space containing `k`.
+    """
     structure = OrderedDict({k: 0})
     return MomentumSpace(structure=structure)
 
@@ -463,6 +596,27 @@ Momentum.add_conversion(MomentumSpace)(
 
 @StateSpace.extract.register
 def _(space: MomentumSpace, _: type[ReciprocalLattice]) -> ReciprocalLattice:
+    """
+    Extract the unique reciprocal lattice shared by all momenta.
+
+    Parameters
+    ----------
+    space : MomentumSpace
+        Momentum space whose elements should share one reciprocal lattice.
+    _ : type[ReciprocalLattice]
+        Extraction target type.
+
+    Returns
+    -------
+    ReciprocalLattice
+        The unique reciprocal lattice used by every momentum in `space`.
+
+    Raises
+    ------
+    ValueError
+        If the space is empty or contains momenta from multiple reciprocal
+        lattices.
+    """
     if not space.elements():
         raise ValueError("MomentumSpace is empty")
 
@@ -534,10 +688,9 @@ class BroadcastSpace(StateSpace[_BAxis]):
     -------------------
     Multimethod rules in this module treat [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] as compatible
     with any [`StateSpace`][qten.symbolics.state_space.StateSpace] in [`same_rays(...)`][qten.symbolics.state_space.same_rays], and as neutral in
-    `__add__(...)`:
-    - `BroadcastSpace + X -> X`
-    - `X + BroadcastSpace -> X`
-    - `BroadcastSpace + BroadcastSpace -> BroadcastSpace`
+    `__add__(...)`. The neutral-addition behavior is `BroadcastSpace + X -> X`,
+    `X + BroadcastSpace -> X`, and
+    `BroadcastSpace + BroadcastSpace -> BroadcastSpace`.
 
     This makes it suitable as a placeholder axis that can be promoted to a
     concrete state space during alignment/broadcast operations.
@@ -548,11 +701,33 @@ class BroadcastSpace(StateSpace[_BAxis]):
         default_factory=lambda: OrderedDict({_BAxis(): 0}), init=False
     )
 
-    # Ensure that __hash__ is inherited from StateSpace since the hash of StateSpace is specifically
-    # designed to account for the structure attribute which is an un-hashable type OrderedDict.
-    __hash__ = StateSpace.__hash__
+    def __hash__(self) -> int:
+        """
+        Return a hash for the singleton broadcast-axis structure.
+
+        [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] hashes the
+        same ordered structure snapshot as
+        [`StateSpace`][qten.symbolics.state_space.StateSpace]. Because the
+        structure always contains one private `_BAxis` marker at index `0`, the
+        hash represents this singleton broadcast dimension rather than a
+        physical basis element.
+
+        Returns
+        -------
+        int
+            Hash value for the ordered singleton `(_BAxis(), 0)` mapping.
+        """
+        return StateSpace.__hash__(self)
 
     def __repr__(self):
+        """
+        Return the broadcast-axis marker representation.
+
+        Returns
+        -------
+        str
+            The literal string `"BroadcastSpace"`.
+        """
         return "BroadcastSpace"
 
     __str__ = __repr__
@@ -598,7 +773,23 @@ class IndexSpace(StateSpace[int]):
     have a specific physical interpretation, such as the virtual bond dimension in a TNS.
     """
 
-    __hash__ = StateSpace.__hash__
+    def __hash__(self) -> int:
+        """
+        Return a hash derived from the ordered integer-index structure.
+
+        [`IndexSpace`][qten.symbolics.state_space.IndexSpace] uses the same
+        structure-based hash as
+        [`StateSpace`][qten.symbolics.state_space.StateSpace]. The hash includes
+        each integer element and its stored basis index in order. For spaces
+        produced by [`linear(size)`][qten.symbolics.state_space.IndexSpace.linear],
+        this is the hash of the canonical mapping `0 -> 0`, `1 -> 1`, and so on.
+
+        Returns
+        -------
+        int
+            Hash value for the ordered `(int, index)` mapping.
+        """
+        return StateSpace.__hash__(self)
 
     @staticmethod
     def linear(size: int) -> "IndexSpace":
@@ -628,9 +819,25 @@ class IndexSpace(StateSpace[int]):
         return IndexSpace(OrderedDict((i, i) for i in range(size)))
 
     def __str__(self):
+        """
+        Return a compact index-space summary.
+
+        Returns
+        -------
+        str
+            Summary containing the index-space size.
+        """
         return f"IndexSpace(size={self.dim})"
 
     def __repr__(self):
+        """
+        Return the developer representation of this index space.
+
+        Returns
+        -------
+        str
+            Same value as `str(self)`.
+        """
         return str(self)
 
 
