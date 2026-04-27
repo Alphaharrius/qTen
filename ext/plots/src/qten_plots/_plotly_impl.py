@@ -659,7 +659,7 @@ def plot_tensor_scatter(
     """
     Plot a rank-2 tensor as one spatial scatter subplot per column.
 
-    The first axis must be a HilbertSpace containing `Offset` irreps, and the
+    The first axis must be a HilbertSpace containing [`Offset`][qten.geometries.spatials.Offset] irreps, and the
     second axis is treated as a pure column index.
     """
     if obj.rank() != 2:
@@ -1032,7 +1032,7 @@ def plot_bandstructure(
     nullspace_tol : float, default 1e-9
         Energy tolerance used when hide_nullspace is enabled.
     bz_path : BzPath, optional
-        Brillouin-zone path returned by ``interpolate_reciprocal_path``. When given,
+        Brillouin-zone path returned by `[`interpolate_reciprocal_path`][qten.symbolics.ops.interpolate_reciprocal_path]`. When given,
         vertical dividers and high-symmetry-point labels are drawn on the
         path-mode x-axis.
     **kwargs

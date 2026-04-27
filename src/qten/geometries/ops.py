@@ -1,3 +1,22 @@
+"""
+Geometry helper operations for lattice regions and momentum paths.
+
+This module contains functional helpers built on top of
+[`AffineSpace`][qten.geometries.spatials.AffineSpace],
+[`Lattice`][qten.geometries.spatials.Lattice],
+[`Offset`][qten.geometries.spatials.Offset], and
+[`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]. The helpers
+construct common real-space regions, nearest-neighbor site selections, strip
+geometries, reciprocal-space paths, and related geometry data without adding
+stateful wrapper classes.
+
+Repository usage
+----------------
+Use this module when an operation derives a new region or path from existing
+geometry objects rather than defining a new geometry type. Class definitions
+and the core spatial algebra live in [`qten.geometries.spatials`][qten.geometries.spatials].
+"""
+
 from __future__ import annotations
 
 import math
@@ -100,29 +119,29 @@ def nearest_sites(
 
     Parameters
     ----------
-    `lattice` : `Lattice`
+    lattice : Lattice
         Finite lattice whose sites define the candidate region.
-    `center` : `Offset[AffineSpace] | Offset[Lattice]`
+    center : Offset[AffineSpace] | Offset[Lattice]
         Center used to rank lattice sites by distance. The center may be an
         arbitrary offset in the lattice affine space and does not need to lie
         on a lattice site.
-    `n_nearest` : `int`
+    n_nearest : int
         Number of distinct distance shells to include. `0` returns an empty
         region. If `n_nearest` exceeds the number of distinct distance shells
         in the finite lattice, all sites are returned.
 
     Returns
     -------
-    `tuple[Offset[Lattice], ...]`
+    tuple[Offset[Lattice], ...]
         Tuple of lattice sites whose distances from `center` lie in the first
-        `n_nearest` distinct distance shells, ordered by increasing distance
+        n_nearest distinct distance shells, ordered by increasing distance
         and then by the lattice-site ordering.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         If `n_nearest` is negative or if `center.dim` does not match
-        `lattice.dim`.
+        lattice.dim.
     """
     if n_nearest < 0:
         raise ValueError(f"n_nearest must be non-negative, got {n_nearest}.")
@@ -227,28 +246,31 @@ def get_strip_region_2d(
     side: Literal["lhs", "rhs"] = "rhs",
     origin: Offset[AffineSpace] | Offset[Lattice] | None = None,
 ) -> tuple[Offset[Lattice], ...]:
-    """
+    r"""
     Return a 2D rectangular strip region in primitive-strip lattice coordinates.
 
     This helper is defined only for 2D lattices.
 
-    Let `r0` be the supplied `origin` (or the lattice origin when omitted).
-    Let `(dx, dy)` be the supplied direction coordinates. Let
-    `p = (px, py)` be the associated primitive integer direction, and let
-    `n = (-py, px)` be the primitive integer normal. `side="lhs"` grows
-    toward positive `n` and `side="rhs"` grows toward negative `n`.
+    Let `r0` be the supplied [`origin`][qten.geometries.spatials.AffineSpace.origin] (or the lattice origin when omitted).
+    Let \((d_x, d_y)\) be the supplied direction coordinates. Let
+    \(p = (p_x, p_y)\) be the associated primitive integer direction, and let
+    \(n = (-p_y, p_x)\) be the primitive integer normal. `side="lhs"` grows
+    toward positive \(n\) and `side="rhs"` grows toward negative \(n\).
 
     A lattice site belongs to the strip when some periodic image of that site
     satisfies both of the following:
 
     - Longitudinal bound:
-      `trim_step * (dx**2 + dy**2) <= dx * (rx - r0x) + dy * (ry - r0y) <= (length_step - 1) * (dx**2 + dy**2)`
+      \(\mathrm{trim\_step}(d_x^2 + d_y^2)
+      \le d_x(r_x-r_{0x}) + d_y(r_y-r_{0y})
+      \le (\mathrm{length\_step}-1)(d_x^2+d_y^2)\).
     - Transverse bound:
-      `0 <= s * (-py * (rx - r0x) + px * (ry - r0y)) <= width_step - 1`
+      \(0 \le s[-p_y(r_x-r_{0x}) + p_x(r_y-r_{0y})]
+      \le \mathrm{width\_step}-1\).
 
-    where `s = 1` for `"lhs"` and `s = -1` for `"rhs"`.
+    where \(s = 1\) for `"lhs"` and \(s = -1\) for `"rhs"`.
 
-    For integer directions, `(dx, dy) = (px, py)`. For rational directions,
+    For integer directions, \((d_x, d_y) = (p_x, p_y)\). For rational directions,
     longitudinal shell spacing is computed from the supplied direction
     `(dx, dy)`, while transverse shelling is computed from the primitive
     integer direction `p`.
@@ -259,33 +281,33 @@ def get_strip_region_2d(
 
     Parameters
     ----------
-    `direction` : `Offset[Lattice]`
+    direction : Offset[Lattice]
         Non-zero lattice translation on a 2D lattice whose primitive direction
         defines the strip axis.
-    `length_step` : `int`
+    length_step : int
         Number of strip shells from the origin along the primitive direction.
-    `width_step` : `int`
+    width_step : int
         Number of transverse shell rows including the main axis row.
-    `trim_step` : `int`
+    trim_step : int
         Number of longitudinal shells trimmed from the tail near the origin.
-    `side` : `Literal["lhs", "rhs"]`
+    side : Literal["lhs", "rhs"]
         Side on which transverse width shells are accumulated relative to the
         strip direction. `"lhs"` uses the positive lattice normal and `"rhs"`
         uses the negative lattice normal.
-    `origin` : `Offset[AffineSpace] | Offset[Lattice] | None`
+    origin : Offset[AffineSpace] | Offset[Lattice] | None
         Anchor point for the strip coordinates. If omitted, the zero offset in
         the lattice space is used. When provided, it is rebased into the
         lattice before evaluating strip membership.
 
     Returns
     -------
-    `tuple[Offset[Lattice], ...]`
+    tuple[Offset[Lattice], ...]
         Deduplicated lattice sites in the strip, ordered by the lattice-site
         ordering.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         If the direction is invalid, the lattice is not 2D, or any step count
         is out of range.
     """
@@ -361,21 +383,21 @@ def center_of_region(region: tuple[OffsetType, ...]) -> OffsetType:
 
     Parameters
     ----------
-    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+    region : tuple[Offset, ...] | tuple[Momentum, ...]
         Non-empty tuple of spatial points. All entries must share the same
         concrete type and affine space.
 
     Returns
     -------
-    `Offset | Momentum`
+    Offset | Momentum
         Arithmetic mean of the region coordinates, returned as the same type as
         the input entries.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         If `region` is empty.
-    `TypeError`
+    TypeError
         If region entries do not all share the same concrete type and space.
     """
     if len(region) == 0:
@@ -441,22 +463,22 @@ def region_centering(
 
     Parameters
     ----------
-    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+    region : tuple[Offset, ...] | tuple[Momentum, ...]
         Region to translate. All entries must share the same concrete type and
         affine space.
-    `center` : `Offset | Momentum`
+    center : Offset | Momentum
         Target center for the translated region. It must have the same
         concrete type and affine space as the region entries.
 
     Returns
     -------
-    `tuple[Offset, ...] | tuple[Momentum, ...]`
+    tuple[Offset, ...] | tuple[Momentum, ...]
         Region translated by `center - center_of_region(region)`. Empty input
         returns an empty tuple.
 
     Raises
     ------
-    `TypeError`
+    TypeError
         If region entries do not all share the same concrete type and space,
         or if `center` does not match them.
     """
@@ -488,41 +510,39 @@ def region_tile(
     bases: tuple[OffsetType, ...],
     counts: tuple[int, ...],
 ) -> tuple[OffsetType, ...]:
-    """
+    r"""
     Tile a region by integer combinations of the supplied translation bases.
 
     The returned region contains translations of every point in `region` by
     offsets
 
-    .. math::
-
-        \\sum_i n_i b_i, \\qquad 0 \\le n_i < \\mathrm{counts}[i],
+    \(\sum_i n_i b_i\), with \(0 \le n_i < \mathrm{counts}[i]\),
 
     where `b_i` are the entries of `bases`.
 
     Parameters
     ----------
-    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+    region : tuple[Offset, ...] | tuple[Momentum, ...]
         Region to translate. All entries must share the same concrete type and
         affine space.
-    `bases` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+    bases : tuple[Offset, ...] | tuple[Momentum, ...]
         Translation basis vectors. All entries must share the same concrete
         type and affine space as the region entries.
-    `counts` : `tuple[int, ...]`
+    counts : tuple[int, ...]
         Number of repetitions along each translation basis. Each entry must be
         non-negative.
 
     Returns
     -------
-    `tuple[Offset, ...] | tuple[Momentum, ...]`
+    tuple[Offset, ...] | tuple[Momentum, ...]
         Deduplicated tiled region, ordered by the point ordering.
 
     Raises
     ------
-    `TypeError`
+    TypeError
         If region or basis entries do not all share the same concrete type and
         space.
-    `ValueError`
+    ValueError
         If `counts` has the wrong length or contains negative entries.
     """
     if len(region) == 0:
@@ -597,19 +617,19 @@ def interstitial_centers(region: tuple[OffsetType, ...]) -> tuple[OffsetType, ..
 
     Parameters
     ----------
-    `region` : `tuple[Offset, ...] | tuple[Momentum, ...]`
+    region : tuple[Offset, ...] | tuple[Momentum, ...]
         Spatial points defining the candidate corner set. All entries must
         share the same concrete type and affine space.
 
     Returns
     -------
-    `tuple[Offset, ...] | tuple[Momentum, ...]`
+    tuple[Offset, ...] | tuple[Momentum, ...]
         Interstitial centers, returned as the same concrete type as the inputs
         and ordered lexicographically by point coordinates.
 
     Raises
     ------
-    `TypeError`
+    TypeError
         If region entries do not all share the same concrete type and space.
     """
     if len(region) == 0:

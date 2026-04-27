@@ -1,3 +1,19 @@
+"""
+Convenience operators for symbolic Hilbert-space transformations.
+
+This module provides small functional constructors for common symbolic
+operations: translating or rebasing spatial irreps, expanding Bloch Hilbert
+spaces across real-space regions, constructing Hamiltonian representations, and
+building basis transforms between position and momentum descriptions.
+
+Repository usage
+----------------
+Use these helpers when composing [`FuncOpr`][qten.symbolics.hilbert_space.FuncOpr]
+or converting between [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]
+representations. The underlying basis, span, and operator classes are defined in
+[`qten.symbolics.hilbert_space`][qten.symbolics.hilbert_space].
+"""
+
 from collections import OrderedDict
 from typing import Callable, Dict, Optional, Sequence, TypeVar, Union, cast, overload
 import numpy as np
@@ -17,30 +33,41 @@ S = TypeVar("S", bound=AffineSpace)
 
 
 def translate_opr(d: OffsetType) -> FuncOpr[OffsetType]:
-    """
+    r"""
     Build an operator that translates irreps of the same concrete type by `d`.
 
     Parameters
     ----------
-    `d` : `Offset | Momentum`
+    d : Offset | Momentum
         Translation to add to the targeted irrep.
 
     Returns
     -------
-    `FuncOpr`
-        Operator applying `x -> x + d` to irreps whose concrete type matches
-        `type(d)`.
+    FuncOpr
+        Operator applying \(x \mapsto x + d\) to irreps whose concrete type
+        matches `type(d)`.
     """
     point_type = cast(type[OffsetType], type(d))
     return FuncOpr(point_type, lambda r: cast(OffsetType, r + d))
 
 
 def rebase_opr(space: S) -> FuncOpr[OffsetType]:
-    """
+    r"""
     Build an operator that rebases spatial irreps into `space`.
 
-    For affine spaces this targets `Offset` irreps. For reciprocal lattices it
-    targets `Momentum` irreps.
+    For affine spaces this targets [`Offset`][qten.geometries.spatials.Offset] irreps. For reciprocal lattices it
+    targets [`Momentum`][qten.geometries.spatials.Momentum] irreps.
+
+    Parameters
+    ----------
+    space : AffineSpace | ReciprocalLattice
+        Target space into which matching spatial irreps are rebased.
+
+    Returns
+    -------
+    FuncOpr
+        Operator applying \(r \mapsto r.\mathrm{rebase}(\mathrm{space})\) to
+        matching spatial irreps. In code, this calls `r.rebase(space)`.
     """
     point_type = cast(
         type[OffsetType], Momentum if isinstance(space, ReciprocalLattice) else Offset
@@ -49,11 +76,19 @@ def rebase_opr(space: S) -> FuncOpr[OffsetType]:
 
 
 @overload
-def fractional_opr() -> FuncOpr[Offset]: ...
+def fractional_opr() -> FuncOpr[Offset]:
+    """
+    Return an operator targeting [`Offset`][qten.geometries.spatials.Offset] irreps.
+    """
+    ...
 
 
 @overload
-def fractional_opr(T: type[OffsetType]) -> FuncOpr[OffsetType]: ...
+def fractional_opr(T: type[OffsetType]) -> FuncOpr[OffsetType]:
+    """
+    Return an operator targeting irreps of the exact runtime type `T`.
+    """
+    ...
 
 
 def fractional_opr(
@@ -64,10 +99,15 @@ def fractional_opr(
 
     Parameters
     ----------
-    `T` : `type[Offset] | type[Momentum] | None`, optional
-        Exact irrep type to target. Because `FuncOpr` matches exact runtime
+    T : type[Offset] | type[Momentum] | None, optional
+        Exact irrep type to target. Because [`FuncOpr`][qten.symbolics.hilbert_space.FuncOpr] matches exact runtime
         types, reciprocal-space basis states should use
-        `fractional_opr(Momentum)`. If omitted, `Offset` is targeted.
+        [`fractional_opr(Momentum)`][qten.symbolics.ops.fractional_opr]. If omitted, [`Offset`][qten.geometries.spatials.Offset] is targeted.
+
+    Returns
+    -------
+    FuncOpr
+        Operator replacing matching spatial irreps by `r.fractional()`.
     """
     if T is None:
         return FuncOpr(Offset, Offset.fractional)
@@ -76,43 +116,43 @@ def fractional_opr(
 
 def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> HilbertSpace:
     """
-    Expand a Bloch `HilbertSpace` across a real-space region by unit-cell subgroup.
+    Expand a Bloch [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] across a real-space region by unit-cell subgroup.
 
     The input `bloch_space` is first partitioned by the fractional part of each
-    basis state's `Offset` irrep, so all sub-basis states that occupy the same
+    basis state's [`Offset`][qten.geometries.spatials.Offset] irrep, so all sub-basis states that occupy the same
     position within the unit cell stay grouped together. Each offset in
     `region` is treated as a full target-site offset that already includes its
     unit-cell position. A region site `r` therefore selects the subgroup whose
     fractional offset equals `r.fractional()`, and every state in that subgroup
-    is copied with its `Offset` replaced by `r`.
+    is copied with its [`Offset`][qten.geometries.spatials.Offset] replaced by `r`.
 
     Parameters
     ----------
-    `bloch_space` : `HilbertSpace`
-        Source basis to replicate. Each basis element must contain an `Offset`
+    bloch_space : HilbertSpace
+        Source basis to replicate. Each basis element must contain an [`Offset`][qten.geometries.spatials.Offset]
         irrep. Elements with the same fractional offset are treated as the
         sub-basis of one unit-cell site and are replicated together.
-    `region` : `Sequence[Offset]`
+    region : Sequence[Offset]
         Full target offsets where the matching unit-cell sub-basis should be
         placed.
 
     Returns
     -------
-    `HilbertSpace`
+    HilbertSpace
         A Hilbert space containing one copied basis state for each compatible
         pair of region offset and unit-cell subgroup, with output offsets taken
         from `region` after rebasing into the Bloch offset space when needed.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         Propagated if a basis element in `bloch_space` does not contain an
-        `Offset` irrep to inspect or replace, or if `region` contains a
+        Offset irrep to inspect or replace, or if `region` contains a
         fractional offset that does not exist in `bloch_space`.
 
     Notes
     -----
-    Grouping is done by fractional `Offset`, preserving the original basis
+    Grouping is done by fractional [`Offset`][qten.geometries.spatials.Offset], preserving the original basis
     order inside each subgroup. Output order follows `region`.
     """
     grouped_basis: dict[Offset, list] = {}
@@ -145,35 +185,36 @@ def region_hilbert(bloch_space: HilbertSpace, region: Sequence[Offset]) -> Hilbe
 def hilbert_opr_repr(
     opr: Opr, space: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
-    """
+    r"""
     Return the matrix representation of an operator on a Hilbert-space basis.
 
-    Let `space = span{ |e_i> }` be the input `HilbertSpace` and let `opr` act
-    on each basis state to produce `opr @ space = span{ opr |e_j> }`. This
-    function constructs the corresponding representation matrix
-
-    `M_{ij} = ⟨e_i | opr | e_j⟩`,
-
-    implemented as the cross-Gram matrix between the original basis and its
-    transformed image. The resulting `Tensor` therefore represents `opr` in the
+    Let \(\mathrm{space} = \mathrm{span}\{|e_i\rangle\}\) be the input
+    [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and let `opr`
+    act on each basis state to produce
+    \(\mathrm{span}\{\mathrm{opr}\,|e_j\rangle\}\). In code, the transformed
+    basis is produced by `opr @ space`. This function constructs the
+    corresponding representation matrix
+    \(M_{ij} = \langle e_i | \mathrm{opr} | e_j \rangle\), implemented as the
+    cross-Gram matrix between the original basis and its
+    transformed image. The resulting [`Tensor`][qten.linalg.tensors.Tensor] therefore represents `opr` in the
     basis supplied by `space`.
 
     Parameters
     ----------
-    `opr` : `Opr`
+    opr : Opr
         Operator whose representation is to be computed.
-    `space` : `HilbertSpace`
+    space : HilbertSpace
         Basis in which the operator is represented.
 
     Returns
     -------
-    `Tensor`
+    Tensor
         Square tensor whose entries are the matrix elements of `opr` in the
         basis `space`.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         If `opr` does not preserve the ray structure of `space`, so no
         representation internal to the same projective Hilbert space exists.
 
@@ -205,26 +246,26 @@ def match_indices(
 
     Parameters
     ----------
-    `src` : `StateSpace[T]`
+    src : StateSpace[T]
         Source state space whose element order defines the output index order.
-    `dest` : `StateSpace[T]`
+    dest : StateSpace[T]
         Destination state space whose integer positions are used as the
         returned indices.
-    `matching_func` : `Callable[[T], T]`
+    matching_func : Callable[[T], T]
         Function mapping each source element to its matching destination
         element.
-    `device` : `Optional[Device]`, optional
+    device : Optional[Device], optional
         Device to place the returned index tensor on, by default `None` (CPU).
 
     Returns
     -------
-    `Tensor[torch.LongTensor]`
+    Tensor[torch.LongTensor]
         Rank-1 integer tensor with dims `(src,)`, where each entry is the
         destination index of the corresponding source element.
 
     Raises
     ------
-    `ValueError`
+    ValueError
         If any source element maps to an element that is not present in `dest`.
     """
     indices: list[int] = []
@@ -256,7 +297,42 @@ def interpolate_reciprocal_path(
     labels: Optional[Sequence[str]] = None,
     points: Optional[Dict[str, tuple[float, ...]]] = None,
 ) -> BzPath:
-    """Build a dense reciprocal-space sample along a piecewise-linear path."""
+    """
+    Build a dense reciprocal-space sample along a piecewise-linear path.
+
+    Waypoints are interpreted as fractional reciprocal coordinates unless they
+    are strings. String waypoints are resolved through `points` and also supply
+    default labels when `labels` is omitted.
+
+    Parameters
+    ----------
+    recip : ReciprocalLattice
+        Reciprocal lattice whose basis converts fractional waypoints to
+        Cartesian coordinates for distance allocation.
+    waypoints : Sequence[tuple[float, ...] | str]
+        At least two waypoint coordinates or names. Named waypoints must appear
+        in `points`.
+    n_points : int, default 100
+        Total number of dense path samples, including all waypoints.
+    labels : Optional[Sequence[str]], optional
+        Labels for waypoints. If omitted, names or coordinate strings are used.
+    points : Optional[Dict[str, tuple[float, ...]]], optional
+        Mapping used to resolve string waypoints to fractional coordinates.
+
+    Returns
+    -------
+    BzPath
+        Path metadata containing the unique momentum space, waypoint labels,
+        dense-sample-to-momentum mapping, and cumulative path positions.
+
+    Raises
+    ------
+    ValueError
+        If fewer than two waypoints are supplied, a named waypoint is missing,
+        waypoint dimensions do not match the reciprocal lattice, `n_points` is
+        too small, all waypoints are identical, or `labels` has the wrong
+        length.
+    """
     if len(waypoints) < 2:
         raise ValueError("At least two waypoints are required to define a path.")
 

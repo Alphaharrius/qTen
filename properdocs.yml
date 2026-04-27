@@ -1,0 +1,78 @@
+site_name: QTen
+site_description: API and user documentation for qten and qten-plots.
+repo_url: https://github.com/Alphaharrius/PyHilbert
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+            - ext/plots/src
+          options:
+            docstring_style: numpy
+            filters:
+              - "!^_$"
+              - "!^_[^_]"
+              - "!^NonNumericExpr$"
+              - "!^__contains__$"
+              - "!^__add__$"
+              - "!^__neg__$"
+              - "!^__sub__$"
+              - "!^__mul__$"
+              - "!^__matmul__$"
+              - "!^__truediv__$"
+              - "!^__floordiv__$"
+              - "!^__pow__$"
+              - "!^__eq__$"
+              - "!^__lt__$"
+              - "!^__le__$"
+              - "!^__gt__$"
+              - "!^__ge__$"
+              - "!^__and__$"
+              - "!^__or__$"
+              - "!^__radd__$"
+              - "!^__rsub__$"
+              - "!^__rmul__$"
+              - "!^__rtruediv__$"
+              - "!^[A-Z]$"
+              - "!^eigenvalues$"
+              - "!^eigenvectors$"
+              - "!^Vh$"
+            inherited_members: true
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            overloads_only: true
+            show_if_no_docstring: true
+            show_root_full_path: false
+            show_root_heading: true
+            show_root_members_full_path: false
+            show_signature_annotations: true
+watch:
+  - src/qten
+  - ext/plots/src/qten_plots
+  - README.md

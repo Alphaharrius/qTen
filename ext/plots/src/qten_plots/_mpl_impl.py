@@ -821,7 +821,7 @@ def plot_bandstructure_mpl(
     nullspace_tol : float, default 1e-9
         Energy tolerance used when hide_nullspace is enabled.
     bz_path : BzPath, optional
-        Brillouin-zone path returned by ``interpolate_reciprocal_path``. When given,
+        Brillouin-zone path returned by `[`interpolate_reciprocal_path`][qten.symbolics.ops.interpolate_reciprocal_path]`. When given,
         vertical dividers and high-symmetry-point labels are drawn on the
         path-mode x-axis.
     """

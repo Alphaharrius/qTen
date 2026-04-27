@@ -1,3 +1,27 @@
+"""
+Shared abstract protocols and dispatch helpers used across QTen.
+
+This module defines small mixins that describe common behavior without tying it
+to a specific tensor, symbolic, or geometry implementation. The abstractions are
+intended for implementers of QTen objects: they define the public contracts for
+operator multimethods, immutable update workflows, dual/base relationships,
+functional dispatch, span membership, ray representatives, and explicit type
+conversion.
+
+Repository usage
+----------------
+Concrete modules such as [`qten.geometries`][qten.geometries],
+[`qten.symbolics`][qten.symbolics], and [`qten.linalg`][qten.linalg] inherit
+from these protocols to share public behavior while documenting their
+domain-specific semantics on the concrete classes.
+
+Design convention
+-----------------
+These base classes document generic mechanics only. Concrete classes should
+document the mathematical meaning of each operation, valid operand types,
+returned object types, and any domain-specific validation errors.
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields, is_dataclass
 from typing import (
@@ -19,6 +43,63 @@ from multimethod import multimethod
 
 @dataclass(frozen=True)
 class Operable(ABC):
+    """
+    Mixin defining the symbolic operator protocol used across QTen.
+
+    [`Operable`][qten.abstracts.Operable] provides the shared multimethod-based
+    arithmetic, comparison, and logical operator surface used by symbolic
+    objects throughout the codebase. Concrete subclasses opt into this protocol
+    by registering implementations for the relevant dunder methods on the class
+    or on cooperating types.
+
+    Supported operator families
+    ---------------------------
+    `Operable` defines dispatch points for:
+
+    - containment via `in`,
+    - arithmetic operators such as `+`, `-`, unary `-`, `*`, `@`, `/`, `//`,
+      and `**`,
+    - equality and ordered comparisons,
+    - logical `&` and `|`,
+    - reflected arithmetic for `+`, `-`, `*`, and `/`.
+
+    Implementer workflow
+    --------------------
+    Each operator method is a [`multimethod.multimethod`](https://multimethod.readthedocs.io/)
+    dispatch point. Concrete modules register implementations on those dispatch
+    points instead of overriding every dunder method on each subclass. For
+    example, an implementing module can define addition for two concrete types
+    with:
+
+    ```python
+    @Operable.__add__.register
+    def _(a: MyType, b: MyType) -> MyType:
+        ...
+    ```
+
+    After registration, normal Python syntax such as `a + b` calls
+    `Operable.__add__`, and `multimethod` selects the registered implementation
+    from the runtime argument types. The registration should describe the
+    concrete operand types and return a value that preserves the concrete type's
+    invariants.
+
+    Reflected operators
+    -------------------
+    Reflected helpers such as `__radd__` call back into the corresponding
+    `Operable` multimethod with the operands reversed. This lets one
+    registration support both direct and reflected syntax when the registered
+    type signature matches the reversed operands.
+
+    Design notes
+    ------------
+    - The base implementations intentionally raise `NotImplementedError` so
+      unsupported combinations fail loudly.
+    - Reflected helpers such as `__radd__` delegate back into the same
+      multimethod registry, keeping dispatch symmetric.
+    - Public API docs for concrete operator behavior should generally live on
+      the concrete type, not on this abstract mixin.
+    """
+
     @multimethod
     def __contains__(self, other):
         raise NotImplementedError(
@@ -129,7 +210,27 @@ UpdatableType = TypeVar("UpdatableType", bound="Updatable")
 
 class Updatable(ABC, Generic[UpdatableType]):
     """
-    An object that can be updated to a new state.
+    Protocol for immutable-style objects that can produce updated copies.
+
+    Subclasses implement `_updated()` to construct the new object, while
+    [`update()`][qten.abstracts.Updatable.update]
+    enforces common safety rules around object identity and dataclass fields
+    with `init=False`.
+
+    Implementer workflow
+    --------------------
+    - Implement `_updated(**kwargs)` with the same semantic keyword names users
+      should pass to [`update()`][qten.abstracts.Updatable.update].
+    - Return a new object instead of mutating and returning `self`.
+    - For dataclasses, do not manually copy `init=False` cache fields in
+      `_updated()`. The public `update()` wrapper copies those fields when the
+      returned object has the same runtime type.
+
+    Use cases
+    ---------
+    `Updatable` is useful for immutable value objects that want a single public
+    update entry point while preserving invariants enforced by their
+    constructor or custom update implementation.
     """
 
     def update(self, **kwargs) -> UpdatableType:
@@ -137,28 +238,28 @@ class Updatable(ABC, Generic[UpdatableType]):
         Return an updated instance of this object.
 
         This method delegates the construction of the updated object to
-        :meth:`_updated`, then enforces common safety and dataclass consistency
+        `_updated()`, then enforces common safety and dataclass consistency
         rules:
-        1. ``_updated`` must return a new object (not ``self``).
-        2. If both ``self`` and the returned object are dataclasses of the same
-           runtime type, fields with ``init=False`` are copied from ``self`` to
-           the returned object.
+
+        - `_updated()` must return a new object, not `self`.
+        - If both `self` and the returned object are dataclasses of the same
+          runtime type, fields with `init=False` are copied from `self` to the
+          returned object.
 
         Parameters
         ----------
-        `**kwargs` : `Any`
-            Keyword arguments forwarded to :meth:`_updated` to define the new
-            state.
+        **kwargs : Any
+            Keyword arguments forwarded to `_updated()` to define the new state.
 
         Returns
         -------
-        `UpdatableType`
+        UpdatableType
             A new instance representing the updated state.
 
         Raises
         ------
-        `RuntimeError`
-            If :meth:`_updated` returns ``self`` instead of a new instance.
+        RuntimeError
+            If `_updated()` returns `self` instead of a new instance.
         """
         out = self._updated(**kwargs)
         if out is self:
@@ -178,12 +279,26 @@ class Updatable(ABC, Generic[UpdatableType]):
 
 class HasDual(ABC):
     """
-    An object that has a dual.
+    Protocol for objects with a domain-specific dual representation.
+
+    The meaning of "dual" is defined by the concrete domain. Geometry classes
+    use it for direct/reciprocal lattice pairs, while symbolic or linear
+    algebra objects may use it for paired spaces or representations. The
+    property should return the corresponding object without mutating `self`.
     """
 
     @property
     @abstractmethod
     def dual(self):
+        """
+        Return the dual object associated with this instance.
+
+        Returns
+        -------
+        Any
+            Dual representation of this object. Concrete subclasses should
+            return a value of the domain-specific dual type.
+        """
         raise NotImplementedError()
 
 
@@ -202,8 +317,22 @@ class HasBase(Generic[BaseType], ABC):
 
     The key idea is that the *mathematical object* is the same, but its
     *representation* depends on the base. Implementations should therefore
-    provide `rebase(...)` to return a new equivalent object expressed in a new
+    provide [`rebase(...)`][qten.abstracts.HasBase.rebase] to return a new equivalent object expressed in a new
     base, without mutating the original.
+
+    Implementer workflow
+    --------------------
+    - [`base()`][qten.abstracts.HasBase.base] should return the current
+      representation context.
+    - [`rebase(new_base)`][qten.abstracts.HasBase.rebase] should change only the
+      representation, not the underlying mathematical object.
+    - Incompatible target bases should fail with a clear error, usually
+      `ValueError`.
+
+    Examples
+    --------
+    An offset vector can be rebased from one affine space to another by changing
+    its coordinate column while preserving the same Cartesian vector.
     """
 
     @abstractmethod
@@ -213,26 +342,46 @@ class HasBase(Generic[BaseType], ABC):
 
         This should be a lightweight, stable descriptor of the representation context
         (e.g., a basis matrix, lattice, coordinate frame, or function basis). The
-        returned base is used by `rebase(...)` to construct an equivalent object in a
+        returned base is used by [`rebase(...)`][qten.abstracts.HasBase.rebase] to construct an equivalent object in a
         new base, so implementations should not mutate internal state and should
         prefer returning an immutable or effectively immutable object.
+
+        Returns
+        -------
+        BaseType
+            Base object that defines this instance's current representation.
         """
         raise NotImplementedError()
 
     @abstractmethod
     def rebase(self, new_base: BaseType) -> "HasBase[BaseType]":
         """
-        Return an equivalent object expressed in ``new_base``.
+        Return an equivalent object expressed in `new_base`.
 
         Implementations must preserve the underlying mathematical object while
         changing only its representation. This method should be pure: do not
-        mutate ``self`` or ``new_base``. Prefer returning a new instance, even if
-        the base is unchanged; if you choose to return ``self`` for identical
+        mutate `self` or `new_base`. Prefer returning a new instance, even if
+        the base is unchanged; if you choose to return `self` for identical
         bases, document that behavior and ensure immutability.
 
-        ``new_base`` is expected to be compatible with the object. If it is not,
-        raise a clear error (typically ``ValueError``). Do not silently coerce
+        `new_base` is expected to be compatible with the object. If it is not,
+        raise a clear error, typically `ValueError`. Do not silently coerce
         incompatible bases.
+
+        Parameters
+        ----------
+        new_base : BaseType
+            Target base for the returned representation.
+
+        Returns
+        -------
+        HasBase[BaseType]
+            Equivalent object expressed in `new_base`.
+
+        Raises
+        ------
+        ValueError
+            If `new_base` is incompatible with this object's representation.
         """
         raise NotImplementedError()
 
@@ -244,16 +393,85 @@ class AbstractKet(Generic[_InnerProductType], ABC):
     """
     The base class for all ket-like objects that the inner product is defined via `<bra|ket>` syntax.
 
-    The `_InnerProductType` is the type of the inner product mapping between this ket and its dual bra.
+    The `_InnerProductType` type parameter describes the value returned by the
+    inner product between this ket and another ket-like object.
+
+    Implementations decide whether the returned value is a scalar, symbolic
+    expression, tensor, or another domain-specific object. The abstract
+    interface only records that two values of the same ket type can be paired.
     """
 
     @abstractmethod
     def ket(self, another: Self) -> _InnerProductType:
-        """Return the inner product mapping between this ket and `another` ket."""
+        """
+        Return the inner product mapping between this ket and `another` ket.
+
+        Parameters
+        ----------
+        another : Self
+            Other ket-like object to pair with this ket.
+
+        Returns
+        -------
+        _InnerProductType
+            Inner-product value or mapping defined by the concrete ket type.
+        """
         raise NotImplementedError()
 
 
 class Functional(ABC):
+    """
+    Registry-dispatched callable object for operations on runtime values.
+
+    A `Functional` instance acts like a callable operator. Implementations are
+    registered by decorating functions with
+    [`register(obj_type)`][qten.abstracts.Functional.register]. When the
+    functional is called, dispatch searches both:
+
+    - the runtime type of the input object, and
+    - the runtime type of the functional object itself.
+
+    This makes it possible to define operation families where subclasses inherit
+    registrations from base functionals while still supporting specific
+    overrides.
+
+    Registration workflow
+    ---------------------
+    - Define a concrete `Functional` subclass.
+    - Register one or more implementations with `register(obj_type)`.
+    - Call the functional instance with an object, or call
+      [`invoke(obj)`][qten.abstracts.Functional.invoke] explicitly.
+    - The most specific registered implementation is invoked.
+
+    A typical registration looks like:
+
+    ```python
+    class MyTransform(Functional):
+        ...
+
+    @MyTransform.register(MyObject)
+    def _(transform: MyTransform, obj: MyObject) -> MyObject:
+        ...
+    ```
+
+    After registration, `transform(obj)` and `transform.invoke(obj)` both call
+    the registered function. The first argument passed to the function is the
+    functional instance itself, and the second argument is the runtime object.
+
+    Dispatch behavior
+    -----------------
+    Dispatch is based on `(type(obj), type(self))`. If an exact registration is
+    absent, the resolver walks the object MRO and the functional MRO until it
+    finds an inherited match. This allows a registration on a base functional
+    class to act as a fallback for subclasses.
+
+    Caching
+    -------
+    Resolved runtime pairs are cached in `_resolved_methods`. Whenever a new
+    registration is added, stale cache entries affected by that object type are
+    invalidated automatically.
+    """
+
     _registered_methods: ClassVar[Dict[Tuple[type, type], Callable]] = {}
     _resolved_methods: ClassVar[Dict[Tuple[type, type], Callable]] = {}
 
@@ -270,24 +488,40 @@ class Functional(ABC):
     @classmethod
     def register(cls, obj_type: type):
         """
-        Register a function defining the action of the `Functional` on a specific object type.
+        Register a function defining the action of the [`Functional`][qten.abstracts.Functional] on a specific object type.
+
+        This method returns a decorator. The decorated function should accept
+        the functional instance as its first argument and an object of
+        `obj_type` as its second argument. Any keyword arguments passed to
+        [`invoke()`][qten.abstracts.Functional.invoke] are forwarded to the
+        decorated function.
+
         Dispatch is resolved at call time via MRO, so only the exact
         `(obj_type, cls)` key is stored here. Resolution later searches both:
 
-        1. the MRO of the runtime object type, and
-        2. the MRO of the runtime functional type
+        - the MRO of the runtime object type,
+        - the MRO of the runtime functional type.
 
         This means registrations on a functional superclass are inherited by
         subclass functionals unless a more specific registration overrides them.
 
         Parameters
         ----------
-        `obj_type` : `type`
+        obj_type : type
             The type of object the function applies to.
+
         Returns
         -------
-        `Callable`
+        Callable
             A decorator that registers the function for the specified object type.
+
+        Examples
+        --------
+        ```python
+        @MyFunctional.register(MyObject)
+        def _(functional: MyFunctional, obj: MyObject) -> MyObject:
+            ...
+        ```
         """
 
         def decorator(func: Callable):
@@ -304,11 +538,11 @@ class Functional(ABC):
         """
         Resolve the most specific registered method for the given runtime types.
 
-        Resolution order is:
-
-        1. walk the MRO of `obj_class` from most specific to least specific
-        2. for each object type, walk the MRO of `functional_class` from most
-           specific to least specific
+        Resolution order
+        ----------------
+        - Walk the MRO of `obj_class` from most specific to least specific.
+        - For each object type, walk the MRO of `functional_class` from most
+          specific to least specific.
 
         The first matching registration `(obj_super, functional_super)` is used
         and cached under the exact runtime pair `(obj_class, functional_class)`.
@@ -336,12 +570,17 @@ class Functional(ABC):
     @staticmethod
     def get_applicable_types(cls) -> Tuple[Type, ...]:
         """
-        Get all object types that can be applied by this `Functional`.
+        Get all object types that can be applied by this [`Functional`][qten.abstracts.Functional].
+
+        Parameters
+        ----------
+        cls : Type[Functional]
+            Functional class whose direct registrations should be inspected.
 
         Returns
         -------
         Tuple[Type, ...]
-            A tuple of all registered object types that this `Functional` can handle.
+            A tuple of all registered object types that this [`Functional`][qten.abstracts.Functional] can handle.
         """
         types = set()
         for obj_type, functional_type in cls._registered_methods.keys():
@@ -351,7 +590,7 @@ class Functional(ABC):
 
     def allows(self, obj: Any) -> bool:
         """
-        Check if this `Functional` can be applied on the given object.
+        Check if this [`Functional`][qten.abstracts.Functional] can be applied on the given object.
 
         Parameters
         ----------
@@ -361,17 +600,39 @@ class Functional(ABC):
         Returns
         -------
         bool
-            True if this `Functional` can be applied on the object, False otherwise.
+            True if this [`Functional`][qten.abstracts.Functional] can be applied on the object, False otherwise.
 
         Notes
         -----
         Applicability is checked using the same inherited dispatch rules as
-        :meth:`invoke`: both the object's MRO and the functional-class MRO are
-        searched.
+        [`invoke()`][qten.abstracts.Functional.invoke]: both the object's MRO
+        and the functional-class MRO are searched.
         """
         return self._resolve_method(type(obj), type(self)) is not None
 
     def invoke(self, obj: Any, **kwargs) -> Any:
+        """
+        Apply this functional to `obj` using registered multimethod dispatch.
+
+        Parameters
+        ----------
+        obj : Any
+            Runtime object to dispatch on.
+        **kwargs : Any
+            Additional keyword arguments forwarded to the resolved
+            implementation.
+
+        Returns
+        -------
+        Any
+            Result produced by the resolved registered method.
+
+        Raises
+        ------
+        NotImplementedError
+            If no registration exists for the runtime pair
+            `(type(obj), type(self))` after MRO fallback.
+        """
         functional_class = type(self)
         obj_class = type(obj)
         method = self._resolve_method(obj_class, functional_class)
@@ -385,6 +646,34 @@ class Functional(ABC):
         return method(self, obj, **kwargs)
 
     def __call__(self, obj: Any, **kwargs) -> Any:
+        """
+        Apply this functional to `obj`.
+
+        This is a thin wrapper around [`invoke()`][qten.abstracts.Functional.invoke].
+
+        Parameters
+        ----------
+        obj : Any
+            Runtime object to dispatch on.
+        **kwargs : Any
+            Additional keyword arguments forwarded to the resolved
+            implementation.
+
+        Returns
+        -------
+        Any
+            Result produced by the resolved registered method.
+
+        Raises
+        ------
+        NotImplementedError
+            If no registration exists for the runtime pair after MRO fallback.
+
+        See Also
+        --------
+        [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke]
+            Full dispatch method used by this call wrapper.
+        """
         return self.invoke(obj, **kwargs)
 
 
@@ -393,21 +682,36 @@ _ElementType = TypeVar("_ElementType")
 
 class Span(Operable, ABC, Generic[_ElementType]):
     """
-    An object representing the span of a set of elements.
+    Protocol for objects representing the span of a finite element set.
 
     The specific meaning of "span" depends on the context. For example, in a
     vector space, the span of a set of vectors is the set of all linear
     combinations of those vectors. In a topological space, the span of a set
     of points might be the smallest closed set containing those points.
 
-    Spans participate in `Operable` membership using Python's `in` protocol:
+    Spans participate in [`Operable`][qten.abstracts.Operable] membership using Python's `in` protocol:
     `x in span` dispatches to `span.__contains__(x)`.
 
-    The default containment rules support:
-    - `Span` queries, compared by `elements()`.
-    - `Convertible` queries, converted to `type(self)` before comparison.
+    Containment behavior
+    --------------------
+    - [`Span`][qten.abstracts.Span] queries, compared by [`elements()`][qten.abstracts.Span.elements].
+    - [`Convertible`][qten.abstracts.Convertible] queries, converted to `type(self)` before comparison.
 
     The `_ElementType` type variable represents the type of elements that define the span.
+
+    Registration mechanism
+    ----------------------
+    `Span` does not define a custom registry. It participates in the
+    [`Operable`][qten.abstracts.Operable] multimethod registry by registering
+    containment implementations on `Operable.__contains__`. That means normal
+    Python syntax such as `subspan in span` is routed through the same
+    multimethod dispatch used by other operator protocols.
+
+    Implementer workflow
+    --------------------
+    Concrete spans must return a stable tuple from
+    [`elements()`][qten.abstracts.Span.elements]. The default containment logic
+    assumes that these elements are hashable and can be compared for equality.
     """
 
     @abstractmethod
@@ -417,7 +721,7 @@ class Span(Operable, ABC, Generic[_ElementType]):
 
         Returns
         -------
-        `Tuple[_ElementType, ...]`
+        Tuple[_ElementType, ...]
             Immutable tuple of elements represented by this span.
         """
         pass
@@ -438,12 +742,29 @@ def _(a: Span, b: object):
 
 class HasRays(ABC):
     """
-    An object that can return a canonical representative of its ray.
+    Protocol for objects that can choose a canonical ray representative.
+
+    In projective settings, multiple values can differ by an overall scalar
+    while representing the same ray. Concrete implementations define the
+    canonicalization convention used by [`rays()`][qten.abstracts.HasRays.rays].
+
+    Implementer workflow
+    --------------------
+    The returned representative should be deterministic and should preserve the
+    object's mathematical ray. Implementations commonly normalize signs,
+    phases, or scalar coefficients.
     """
 
     @abstractmethod
     def rays(self) -> Self:
-        """Return a canonical representative of this object's ray."""
+        """
+        Return a canonical representative of this object's ray.
+
+        Returns
+        -------
+        Self
+            Canonical representative chosen by the concrete implementation.
+        """
         raise NotImplementedError()
 
 
@@ -456,17 +777,48 @@ class Convertible(ABC):
     """
     Mixin for objects that support explicit type-to-type conversion.
 
-    Conversion functions are registered globally using
-    ``@MyType.add_conversion(TargetType)`` with
-    ``(source_type, destination_type)`` as the lookup key. Implementers inherit
-    :meth:`convert` and usually only need to register conversion handlers.
+    `Convertible` provides a small global conversion registry. A source class
+    registers conversion functions with
+    [`add_conversion(TargetType)`][qten.abstracts.Convertible.add_conversion],
+    and instances call [`convert(TargetType)`][qten.abstracts.Convertible.convert]
+    to obtain the requested representation.
+
+    The registry key is `(source_type, destination_type)`. Conversion lookup
+    first checks the concrete source type exactly, then walks source supertypes
+    in MRO order. Resolved parent conversions are cached for the concrete source
+    type, so repeated conversions avoid the MRO scan.
+
+    Use cases
+    ---------
+    This protocol is useful when two QTen objects represent the same
+    mathematical data in different public forms, but the conversion should be
+    explicit rather than automatic.
 
     Notes
     -----
-    Lookup first checks ``(type(self), T)`` exactly. If not found, it scans
-    source supertypes in MRO order from immediate parent to the most abstract
-    parent. If no conversion function is found, conversion fails with
-    ``NotImplementedError``.
+    Conversion functions should not mutate the source object. They should
+    return a new object or an immutable view appropriate for the target type.
+    If no conversion function is found, conversion fails with
+    `NotImplementedError`.
+
+    Registration mechanism
+    ----------------------
+    `add_conversion(T)` returns a decorator for registering one directed
+    conversion from the class receiving the decorator to `T`. The decorated
+    function should accept one source instance and return one destination
+    instance.
+
+    For example, `@Source.add_conversion(Target)` stores the decorated function
+    under the exact key `(Source, Target)`. Later, `source.convert(Target)`
+    first checks `(type(source), Target)`. If that exact key is absent, lookup
+    walks the source type's MRO and tries `(SourceParent, Target)`,
+    `(SourceGrandparent, Target)`, and so on.
+
+    The destination type is not relaxed during lookup. A conversion registered
+    for `(Source, BaseTarget)` is not used by `source.convert(DerivedTarget)`,
+    and a conversion registered for `(Source, DerivedTarget)` is not used by
+    `source.convert(BaseTarget)`. Register each destination type explicitly when
+    those conversions should be available.
     """
 
     @classmethod
@@ -474,12 +826,30 @@ class Convertible(ABC):
         cls: Type[A], T: Type[B]
     ) -> Callable[[Callable[[A], B]], Callable[[A], B]]:
         """
-        Register a conversion from ``cls`` to ``T``.
+        Register a conversion from `cls` to `T`.
 
-        Example
+        The decorated function is stored under `(cls, T)`. When an instance of
+        `cls` later calls [`convert(T)`][qten.abstracts.Convertible.convert],
+        that function is used to produce the converted object.
+
+        Parameters
+        ----------
+        T : Type[B]
+            Destination type produced by the registered conversion function.
+
+        Returns
         -------
-        `@MyType.add_conversion(TargetType)`
-        `def to_target(x: MyType) -> TargetType: ...`
+        Callable[[Callable[[A], B]], Callable[[A], B]]
+            Decorator that stores the conversion function and returns it
+            unchanged.
+
+        Examples
+        --------
+        ```python
+        @MyType.add_conversion(TargetType)
+        def to_target(x: MyType) -> TargetType:
+            ...
+        ```
         """
 
         def decorator(func: Callable[[A], B]) -> Callable[[A], B]:
@@ -495,20 +865,20 @@ class Convertible(ABC):
 
         Parameters
         ----------
-        `T` : `Type[B]`
+        T : Type[B]
             Destination type to convert into.
 
         Returns
         -------
-        `B`
+        B
             Converted object produced by the registered conversion function.
 
         Raises
         ------
-        `NotImplementedError`
+        NotImplementedError
             If no conversion function has been registered for
-            ``(type(self), T)`` or any source supertype via
-            :meth:`add_conversion`.
+            `(type(self), T)` or any source supertype via
+            [`add_conversion()`][qten.abstracts.Convertible.add_conversion].
         """
         source_type = type(self)
         table_get = _type_conversion_table.get

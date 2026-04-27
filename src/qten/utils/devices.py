@@ -1,3 +1,28 @@
+"""
+Logical device helpers used by QTen objects.
+
+QTen exposes a small device vocabulary through [`Device`][qten.utils.devices.Device]:
+`"cpu"` for host execution and `"gpu"` for accelerated execution. The concrete
+backend is resolved by PyTorch when a device is used, currently mapping `"gpu"`
+to CUDA through [`Device.torch_device()`][qten.utils.devices.Device.torch_device].
+
+Repository usage
+----------------
+Use [`Device`][qten.utils.devices.Device] to store device intent in QTen data
+structures and implement [`DeviceBounded`][qten.utils.devices.DeviceBounded]
+when an object can move or copy itself between logical devices.
+
+Examples
+--------
+```python
+device = Device.new("gpu:0")
+torch_device = device.torch_device()
+
+obj_on_cpu = obj.cpu()
+obj_on_gpu = obj.gpu(0)
+```
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
@@ -17,47 +42,68 @@ class Device:
     - `"cpu"` represents host execution.
     - `"gpu"` represents accelerated execution.
 
-    For GPU devices, ``index`` optionally stores a CUDA device index. This index
-    is only meaningful on CUDA-capable systems. On systems where CUDA is not
-    available but PyTorch MPS support is available, GPU requests resolve to the
-    single `"mps"` backend and ``index`` is ignored.
+    For GPU devices, `index` optionally stores a CUDA device index. This index
+    is only meaningful on CUDA-capable systems.
 
     Parameters
     ----------
-    `name` : `Literal["cpu", "gpu"]`
+    name : Literal["cpu", "gpu"]
         The logical device family.
-    `index` : `Optional[int]`, default=`None`
+    index : Optional[int], default=`None`
         Optional CUDA device index. This should only be set when ``name`` is
         `"gpu"`.
+
+    Attributes
+    ----------
+    name : Literal["cpu", "gpu"]
+        Logical device family.
+    index : Optional[int]
+        Optional CUDA device index for GPU execution.
     """
 
     name: Literal["cpu", "gpu"]
+    """
+    Logical device family. QTen uses `"cpu"` for host execution and `"gpu"`
+    for CUDA-backed execution.
+    """
     index: Optional[int] = None
+    """
+    Optional CUDA device index for GPU execution. This is meaningful only when
+    `name == "gpu"`.
+    """
 
     @staticmethod
     def new(name: str) -> "Device":
         """
-        Parse a user-facing device string into a ``Device`` instance.
+        Parse a user-facing device string into a [`Device`][qten.utils.devices.Device].
 
-        Supported inputs are:
+        Supported inputs
+        ----------------
         - `"cpu"`
         - `"gpu"`
         - `"gpu:<index>"`, where ``<index>`` is a non-negative integer
 
         Parameters
         ----------
-        `name` : `str`
+        name : str
             Device string to parse.
 
         Returns
         -------
-        `Device`
+        Device
             Parsed immutable device descriptor.
 
         Raises
         ------
-        `ValueError`
+        ValueError
             If the input does not match one of the supported formats.
+
+        Examples
+        --------
+        ```python
+        Device.new("cpu")
+        Device.new("gpu:0")
+        ```
         """
         if name == "cpu":
             return Device(name="cpu")
@@ -76,22 +122,20 @@ class Device:
         Resolution is runtime-dependent:
         - `"cpu"` always maps to ``torch.device("cpu")``.
         - `"gpu"` prefers CUDA when available.
-        - If CUDA is unavailable and MPS is available, `"gpu"` maps to
-          ``torch.device("mps")``.
 
         When CUDA is selected, an explicit ``index`` is used if present.
         Otherwise, the current CUDA device reported by PyTorch is used.
 
         Returns
         -------
-        `torch.device`
+        torch.device
             Concrete PyTorch device corresponding to this logical device.
 
         Raises
         ------
-        `ValueError`
+        ValueError
             If ``self.name`` is not a supported logical device value.
-        `RuntimeError`
+        RuntimeError
             If a GPU device is requested but neither CUDA nor MPS is available
             in the current environment.
         """
@@ -112,12 +156,12 @@ class Device:
 
         Returns
         -------
-        `str`
-            `"cpu"`, `"gpu"`, or `"gpu:<index>"`.
+        str
+            "cpu", `"gpu"`, or `"gpu:<index>"`.
 
         Raises
         ------
-        `ValueError`
+        ValueError
             If ``self.name`` is not a supported logical device value.
         """
         match self.name:
@@ -134,9 +178,24 @@ class Device:
 
 
 class DeviceBounded(ABC):
+    """
+    Mixin for objects that can be copied or moved between logical devices.
+
+    Concrete subclasses implement [`to_device`][qten.utils.devices.DeviceBounded.to_device]
+    and expose their current [`device`][qten.utils.devices.DeviceBounded.device].
+    Convenience helpers [`cpu`][qten.utils.devices.DeviceBounded.cpu] and
+    [`gpu`][qten.utils.devices.DeviceBounded.gpu] are defined in terms of that
+    abstract interface.
+    """
+
     def cpu(self) -> Self:
         """
         Return a copy of this object residing on the CPU device.
+
+        Returns
+        -------
+        Self
+            A copy of this object on the logical CPU device.
         """
         return self.to_device(Device("cpu"))
 
@@ -146,14 +205,14 @@ class DeviceBounded(ABC):
 
         Parameters
         ----------
-        `index` : `Optional[int]`, default=`None`
+        index : Optional[int], default=`None`
             Optional CUDA device index. This should only be set when the target
             GPU backend supports multiple devices (e.g. CUDA). If not provided,
             the current device will be used.
 
         Returns
         -------
-        `Self`
+        Self
             A copy of this object on the specified GPU device.
         """
         device = Device("gpu", index)
@@ -166,12 +225,12 @@ class DeviceBounded(ABC):
 
         Parameters
         ----------
-        `device` : `Device`
+        device : Device
             The target device to move this object to.
 
         Returns
         -------
-        `Self`
+        Self
             A copy of this object on the specified device.
         """
         pass
@@ -184,7 +243,7 @@ class DeviceBounded(ABC):
 
         Returns
         -------
-        `Device`
+        Device
             The current device of this object.
         """
         pass

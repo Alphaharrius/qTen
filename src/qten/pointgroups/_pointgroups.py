@@ -1,3 +1,19 @@
+"""
+Compact point-group constructors.
+
+This module provides the user-facing [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup]
+factory for constructing common [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup]
+instances from short query strings. The query language covers simple cyclic
+rotations and mirror reflections on Cartesian axes and returns the symbolic
+point-group representation used by the rest of QTen.
+
+Repository usage
+----------------
+Use [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] for convenient
+interactive construction. Use [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup]
+directly when a custom symbolic representation matrix is needed.
+"""
+
 import re
 
 import sympy as sy
@@ -113,8 +129,8 @@ def _build_mirror_irrep(ambient: str, target: str) -> sy.ImmutableDenseMatrix:
 
 
 def pointgroup(query: str) -> AbelianGroup:
-    """
-    Build an `AbelianGroup` from a compact query string.
+    r"""
+    Build an [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] from a compact query string.
 
     This is a user-facing constructor for common point operations in Cartesian
     axes (`x`, `y`, `z`), currently supporting cyclic rotations and mirrors.
@@ -123,84 +139,73 @@ def pointgroup(query: str) -> AbelianGroup:
 
     Query grammar
     -------------
-    The accepted format is:
+    The accepted format is `"<group>-<ambient>:<target>"`.
 
-    `"<group>-<ambient>:<target>"`
+    Group tokens
+    ------------
+    Use `c{n}` for a cyclic rotation of order `n`, such as `c2`, `c3`, or
+    `c6`. Use `m` for a mirror reflection.
 
-    where:
-    - `<group>` is:
-      - `c{n}` for cyclic rotation of order `n` (e.g. `c2`, `c3`, `c6`, ...),
-      - `m` for mirror reflection.
-    - `<ambient>` is the ordered ambient axis string (`x`, `y`, `z` without repeats),
-      defining the space dimension and basis-axis order in the returned transform.
-      Examples: `x`, `xy`, `xyz`, `yzx`.
-    - `<target>` chooses where the group action lives (must be subset of ambient).
+    Axis tokens
+    -----------
+    `<ambient>` is an ordered ambient axis string using `x`, `y`, and `z`
+    without repeats. It defines the space dimension and basis-axis order in the
+    returned transform. `<target>` is an axis subset selecting where the group
+    action lives.
 
     Group semantics
     ---------------
-    Cyclic (`c{n}`)
-    - Always interpreted as a 2D rotation block with angle `2*pi/n`.
-    - `<target>` must have exactly 2 axes, defining the rotation plane.
-    - In 2D ambient, `<target>` must use the same two axes as ambient.
-      Example: `c3-xy:xy` is valid, `c3-xy:xz` is invalid.
-    - Target order controls orientation:
-      - `c3-xy:xy` and `c3-xy:yx` act on the same plane,
-      - the second is the inverse orientation of the first.
-    - In 3D ambient, the remaining axis is unchanged.
-      Example: `c6-xyz:yz` rotates in the `yz` plane, keeps `x` fixed.
+    Cyclic groups are interpreted as 2D rotation blocks with angle
+    \(\theta = 2\pi/n\).
+    For cyclic groups, `<target>` must have exactly two axes and defines the
+    rotation plane. In 2D ambient spaces, the cyclic target plane must use the
+    same two axes as the ambient space. Cyclic target order controls
+    orientation: `c3-xy:xy` and `c3-xy:yx` act on the same plane with inverse
+    orientation. In 3D cyclic rotations, the remaining axis is unchanged.
 
-    Mirror (`m`)
-    - 1D (`ambient` length 1):
-      - `<target>` must match ambient axis,
-      - action is sign flip in 1D (`x -> -x`).
-    - 2D (`ambient` length 2):
-      - `<target>` must have exactly 1 axis and denotes the fixed axis.
-      - Example: `m-xy:y` mirrors about the y-axis (`x -> -x`, `y -> y`).
-    - 3D (`ambient` length 3):
-      - `<target>` must have exactly 2 axes and denotes the fixed plane.
-      - Example: `m-xyz:yz` mirrors about the yz-plane (`x -> -x`).
+    The active plane receives the block
+    \(R(\theta) = \begin{pmatrix}\cos\theta & -\sin\theta \\
+    \sin\theta & \cos\theta\end{pmatrix}\), where \(\theta = 2\pi/n\).
+
+    In code, this block is inserted into the returned `irrep` matrix; target
+    axis order chooses the sign of `theta`.
+
+    In 1D mirrors, `<target>` must match the ambient axis and the action is a
+    sign flip. In 2D mirrors, `<target>` has one axis and denotes the fixed
+    axis. In 3D mirrors, `<target>` has two axes and denotes the fixed plane.
 
     Validation rules
     ----------------
-    - `ambient` and `target` cannot contain repeated axis letters.
-    - `target` must be a subset of `ambient`.
-    - Invalid dimensional/group combinations raise `ValueError`.
+    `ambient` and `target` cannot contain repeated axis letters. `target` must
+    be a subset of `ambient`. Invalid dimensional or group combinations raise
+    `ValueError`.
 
-    Return value
-    ------------
-    Returns an `AbelianGroup` with:
-    - `irrep`: the linear matrix representation from query semantics,
-    - `axes`: symbols in ambient order.
+    Parameters
+    ----------
+    query : str
+        Compact point-group query of the form `"<group>-<ambient>:<target>"`.
+
+    Returns
+    -------
+    AbelianGroup
+        Group with `irrep` set to the linear matrix representation from query
+        semantics and `axes` set to SymPy symbols in ambient order.
+
+    Raises
+    ------
+    ValueError
+        If the query format, group token, axis token, or dimensional
+        combination is unsupported.
 
     Examples
     --------
-    Cyclic, 2D:
-    - `pointgroup("c6-xy:xy")`:
-      60-degree rotation in `xy`.
-    - `pointgroup("c6-xy:yx")`:
-      inverse orientation of the same `c6`.
+    ```python
+    from qten.pointgroups import pointgroup
 
-    Cyclic, 3D:
-    - `pointgroup("c6-xyz:yz")`:
-      rotate `yz` by 60 degrees, keep `x` fixed.
-
-    Mirror, 1D:
-    - `pointgroup("m-x:x")`:
-      reflection in 1D (`x -> -x`).
-
-    Mirror, 2D:
-    - `pointgroup("m-xy:y")`:
-      mirror about y-axis (`x -> -x`, `y -> y`).
-    - `pointgroup("m-xy:x")`:
-      mirror about x-axis (`x -> x`, `y -> -y`).
-
-    Mirror, 3D:
-    - `pointgroup("m-xyz:yz")`:
-      mirror about yz-plane (`x -> -x`).
-    - `pointgroup("m-xyz:xz")`:
-      mirror about xz-plane (`y -> -y`).
-    - `pointgroup("m-xyz:xy")`:
-      mirror about xy-plane (`z -> -z`).
+    rotation = pointgroup("c6-xy:xy")     # 60-degree rotation in xy
+    inverse = pointgroup("c6-xy:yx")      # inverse orientation
+    mirror = pointgroup("m-xyz:yz")       # mirror about the yz-plane
+    ```
     """
     group, ambient, target = _parse_affine_query(query)
 

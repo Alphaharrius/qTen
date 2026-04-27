@@ -6,7 +6,7 @@ from sympy import ImmutableDenseMatrix
 from qten.geometries.spatials import Lattice, Offset, Momentum
 from qten.symbolics.state_space import brillouin_zone
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
-from qten.geometries.fourier import fourier_transform
+from qten.geometries.fourier import fourier_kernel, fourier_transform
 from qten.geometries.boundary import PeriodicBoundary
 
 
@@ -38,7 +38,7 @@ def test_fourier_kernel_1d():
     R = tuple(Offset(rep=ImmutableDenseMatrix([r]), space=lat) for r in r_reps)
 
     # Compute Fourier
-    ft = fourier_transform(K, R)
+    ft = fourier_kernel(K, R)
 
     # Expected: exp(-2pi * i * k * r)
     expected = torch.zeros((4, 4), dtype=torch.complex128)

@@ -1,3 +1,38 @@
+r"""
+Geometry primitives for real-space and reciprocal-space coordinates.
+
+This module defines the coordinate objects that the rest of QTen uses to talk
+about positions on a finite lattice and momenta on the corresponding sampled
+reciprocal grid.
+
+The central convention is:
+
+- An [`AffineSpace`][qten.geometries.spatials.AffineSpace] stores a basis
+  matrix whose columns are the primitive vectors of some coordinate frame.
+- An [`Offset`][qten.geometries.spatials.Offset] stores coordinates `rep`
+  relative to `basis`; in code this is `basis @ rep`, mathematically \(A r\).
+- A [`Lattice`][qten.geometries.spatials.Lattice] is an affine space together
+  with a periodic identification of cells and an optional multi-site unit cell.
+- A [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice] is the
+  dual momentum-space lattice with basis \(2\pi(A^{-1})^{\mathsf{T}}\), so
+  plane-wave phases can be evaluated directly as
+  \(\exp(-\mathrm{i}\, k\cdot r)\) in Cartesian coordinates.
+  In code, this basis is built from the direct lattice as
+  `2 * sy.pi * basis.inv().T`.
+
+With direct basis matrix \(A\), fractional coordinates \(r\), and reciprocal
+basis \(G = 2\pi(A^{-1})^{\mathsf{T}}\), the core coordinate convention is
+\(x = A r\), with plane-wave phases written as
+\(\exp(-\mathrm{i}\, k \cdot x)\) for Cartesian positions \(x\) and Cartesian
+reciprocal vectors \(k\).
+The corresponding code expression for the coordinate map is `basis @ rep`.
+
+Throughout the module, "fractional coordinates" means coefficients in the
+primitive basis, not Cartesian coordinates. Integer parts label unit-cell
+translations, while fractional parts label positions inside a unit cell or
+inside the first reciprocal cell.
+"""
+
 from dataclasses import dataclass, field
 from numbers import Number
 from typing import (
@@ -35,7 +70,15 @@ from ..precision import get_precision_config
 @dataclass(frozen=True)
 class Spatial(Operable, Plottable, ABC):
     """
-    Abstract base class for spatial objects with a well-defined dimension.
+    Abstract base class for geometry objects with a well-defined spatial dimension.
+
+    Physically, subclasses represent either coordinate systems
+    ([`AffineSpace`][qten.geometries.spatials.AffineSpace],
+    [`Lattice`][qten.geometries.spatials.Lattice],
+    [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice]) or
+    vectors/points expressed in those systems
+    ([`Offset`][qten.geometries.spatials.Offset],
+    [`Momentum`][qten.geometries.spatials.Momentum]).
     """
 
     @property
@@ -48,31 +91,68 @@ class Spatial(Operable, Plottable, ABC):
 @need_validation(check_numerical("basis"), check_invertibility("basis"))
 @dataclass(frozen=True)
 class AffineSpace(Spatial):
-    """
+    r"""
     Affine coordinate system described by a basis matrix.
+
+    Mathematically, if the basis matrix is \(A = [a_1,\ldots,a_d]\), then a
+    column of coordinates \(r\) represents the Cartesian vector
+
+    \(x = A r = \sum_j r_j a_j\).
+
+    This class does not by itself impose periodicity or discreteness. It is the
+    ambient continuous coordinate frame in which lattice vectors and unit-cell
+    positions are expressed.
+
+    String representations
+    ----------------------
+    - `str(space)` returns `AffineSpace(basis=...)`, where `basis` is shown as
+      a nested Python list of stringified SymPy entries.
+    - `repr(space)` is identical to `str(space)`.
+
+    The output is intended to expose the basis matrix directly and does not add
+    any extra constructor metadata beyond that basis.
 
     Attributes
     ----------
-    `basis` : `ImmutableDenseMatrix`
+    basis : ImmutableDenseMatrix
         Basis matrix whose columns span the affine coordinate system.
     """
 
     basis: ImmutableDenseMatrix
+    r"""
+    Basis matrix whose columns span the affine coordinate system. Coordinate
+    columns \(r\) in this space represent Cartesian vectors through `basis @ r`
+    in code, mathematically \(A r\).
+    """
 
     @property
     def dim(self) -> int:
-        """Return the dimension induced by the basis matrix."""
+        """
+        Return the geometric dimension of the affine space.
+
+        This is the number of primitive basis vectors, equivalently the number
+        of rows of `basis` and the number of coordinates needed to specify a
+        point/vector in this frame.
+        """
         return self.basis.rows
 
     def origin(self) -> "Offset":
-        """Return the zero offset in this affine space."""
+        """
+        Return the zero vector of this affine space.
+
+        Physically this is the chosen coordinate origin. In fractional
+        coordinates it is the column of all zeros, and in Cartesian coordinates
+        it maps to the zero displacement.
+        """
         return Offset(rep=ImmutableDenseMatrix([0] * self.dim), space=self)
 
     def __str__(self):
+        """Return `AffineSpace(basis=...)` with the basis shown entry-by-entry."""
         data = [[str(sympify(x)) for x in row] for row in self.basis.tolist()]
         return f"AffineSpace(basis={data})"
 
     def __repr__(self):
+        """Return the same display string as [`__str__()`][qten.geometries.spatials.AffineSpace.__str__]."""
         return str(self)
 
 
@@ -89,12 +169,25 @@ def _rebase_transform_matrix(
 @dataclass(frozen=True)
 class AbstractLattice(Generic[_O], AffineSpace, HasDual):
     """
-    Common interface for lattices and reciprocal lattices.
+    Common interface for direct and reciprocal lattices.
+
+    Both share the same structure: an affine basis plus a finite set of
+    canonical representatives obtained from periodic identifications. The type
+    parameter distinguishes whether those representatives are
+    [`Offset`][qten.geometries.spatials.Offset] objects in real space or
+    [`Momentum`][qten.geometries.spatials.Momentum] objects in reciprocal
+    space.
     """
 
     @property
     def affine(self) -> AffineSpace:
-        """Return the underlying affine space of this lattice."""
+        """
+        Return the underlying continuous affine space.
+
+        This forgets the discrete sampled set and keeps only the basis. It is
+        useful when you want to talk about arbitrary vectors in the same frame,
+        not only allowed lattice sites or sampled momentum points.
+        """
         return AffineSpace(basis=self.basis)
 
     @abstractmethod
@@ -104,37 +197,103 @@ class AbstractLattice(Generic[_O], AffineSpace, HasDual):
         *,
         device: Optional[Device] = None,
     ) -> Union[Tuple[_O, ...], torch.Tensor, np.ndarray]:
-        """Enumerate the canonical coordinates of the lattice."""
+        """
+        Enumerate the canonical representatives of the finite lattice.
+
+        For a direct lattice this means one representative for every site in
+        the finite periodic supercell. For a reciprocal lattice it means one
+        representative for every sampled momentum point in the discrete
+        Brillouin-zone grid.
+        """
         raise NotImplementedError()
 
 
 @dataclass(frozen=True)
 class Lattice(AbstractLattice["Offset"]):
-    """
+    r"""
     Periodic real-space lattice with an optional multi-site unit cell.
+
+    A `Lattice` combines three ingredients:
+
+    - `basis`, whose columns are the primitive real-space lattice vectors.
+    - `boundaries`, which identify lattice translations related by the finite
+      periodic supercell.
+    - `unit_cell`, which places one or more orbitals/sites inside each
+      primitive cell using fractional coordinates.
+
+    If the primitive basis is \(A\) and a site has fractional coordinates
+    \(r = n + \tau\), with integer cell index \(n\) and intra-cell offset
+    \(\tau\), then its physical Cartesian position is
+    \(x = A(n + \tau)\). In code, this is the same `basis @ rep` convention.
+
+    Registered operations
+    ---------------------
+    The inherited operator dunders from [`Operable`][qten.abstracts.Operable]
+    are hidden from the generated API page. For `Lattice`, the concrete
+    multimethod behavior defined in this module is:
+
+    - `offset in lattice`: membership test for
+      [`Offset`][qten.geometries.spatials.Offset] values. The queried offset is
+      first rebased into this lattice, then its fractional part is compared
+      against the set of unit-cell site positions. Equivalently, this asks
+      whether the point is a lattice site modulo lattice translations.
+
+    No arithmetic operators are registered directly on `Lattice`.
+
+    String representations
+    ----------------------
+    - `str(lattice)` returns `Lattice(basis=..., boundaries=...)`.
+    - The `basis` part is shown as a nested list of stringified SymPy entries.
+    - The `boundaries` part uses the boundary object's own `str(...)`
+      representation.
+    - `repr(lattice)` is identical to `str(lattice)`.
+
+    This representation is meant to show the real-space primitive vectors and
+    the finite periodic boundary data, but it does not expand the unit cell.
 
     Attributes
     ----------
-    `basis` : `ImmutableDenseMatrix`
+    basis : ImmutableDenseMatrix
         Real-space basis matrix of the lattice.
-    `boundaries` : `BoundaryCondition`
+    boundaries : BoundaryCondition
         Boundary condition defining the finite periodic region.
+    _unit_cell_fractional : FrozenDict
+        Mapping from unit-cell [`Offset`][qten.geometries.spatials.Offset]
+        representatives to their canonical wrapped fractional coordinates.
     """
 
     boundaries: BoundaryCondition
+    """
+    Boundary condition defining the finite periodic region and canonical
+    representative choice for lattice coordinates.
+    """
     _unit_cell_fractional: FrozenDict = field(init=False, repr=False, compare=True)
+    """
+    Mapping from unit-cell [`Offset`][qten.geometries.spatials.Offset]
+    representatives to their canonical wrapped fractional coordinates. This
+    cached lookup is used for membership tests and unit-cell normalization.
+    """
 
     def __str__(self):
+        """Return `Lattice(basis=..., boundaries=...)` using readable symbolic entries."""
         basis_data = [[str(sympify(x)) for x in row] for row in self.basis.tolist()]
         return f"Lattice(basis={basis_data}, boundaries={self.boundaries})"
 
     def __repr__(self):
+        """Return the same display string as [`__str__()`][qten.geometries.spatials.Lattice.__str__]."""
         return str(self)
 
     @property
     @lru_cache
     def shape(self) -> Tuple[int, ...]:
-        """Return the lattice extents along each primitive direction."""
+        """
+        Return the finite lattice periods along independent primitive directions.
+
+        This is extracted from the Smith normal form of the boundary matrix, so
+        it describes the invariant factors of the quotient group of lattice
+        translations. For diagonal boundaries it reduces to the familiar system
+        size `(L_1, ..., L_d)`.
+        """
         S = smith_normal_form(self.boundaries.basis, domain=sy.ZZ)
         return tuple(S.diagonal())
 
@@ -150,15 +309,21 @@ class Lattice(AbstractLattice["Offset"]):
 
         Parameters
         ----------
-        `basis` : `ImmutableDenseMatrix`
+        basis : ImmutableDenseMatrix
             Real-space basis matrix.
-        `boundaries` : `BoundaryCondition | None`
+        boundaries : BoundaryCondition | None
             Boundary condition defining the periodic region. If omitted,
-            `shape` is used to build a `PeriodicBoundary`.
-        `unit_cell` : `Mapping[str, ImmutableDenseMatrix] | None`
+            `shape` is used to build a [`PeriodicBoundary`][qten.geometries.boundary.PeriodicBoundary].
+        unit_cell : Mapping[str, ImmutableDenseMatrix] | None
             Mapping from site labels to site positions in fractional coordinates.
-        `shape` : `Sequence[int] | None`
+        shape : Sequence[int] | None
             Legacy shorthand for a diagonal periodic boundary.
+
+        Notes
+        -----
+        The `unit_cell` positions are stored in fractional lattice
+        coordinates. An entry such as `(1/2, 0)` means "halfway along the first
+        primitive vector inside the cell", not Cartesian coordinates.
         """
         object.__setattr__(self, "basis", basis)
 
@@ -210,7 +375,14 @@ class Lattice(AbstractLattice["Offset"]):
     @property
     @lru_cache
     def unit_cell(self) -> FrozenDict:
-        """Return unit-cell sites as `Offset` objects in this lattice."""
+        """
+        Return the basis sites/orbitals of one primitive cell.
+
+        Each value is an [`Offset`][qten.geometries.spatials.Offset] whose
+        fractional part specifies the site position `τ` inside the unit cell.
+        Physically, these are the inequivalent basis positions that are
+        repeated by all lattice translations.
+        """
         return FrozenDict(
             {
                 site: Offset(rep=offset, space=self)
@@ -221,7 +393,16 @@ class Lattice(AbstractLattice["Offset"]):
     @property
     @lru_cache
     def dual(self) -> "ReciprocalLattice":
-        """Return the reciprocal lattice dual to this real-space lattice."""
+        r"""
+        Return the reciprocal lattice dual to this real-space lattice.
+
+        If the direct basis is `A`, the reciprocal basis is
+        \(G = 2\pi (A^{-1})^{\mathsf{T}}\). This convention ensures
+
+        \(\exp(\mathrm{i}\, G_j \cdot A_k) = 1\) for primitive
+        direct/reciprocal basis pairs and lets Fourier phases be written
+        directly as \(\exp(-\mathrm{i}\, k \cdot r)\).
+        """
         reciprocal_basis = 2 * sy.pi * self.basis.inv().T
         return ReciprocalLattice(basis=reciprocal_basis, lattice=self)
 
@@ -233,15 +414,22 @@ class Lattice(AbstractLattice["Offset"]):
         *,
         device: Optional[Device] = None,
     ) -> Union[Tuple["Offset", ...], torch.Tensor, np.ndarray]:
-        """
+        r"""
         Enumerate every site in the finite lattice.
 
         Parameters
         ----------
-        `T` : `Type[Union[Offset, torch.Tensor, np.ndarray]]`
-            Requested return type. `Offset` returns lattice-site objects,
+        T : Type[Union[Offset, torch.Tensor, np.ndarray]]
+            Requested return type. [`Offset`][qten.geometries.spatials.Offset] returns lattice-site objects,
             while `torch.Tensor` and `np.ndarray` return Cartesian coordinates
             with shape `(n_sites, dim)`.
+
+        Notes
+        -----
+        The enumeration consists of one wrapped representative for every
+        periodic cell in `boundaries`, combined with every site in `unit_cell`.
+        In tensor/array form, the output is already converted to Cartesian
+        coordinates with `basis @ rep`, mathematically \(A r\).
         """
         if T == torch.Tensor:
             return _lattice_coords(self, device=device)
@@ -263,12 +451,16 @@ class Lattice(AbstractLattice["Offset"]):
     @lru_cache
     def basis_vectors(self) -> Tuple["Offset", ...]:
         """
-        Return the primitive basis vectors as spatial `Offset`s.
+        Return the primitive basis vectors as spatial [`Offset`][qten.geometries.spatials.Offset]s.
 
         If a primitive vector coincides with a valid lattice site modulo unit-cell
         offsets, it is returned in `self`. Otherwise it is returned in
         `self.affine`, since the translation vector is still a valid spatial
         vector even when it is not itself a site of the lattice.
+
+        Physically, these vectors generate translations from one primitive cell
+        to neighboring primitive cells. Whether they are also valid "sites"
+        depends on the chosen unit-cell basis positions.
         """
         vectors = []
         for j in range(self.dim):
@@ -287,11 +479,21 @@ class Lattice(AbstractLattice["Offset"]):
 
         Parameters
         ----------
-        `unit_cell` : `str`
+        unit_cell : str
             Label of the site within the unit cell.
-        `cell_offset` : `Sequence[int] | None`
+        cell_offset : Sequence[int] | None
             Integer translation in lattice coordinates. If omitted, the origin
             cell is used.
+
+        Returns
+        -------
+        Offset[Lattice]
+            The site with fractional coordinates `n + τ`, where `n` is the
+            integer `cell_offset` and `τ` is the selected unit-cell position.
+
+        Physically this picks a specific basis site in a specific translated
+        unit cell, then wraps it into the canonical representative of the
+        finite periodic lattice.
         """
         try:
             site = self.unit_cell[unit_cell]
@@ -312,7 +514,14 @@ class Lattice(AbstractLattice["Offset"]):
 def _lattice_coords(
     lattice: Lattice, *, device: Optional[Device] = None
 ) -> torch.Tensor:
-    """Return Cartesian coordinates for every site in a finite lattice."""
+    """
+    Return Cartesian coordinates for every site in a finite lattice.
+
+    Internally this enumerates lattice representatives in fractional
+    coordinates, adds the unit-cell offsets, wraps them through the boundary
+    identification, and finally converts them to Cartesian coordinates via the
+    lattice basis.
+    """
     precision = get_precision_config()
     torch_device = device.torch_device() if device is not None else None
 
@@ -352,42 +561,90 @@ def _lattice_coords(
 
 @dataclass(frozen=True)
 class ReciprocalLattice(AbstractLattice["Momentum"]):
-    """
-    Reciprocal-space lattice dual to a real-space `Lattice`.
+    r"""
+    Reciprocal-space lattice dual to a real-space [`Lattice`][qten.geometries.spatials.Lattice].
+
+    This object represents the finite set of crystal momenta compatible with
+    the periodic real-space lattice. Its basis vectors are the reciprocal
+    primitive vectors, and its canonical points are the sampled momenta of the
+    discrete Brillouin-zone mesh induced by the real-space supercell.
+
+    Registered operations
+    ---------------------
+    The inherited operator dunders from [`Operable`][qten.abstracts.Operable]
+    are hidden from the generated API page. For `ReciprocalLattice`, the
+    concrete multimethod behavior defined in this module is:
+
+    - `momentum in reciprocal_lattice`: membership test for
+      [`Momentum`][qten.geometries.spatials.Momentum] values. This checks that
+      the queried point belongs to the same reciprocal lattice and lies on the
+      sampled discrete momentum grid modulo reciprocal lattice vectors.
+
+    No arithmetic operators are registered directly on `ReciprocalLattice`.
+
+    String representations
+    ----------------------
+    - `str(reciprocal)` returns `ReciprocalLattice(basis=..., shape=...)`.
+    - `basis` is shown as a nested list of stringified SymPy entries.
+    - `shape` is the canonical finite reciprocal-grid shape derived from the
+      dual direct lattice.
+    - `repr(reciprocal)` is identical to `str(reciprocal)`.
+
+    The display emphasizes the reciprocal primitive vectors and the sampled
+    grid size rather than printing the full underlying direct lattice.
 
     Attributes
     ----------
-    `basis` : `ImmutableDenseMatrix`
-        Reciprocal basis matrix including the conventional `2π` factor.
-    `lattice` : `Lattice`
+    basis : ImmutableDenseMatrix
+        Reciprocal basis matrix including the conventional \(2\pi\) factor.
+    lattice : Lattice
         Real-space lattice from which this reciprocal lattice is derived.
     """
 
     lattice: Lattice
+    """
+    Real-space lattice from which this reciprocal lattice is derived. Its
+    boundary data determines the discrete Brillouin-zone sampling shape.
+    """
 
     def __str__(self):
+        """Return `ReciprocalLattice(basis=..., shape=...)` for readable inspection."""
         basis_data = [[str(sympify(x)) for x in row] for row in self.basis.tolist()]
         return f"ReciprocalLattice(basis={basis_data}, shape={self.shape})"
 
     def __repr__(self):
+        """Return the same display string as [`__str__()`][qten.geometries.spatials.ReciprocalLattice.__str__]."""
         return str(self)
 
     @property
     @lru_cache
     def shape(self) -> Tuple[int, ...]:
-        """Return the discrete reciprocal-grid shape."""
+        """
+        Return the reciprocal-grid periods.
+
+        These match the invariant factors of the direct finite lattice. In a
+        finite periodic system, the number of allowed momentum samples along
+        each independent reciprocal direction is therefore the same as the
+        number of real-space periods along the dual direct direction.
+        """
         return self.lattice.shape
 
     @property
     @lru_cache
     def size(self) -> int:
-        """Return the total number of reciprocal points."""
+        """
+        Return the number of distinct sampled momentum points.
+
+        For a finite periodic lattice, this equals the number of unit-cell
+        translation sectors in real space, i.e. the size of the discrete
+        translation group.
+        """
         return int(np.prod(self.shape))
 
     @property
     @lru_cache
     def dual(self) -> Lattice:
-        """Return the real-space lattice dual to this reciprocal lattice."""
+        """Return the underlying direct-space lattice whose Fourier dual this is."""
         return self.lattice
 
     @lru_cache
@@ -398,15 +655,24 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
         *,
         device: Optional[Device] = None,
     ) -> Union[Tuple["Momentum", ...], torch.Tensor, np.ndarray]:
-        """
+        r"""
         Enumerate canonical momentum points.
 
         Parameters
         ----------
-        `T` : `Type[Union[Momentum, torch.Tensor, np.ndarray]]`
-            Requested return type. `Momentum` returns momentum-point objects, while
+        T : Type[Union[Momentum, torch.Tensor, np.ndarray]]
+            Requested return type. [`Momentum`][qten.geometries.spatials.Momentum] returns momentum-point objects, while
             `torch.Tensor` and `np.ndarray` return Cartesian coordinates with
             shape `(n_points, dim)`.
+
+        Notes
+        -----
+        The allowed points are representatives of the quotient
+        \(\mathbb{Z}^d / N^{\mathsf{T}}\mathbb{Z}^d\), where \(N\) is the
+        direct-lattice boundary matrix. In fractional reciprocal coordinates
+        this means points of the form
+        \(\kappa = N^{-\mathsf{T}}m\) modulo integers, which are then wrapped
+        into the first reciprocal cell.
         """
         torch_device = device.torch_device() if device is not None else None
         # Enumerate one representative per class in Z^d / N^T Z^d, where N is
@@ -449,8 +715,13 @@ class ReciprocalLattice(AbstractLattice["Momentum"]):
         Return the primitive reciprocal basis vectors as spatial objects.
 
         If a primitive reciprocal vector coincides with a sampled momentum point,
-        it is returned as a `Momentum` in `self`. Otherwise it is returned as an
-        `Offset` in `self.affine`.
+        it is returned as a [`Momentum`][qten.geometries.spatials.Momentum] in `self`. Otherwise it is returned as an
+        [`Offset`][qten.geometries.spatials.Offset] in `self.affine`.
+
+        Physically, these are the reciprocal vectors that generate translations
+        in momentum space by one reciprocal lattice period. A primitive
+        reciprocal vector need not itself be one of the finite sampled momenta
+        of the discrete grid.
         """
         vectors = []
         for j in range(self.dim):
@@ -518,66 +789,165 @@ OffsetType = TypeVar("OffsetType", bound="Offset")
 @need_validation(_check_offset_matches_space, check_numerical("rep"))
 @dataclass(frozen=True)
 class Offset(Generic[S], Spatial, HasBase[S]):
-    """
+    r"""
     Offset vector in an affine basis.
 
-    Let :math:`x = (r_x, S_x)` and :math:`y = (r_y, S_y)`, where
-    :math:`r_x, r_y \\in \\mathbb{R}^{d \\times 1}` are coordinate columns and
-    :math:`S_x, S_y` are affine spaces with basis matrices :math:`B_x, B_y`.
+    An `Offset` stores coordinates in the basis of some
+    [`AffineSpace`][qten.geometries.spatials.AffineSpace]. It can represent a
+    displacement, a point relative to an origin, or a lattice site position,
+    depending on the surrounding context. The physically meaningful Cartesian
+    vector is always \(A r\), where \(A\) is `space.basis` and \(r\) is `rep`.
 
-    Algebra
-    -------
-    :math:`-x = (-r_x, S_x)`.
+    Registered operations
+    ---------------------
+    The public arithmetic and comparison operators for
+    [`Offset`][qten.geometries.spatials.Offset] are implemented by multimethod
+    registrations on [`Operable`][qten.abstracts.Operable]. Those inherited
+    `__xxx__` members are hidden from the generated API page, so this section
+    is the canonical reference for Offset-specific operator behavior.
 
-    :math:`x + y = (r_x + \\tilde r_y, S_x)`, where
-    :math:`\\tilde r_y = B_x^{-1} B_y r_y` if :math:`S_x \\neq S_y`
-    (equivalently, rebase :math:`y` into :math:`S_x` first).
+    Addition, subtraction, and negation
+    -----------------------------------
+    - `x + y`: add two offsets. If they are expressed in different affine
+      spaces, `y` is first rebased into `x.space`; the result is returned in
+      `x.space`.
+    - `x - y`: subtract two offsets via `x + (-y)`, again rebasing the
+      right-hand operand when needed.
+    - `-x`: negate the coordinates while preserving the ambient space.
 
-    :math:`x - y = x + (-y)`.
+    These operations preserve the represented geometric vector, up to the
+    periodic wrapping rules of a finite [`Lattice`][qten.geometries.spatials.Lattice].
 
-    Equality
-    --------
-    :math:`x = y \\iff (r_x = r_y) \\land (S_x = S_y)`.
-    This is exact structural equality; no implicit rebasing is applied.
+    Scalar multiplication
+    ---------------------
+    - `c * x` and `x * c` are registered for numeric scalars
+      (`numbers.Number`).
+    - `expr * x` and `x * expr` are also registered for non-numeric
+      `sympy.Expr` values.
 
-    Order
-    -----
-    For :math:`x < y` and :math:`x > y`:
-    compare :math:`d_x` and :math:`d_y` first.
-    If :math:`d_x = d_y`, compare Cartesian tuples
-    :math:`\\mathrm{tuple}(B_x r_x)` and :math:`\\mathrm{tuple}(B_y r_y)`
-    lexicographically.
+    In all four cases, the coordinates are scaled symbolically and the result
+    stays in the same ambient space. When that space is a finite lattice, the
+    result is normalized to the canonical wrapped representative by
+    [`Offset.__post_init__()`][qten.geometries.spatials.Offset.__post_init__].
+
+    Ordered comparisons
+    -------------------
+    - `x < y`
+    - `x > y`
+
+    These are registered only for offset-offset comparisons. If dimensions
+    differ, comparison is by dimension. If dimensions match, both operands are
+    converted to Cartesian vectors and compared lexicographically. This gives a
+    deterministic ordering useful for sorting and tie-breaking, not a physical
+    partial order.
 
     Unsupported operators
     ---------------------
-    :math:`\\le, \\ge, \\times, @, /, //, ^, \\land, \\lor`
-    are not defined for `Offset` and raise `NotImplementedError`.
+    The following `Operable` operators have no registrations for `Offset` in
+    this module and therefore raise `NotImplementedError` when dispatched:
+
+    - containment as the queried object, e.g. `offset in something` unless that
+      container type registers support,
+    - `<=`, `>=`,
+    - matrix multiplication `@`,
+    - true division `/` and reflected true division,
+    - floor division `//`,
+    - exponentiation `**`,
+    - logical `&` and `|`.
+
+    String representations
+    ----------------------
+    - `str(offset)` returns `Offset(rep ∈ basis)` in a compact symbolic form.
+    - If `rep` is a column vector, it is flattened and shown as a one-dimensional
+      Python list like `['1/2', '0']`.
+    - If `rep` is not a single column, it is shown as a nested list preserving
+      its matrix shape.
+    - The ambient-space basis is always shown as a nested list of stringified
+      SymPy entries after the `∈` symbol.
+    - `repr(offset)` is identical to `str(offset)`.
+
+    This means the string form shows the coordinate representation and the
+    basis it lives in, not the Cartesian vector `space.basis @ rep`
+    (mathematically \(A r\)).
+
+    Let \(x = (r_x, S_x)\) and \(y = (r_y, S_y)\), where
+    \(r_x, r_y \in \mathbb{R}^{d \times 1}\) are coordinate columns and
+    \(S_x, S_y\) are affine spaces with basis matrices \(B_x, B_y\).
+
+    Algebra
+    -------
+    Negation is \(-x = (-r_x, S_x)\).
+
+    Addition is \(x + y = (r_x + \tilde r_y, S_x)\), where
+    \(\tilde r_y = B_x^{-1} B_y r_y\) if \(S_x \ne S_y\)
+    (equivalently, rebase \(y\) into \(S_x\) first).
+
+    Subtraction is \(x - y = x + (-y)\).
+
+    Equality
+    --------
+    Equality is \(x = y \iff (r_x = r_y) \land (S_x = S_y)\). This is exact
+    structural equality; no implicit rebasing is applied.
+
+    Order
+    -----
+    For \(x < y\) and \(x > y\): compare \(d_x\) and \(d_y\) first.
+    If \(d_x = d_y\), compare Cartesian tuples
+    \(\mathrm{tuple}(B_x r_x)\) and \(\mathrm{tuple}(B_y r_y)\)
+    lexicographically.
 
     Attributes
     ----------
-    `rep` : `ImmutableDenseMatrix`
+    rep : ImmutableDenseMatrix
         Column vector of coordinates expressed in `space`.
-    `space` : `AffineSpace`
+    space : AffineSpace
         Affine space that defines the coordinate basis for `rep`.
     """
 
     rep: ImmutableDenseMatrix
+    r"""
+    Column vector of coordinates expressed in `space`. The physically
+    represented Cartesian vector is obtained from \(A r\), using
+    `space.basis` as \(A\) and `rep` as \(r\).
+    """
     space: S
+    """
+    Affine space that defines the coordinate basis for `rep`, including how
+    those coordinates should be interpreted and rebased.
+    """
 
     def __post_init__(self):
-        """Normalize lattice offsets into the canonical wrapped representative."""
+        """
+        Normalize lattice offsets into the canonical wrapped representative.
+
+        When `space` is a finite [`Lattice`][qten.geometries.spatials.Lattice],
+        positions related by the boundary condition are physically equivalent.
+        This hook stores the canonical representative chosen by
+        `space.boundaries.wrap`.
+        """
         if isinstance(self.space, Lattice):
             wrapped = self.space.boundaries.wrap(self.rep)
             object.__setattr__(self, "rep", ImmutableDenseMatrix(wrapped))
 
     @property
     def dim(self) -> int:
-        """Return the number of coordinates in this offset."""
+        """
+        Return the coordinate dimension of this offset.
+
+        This equals the dimension of the ambient space, not the number of
+        physically distinct periodic images.
+        """
         return self.rep.rows
 
     def fractional(self) -> "Offset":
-        """
-        Return the fractional coordinates of this Offset within its affine space.
+        r"""
+        Return the intra-cell fractional part of this offset.
+
+        If \(\mathrm{rep} = n + s\) with integer vector
+        \(n = \lfloor\mathrm{rep}\rfloor\) and \(0 \le s_j < 1\), this returns
+        the offset with coordinates `s` in the
+        same space. On a direct lattice, `n` labels which primitive cell the
+        point lies in and `s` labels where it sits inside the cell.
         """
         n = sy.Matrix([sy.floor(x) for x in self.rep])
         s = self.rep - n
@@ -586,35 +956,55 @@ class Offset(Generic[S], Spatial, HasBase[S]):
     fractional = lru_cache(fractional)  # Prevent mypy type checking issues
 
     def base(self) -> S:
-        """Get the `AffineSpace` this `Offset` is expressed in."""
+        r"""
+        Return the affine space whose basis defines these coordinates.
+
+        Mathematically, this is the object that supplies the matrix \(A\) in the
+        Cartesian embedding \(x = A\,\mathrm{rep}\). In code, this is
+        `space.basis @ rep`.
+        """
         return self.space
 
     def rebase(self, space: S) -> "Offset[S]":
-        """
+        r"""
         Re-express this Offset in a different AffineSpace.
 
         Parameters
         ----------
-        `space` : `AffineSpace`
+        space : AffineSpace
             The new affine space to express this Offset in.
 
         Returns
         -------
-        `Offset`
+        Offset
             New Offset expressed in the given affine space.
+
+        Notes
+        -----
+        Rebasing changes only the coordinates, not the physical vector. If
+        \(x = A_{\mathrm{old}}r_{\mathrm{old}} =
+        A_{\mathrm{new}}r_{\mathrm{new}}\), this method computes
+        \(r_{\mathrm{new}} =
+        A_{\mathrm{new}}^{-1}A_{\mathrm{old}}r_{\mathrm{old}}\). In code,
+        the transform matrix is `space.basis.inv() @ self.space.basis`.
         """
         rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Offset(rep=ImmutableDenseMatrix(new_rep), space=space)
 
     def to_vec(self, T: Type[_VecType] = sy.ImmutableMatrix) -> _VecType:
-        """Convert this Offset to a vector in Cartesian coordinates by applying
-        the basis transformation of its affine space.
+        r"""
+        Convert this offset from basis coordinates to Cartesian coordinates.
+
+        If `rep` stores coefficients in the primitive basis, this method returns
+        the physical vector \(A r\), using `space.basis` as \(A\) and `rep` as
+        \(r\). This is the quantity that should be used in Euclidean geometry
+        and Fourier phases.
 
         Returns
         -------
-        `ImmutableDenseMatrix`
-            The Cartesian coordinate vector in column format corresponding to this Offset.
+        ImmutableDenseMatrix
+            The Cartesian coordinate vector corresponding to this offset.
         """
         vec = self.space.basis @ self.rep
         if T == ImmutableDenseMatrix:
@@ -631,12 +1021,16 @@ class Offset(Generic[S], Spatial, HasBase[S]):
 
     def distance(self, r: "Offset") -> float:
         """
-        Return the distance to another offset using the ambient boundary condition.
+        Return the geometric distance to another offset.
 
         If either offset is expressed on a lattice with periodic boundary
         conditions, the distance is computed using the nearest periodic image
         of the displacement in that lattice. Otherwise, the plain Euclidean
         norm of the displacement in the current affine space is returned.
+
+        Physically, for lattice points this is the minimum-image distance on the
+        torus defined by the finite supercell, not the naive distance between
+        two unwrapped representatives.
         """
         if isinstance(self.space, Lattice):
             delta = self - r.rebase(self.space)
@@ -651,6 +1045,14 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         return float(np.linalg.norm(delta_cart.reshape(-1)))
 
     def __str__(self):
+        """
+        Return a symbolic display of the stored coordinates and ambient basis.
+
+        Column-vector coordinates are flattened for readability; higher-rank
+        matrix representations keep their nested-list structure. The basis of
+        `space` is always included so the printed coordinates remain
+        unambiguous.
+        """
         # If it's a column vector, flatten to 1D python list
         if self.rep.shape[1] == 1:
             vec = [str(sympify(v)) for v in list(self.rep)]
@@ -660,6 +1062,7 @@ class Offset(Generic[S], Spatial, HasBase[S]):
         return f"Offset({vec} ∈ {basis})"
 
     def __repr__(self):
+        """Return the same display string as [`__str__()`][qten.geometries.spatials.Offset.__str__]."""
         return str(self)
 
 
@@ -691,21 +1094,89 @@ def _(lattice: Lattice, offset: Offset) -> bool:
 
 @dataclass(frozen=True)
 class Momentum(Offset[ReciprocalLattice], Convertible):
-    """
-    Reciprocal-space coordinate expressed in a `ReciprocalLattice`.
+    r"""
+    Reciprocal-space coordinate expressed in a [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice].
+
+    A `Momentum` is the reciprocal-space analogue of
+    [`Offset`][qten.geometries.spatials.Offset]. Its fractional coordinates are
+    coefficients in the reciprocal basis vectors. Because the reciprocal basis
+    already contains the conventional \(2\pi\), the Cartesian vector returned by
+    [`to_vec()`][qten.geometries.spatials.Offset.to_vec] can be inserted
+    directly into phases such as \(\exp(-\mathrm{i}\, k\cdot r)\). In code,
+    that Cartesian vector is computed from `space.basis @ rep`.
+
+    Registered operations
+    ---------------------
+    [`Momentum`][qten.geometries.spatials.Momentum] overrides the
+    [`Offset`][qten.geometries.spatials.Offset] arithmetic registrations with
+    momentum-preserving versions where appropriate.
+
+    Addition, subtraction, and negation
+    -----------------------------------
+    - `k + q`: add two momenta. If they are expressed in different reciprocal
+      lattices, the right-hand operand is first rebased into the left-hand
+      space. The result is a `Momentum`.
+    - `k - q`: subtract two momenta via `k + (-q)`.
+    - `-k`: negate the momentum coordinates and return a `Momentum`.
+
+    These operations preserve the interpretation as reciprocal-space vectors
+    instead of falling back to plain [`Offset`][qten.geometries.spatials.Offset]
+    results.
+
+    Scalar multiplication
+    ---------------------
+    `Momentum` does not define separate multiplication registrations in this
+    module. It inherits the [`Offset`][qten.geometries.spatials.Offset]
+    registrations, and those dispatch through `type(r)(...)`, so both numeric
+    and symbolic scalar multiplication still return a `Momentum`:
+
+    - `c * k`, `k * c` for numeric scalars,
+    - `expr * k`, `k * expr` for non-numeric `sympy.Expr` scalars.
+
+    Containment and unsupported operators
+    -------------------------------------
+    `Momentum` itself is the queried value in `momentum in reciprocal_lattice`;
+    the actual membership registration lives on
+    [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice].
+
+    As for [`Offset`][qten.geometries.spatials.Offset], there are no
+    registrations here for `<=`, `>=`, `@`, `/`, reflected `/`, `//`, `**`,
+    `&`, or `|`.
+
+    String representations
+    ----------------------
+    `Momentum` inherits [`Offset.__str__()`][qten.geometries.spatials.Offset.__str__]
+    and [`Offset.__repr__()`][qten.geometries.spatials.Offset.__repr__].
+    Concretely:
+
+    - `str(momentum)` prints `Offset(rep ∈ basis)`, not a separate
+      `Momentum(...)` wrapper.
+    - `rep` is the reciprocal-coordinate column, flattened when it is a single
+      column.
+    - `basis` is the reciprocal-lattice basis, so the display still makes it
+      clear that the object lives in momentum space.
+    - `repr(momentum)` is identical to `str(momentum)`.
+
+    This is intentionally representation-centric: it shows the stored
+    reciprocal coordinates and reciprocal basis directly.
 
     Attributes
     ----------
-    `rep` : `ImmutableDenseMatrix`
+    rep : ImmutableDenseMatrix
         Column vector of reciprocal coordinates in fractional form.
-    `space` : `ReciprocalLattice`
+    space : ReciprocalLattice
         Reciprocal lattice that defines the basis for `rep`.
     """
 
     @override
     def fractional(self) -> "Momentum":
         """
-        Return the fractional coordinates of this Momentum within its lattice space.
+        Return the representative in the first reciprocal cell.
+
+        This removes integer reciprocal-lattice translations from the
+        coordinates, leaving the sampled momentum modulo reciprocal lattice
+        vectors. Physically, momenta differing by an integer reciprocal vector
+        represent the same Bloch phase on the direct lattice.
         """
         n = sy.Matrix([sy.floor(x) for x in self.rep])
         s = self.rep - n
@@ -714,7 +1185,12 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
     fractional = lru_cache(fractional)  # Prevent mypy type checking issues
 
     def base(self) -> ReciprocalLattice:  # type: ignore[override]
-        """Get the `ReciprocalLattice` this `Momentum` is expressed in."""
+        """
+        Return the reciprocal lattice whose basis defines these coordinates.
+
+        This is the momentum-space frame supplying the reciprocal basis vectors
+        in which `rep` is expanded.
+        """
         assert isinstance(self.space, ReciprocalLattice), (
             "Momentum.space must be a ReciprocalLattice"
         )
@@ -726,13 +1202,19 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
 
         Parameters
         ----------
-        `space` : `AffineSpace`
+        space : AffineSpace
             The new affine space (must be a ReciprocalLattice) to express this Momentum in.
 
         Returns
         -------
-        `Momentum`
+        Momentum
             New Momentum expressed in the given reciprocal lattice.
+
+        Notes
+        -----
+        As with [`Offset.rebase()`][qten.geometries.spatials.Offset.rebase],
+        this preserves the physical Cartesian wavevector and only changes the
+        coordinate description.
         """
         rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
