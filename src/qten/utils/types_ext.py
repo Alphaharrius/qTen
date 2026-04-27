@@ -1,3 +1,11 @@
+"""
+Type-introspection helpers.
+
+The functions in this module provide small wrappers around Python class
+introspection for places where QTen needs a stable display name or the full set
+of registered subclasses for dispatch and diagnostics.
+"""
+
 from abc import ABCMeta
 from typing import (
     Tuple,
@@ -10,6 +18,10 @@ def subtypes(cls: Type) -> Tuple[ABCMeta, ...]:
     """
     Return all transitive subclasses of a class.
 
+    The result includes direct and indirect subclasses reachable through
+    `cls.__subclasses__()`. Ordering follows set traversal and should not be
+    treated as stable.
+
     Parameters
     ----------
     cls : Type
@@ -19,6 +31,12 @@ def subtypes(cls: Type) -> Tuple[ABCMeta, ...]:
     -------
     Tuple[ABCMeta, ...]
         A tuple containing all direct and indirect subclasses of `cls`.
+
+    Examples
+    --------
+    ```python
+    subtypes(BaseClass)
+    ```
     """
     out = set()
     stack = list(cls.__subclasses__())
@@ -43,5 +61,11 @@ def full_typename(cls: Type) -> str:
     -------
     str
         The full name of the class, including its module.
+
+    Examples
+    --------
+    ```python
+    full_typename(Device)
+    ```
     """
     return f"{cls.__module__}.{cls.__qualname__}"

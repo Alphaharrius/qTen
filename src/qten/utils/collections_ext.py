@@ -1,3 +1,12 @@
+"""
+Collection helpers used across QTen.
+
+This module provides small extensions around Python collection protocols. The
+main public type, [`FrozenDict`][qten.utils.collections_ext.FrozenDict], is an
+immutable, hashable mapping used where configuration dictionaries need stable
+identity in caches or exported records.
+"""
+
 from collections.abc import Mapping
 from typing import (
     Iterator,
@@ -36,6 +45,13 @@ class FrozenDict(Mapping[_K, _V], Generic[_K, _V]):
     ------
     TypeError
         If any key or value is not hashable.
+
+    Examples
+    --------
+    ```python
+    options = FrozenDict({"method": "exact", "maxiter": 100})
+    cache = {options: "result"}
+    ```
     """
 
     __slots__ = ("__items", "__hash")
@@ -106,19 +122,43 @@ def matchby(
 ) -> Dict[Any, Any]:
     """
     Map elements from source to destination using a provided mapping function.
+
+    For each element in `source`, `base_func` is evaluated and matched against
+    exactly one element in `dest` with the same baseline value. This is useful
+    when two collections contain distinct objects that should be paired by a
+    derived key rather than by object identity.
+
     Parameters
     ----------
     source : Iterable[Any]
-        The source elements to be mapped.
+        Source elements to map from.
     dest : Iterable[Any]
-        The destination elements to map to.
+        Destination elements to map onto.
     base_func : Callable[[Any], Any]
-        A function that defines the comparison baseline.
+        Function that extracts the comparison key from both source and
+        destination elements.
 
     Returns
     -------
     Dict[Any, Any]
-        A dictionary mapping each source element to its corresponding destination element `source -> dest`.
+        Mapping from each source element to its corresponding destination
+        element.
+
+    Raises
+    ------
+    ValueError
+        If two destination elements produce the same baseline value.
+    ValueError
+        If a source element has no destination element with a matching baseline
+        value.
+
+    Examples
+    --------
+    ```python
+    source = ["x0", "y0"]
+    dest = ["x1", "y1"]
+    matchby(source, dest, lambda item: item[0])
+    ```
     """
     mapping: Dict[Any, Any] = {}
 

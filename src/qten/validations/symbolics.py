@@ -1,20 +1,36 @@
+"""
+Symbolic matrix validator factories.
+
+This module provides reusable validators for dataclasses that store SymPy
+matrices. Each public function returns a validator compatible with
+[`need_validation()`][qten.validations.need_validation]. The returned callable
+looks up a named attribute on the validated instance and raises when the stored
+matrix does not satisfy the requested symbolic constraint.
+"""
+
 from typing import Any, Callable
 
 import sympy as sy
 
 
 def check_invertibility(attr_name: str) -> Callable[[Any], None]:
-    """Build a validator that enforces matrix invertibility on an instance attribute.
+    """
+    Build a validator that enforces matrix invertibility on an instance attribute.
 
     The returned callable looks up ``attr_name`` on the provided instance and
-    verifies that the value is a ``sympy.ImmutableDenseMatrix`` with a non-zero
-    determinant. A ``TypeError`` is raised when the attribute is not stored as
-    an immutable dense SymPy matrix, and a ``ValueError`` is raised when the
-    matrix is singular.
+    verifies that the value is a `sympy.ImmutableDenseMatrix` with a non-zero
+    determinant.
+
+    Returned validator raises
+    -------------------------
+    TypeError
+        If the named attribute is not an immutable dense SymPy matrix.
+    ValueError
+        If the named matrix is singular.
 
     Parameters
     ----------
-    attr_name:
+    attr_name : str
         Name of the instance attribute expected to contain the symbolic matrix.
 
     Returns
@@ -34,20 +50,26 @@ def check_invertibility(attr_name: str) -> Callable[[Any], None]:
 
 
 def check_proper_transformation(attr_name: str) -> Callable[[Any], None]:
-    """Build a validator that enforces a positive determinant on a matrix attribute.
+    """
+    Build a validator that enforces a positive determinant on a matrix attribute.
 
     The returned callable retrieves ``attr_name`` from the provided instance and
-    verifies that the value is a ``sympy.ImmutableDenseMatrix`` whose determinant
-    is strictly positive. A ``TypeError`` is raised if the attribute is not stored
-    as an immutable dense SymPy matrix, and a ``ValueError`` is raised if the
-    determinant is non-positive.
+    verifies that the value is a `sympy.ImmutableDenseMatrix` whose determinant
+    is strictly positive.
 
     This validator is useful when the matrix represents an orientation-preserving
     linear transformation.
 
+    Returned validator raises
+    -------------------------
+    TypeError
+        If the named attribute is not an immutable dense SymPy matrix.
+    ValueError
+        If the named matrix has a non-positive determinant.
+
     Parameters
     ----------
-    attr_name:
+    attr_name : str
         Name of the instance attribute expected to contain the symbolic matrix.
 
     Returns
@@ -67,17 +89,23 @@ def check_proper_transformation(attr_name: str) -> Callable[[Any], None]:
 
 
 def check_numerical(attr_name: str) -> Callable[[Any], None]:
-    """Build a validator that enforces numerical matrix entries on an attribute.
+    """
+    Build a validator that enforces numerical matrix entries on an attribute.
 
     The returned callable looks up ``attr_name`` on the provided instance and
-    verifies that the value is a ``sympy.ImmutableDenseMatrix`` whose entries
-    all report ``is_number`` as true. A ``TypeError`` is raised when the
-    attribute is not an immutable dense SymPy matrix, and a ``ValueError`` is
-    raised when any element is symbolic or otherwise non-numeric.
+    verifies that the value is a `sympy.ImmutableDenseMatrix` whose entries all
+    report `is_number` as true.
+
+    Returned validator raises
+    -------------------------
+    TypeError
+        If the named attribute is not an immutable dense SymPy matrix.
+    ValueError
+        If any matrix entry is symbolic or otherwise non-numeric.
 
     Parameters
     ----------
-    attr_name:
+    attr_name : str
         Name of the instance attribute expected to contain the symbolic matrix.
 
     Returns

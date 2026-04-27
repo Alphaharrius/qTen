@@ -1,3 +1,28 @@
+"""
+Logical device helpers used by QTen objects.
+
+QTen exposes a small device vocabulary through [`Device`][qten.utils.devices.Device]:
+`"cpu"` for host execution and `"gpu"` for accelerated execution. The concrete
+backend is resolved by PyTorch when a device is used, currently mapping `"gpu"`
+to CUDA through [`Device.torch_device()`][qten.utils.devices.Device.torch_device].
+
+Repository usage
+----------------
+Use [`Device`][qten.utils.devices.Device] to store device intent in QTen data
+structures and implement [`DeviceBounded`][qten.utils.devices.DeviceBounded]
+when an object can move or copy itself between logical devices.
+
+Examples
+--------
+```python
+device = Device.new("gpu:0")
+torch_device = device.torch_device()
+
+obj_on_cpu = obj.cpu()
+obj_on_gpu = obj.gpu(0)
+```
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
@@ -17,10 +42,8 @@ class Device:
     - `"cpu"` represents host execution.
     - `"gpu"` represents accelerated execution.
 
-    For GPU devices, ``index`` optionally stores a CUDA device index. This index
-    is only meaningful on CUDA-capable systems. On systems where CUDA is not
-    available but PyTorch MPS support is available, GPU requests resolve to the
-    single `"mps"` backend and ``index`` is ignored.
+    For GPU devices, `index` optionally stores a CUDA device index. This index
+    is only meaningful on CUDA-capable systems.
 
     Parameters
     ----------
@@ -29,6 +52,13 @@ class Device:
     index : Optional[int], default=`None`
         Optional CUDA device index. This should only be set when ``name`` is
         `"gpu"`.
+
+    Attributes
+    ----------
+    name : Literal["cpu", "gpu"]
+        Logical device family.
+    index : Optional[int]
+        Optional CUDA device index for GPU execution.
     """
 
     name: Literal["cpu", "gpu"]
@@ -37,9 +67,10 @@ class Device:
     @staticmethod
     def new(name: str) -> "Device":
         """
-        Parse a user-facing device string into a `[`Device`][qten.utils.devices.Device]` instance.
+        Parse a user-facing device string into a [`Device`][qten.utils.devices.Device].
 
-        Supported inputs are:
+        Supported inputs
+        ----------------
         - `"cpu"`
         - `"gpu"`
         - `"gpu:<index>"`, where ``<index>`` is a non-negative integer
@@ -58,6 +89,13 @@ class Device:
         ------
         ValueError
             If the input does not match one of the supported formats.
+
+        Examples
+        --------
+        ```python
+        Device.new("cpu")
+        Device.new("gpu:0")
+        ```
         """
         if name == "cpu":
             return Device(name="cpu")
@@ -76,8 +114,6 @@ class Device:
         Resolution is runtime-dependent:
         - `"cpu"` always maps to ``torch.device("cpu")``.
         - `"gpu"` prefers CUDA when available.
-        - If CUDA is unavailable and MPS is available, `"gpu"` maps to
-          ``torch.device("mps")``.
 
         When CUDA is selected, an explicit ``index`` is used if present.
         Otherwise, the current CUDA device reported by PyTorch is used.
@@ -147,6 +183,11 @@ class DeviceBounded(ABC):
     def cpu(self) -> Self:
         """
         Return a copy of this object residing on the CPU device.
+
+        Returns
+        -------
+        Self
+            A copy of this object on the logical CPU device.
         """
         return self.to_device(Device("cpu"))
 

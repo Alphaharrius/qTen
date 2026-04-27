@@ -1,3 +1,38 @@
+"""
+Versioned pickle-based persistence helpers.
+
+This module provides a lightweight filesystem store for experiment outputs and
+other trusted Python objects. Objects are saved under an IO root, grouped by an
+active environment name, and versioned automatically as `version_<n>.pkl`
+files.
+
+Repository usage
+----------------
+Use [`iodir()`][qten.utils.io.iodir] to configure the root storage directory,
+[`env()`][qten.utils.io.env] to select a project or run namespace, and
+[`save()`][qten.utils.io.save] / [`load()`][qten.utils.io.load] to persist
+trusted objects.
+
+Notes
+-----
+The storage format uses Python `pickle`. Only load files produced by trusted
+code and from trusted locations.
+
+Examples
+--------
+```python
+from qten.utils import io
+
+io.iodir(".runs")
+io.env("trial-a")
+
+version = io.save({"energy": -1.0}, "results")
+rows = io.list_saved("results")
+latest = io.load("results")
+same = io.load("results", version=version)
+```
+"""
+
 import os
 import pickle
 from datetime import datetime, timezone
@@ -22,13 +57,22 @@ def iodir(path: Optional[Union[str, os.PathLike[str]]] = None) -> str:
 
     Parameters
     ----------
-    path
-        Optional filesystem path to use as the IO root.
+    path : str or os.PathLike[str], optional
+        Filesystem path to use as the IO root. If omitted, the existing root is
+        returned, defaulting to `.data` for the current process.
 
     Returns
     -------
     str
-        The resolved IO directory path.
+        The active IO directory path. The directory is created before returning.
+
+    Examples
+    --------
+    ```python
+    from qten.utils import io
+
+    io.iodir(".runs")
+    ```
     """
     global _io_dir
     if path is not None:
@@ -54,7 +98,7 @@ def env(name: Optional[str] = None) -> str:
 
     Parameters
     ----------
-    name
+    name : str, optional
         Environment name to activate, or `None` to query the current one.
 
     Returns
@@ -66,6 +110,15 @@ def env(name: Optional[str] = None) -> str:
     ------
     RuntimeError
         If no environment is set and `name` is `None`.
+
+    Examples
+    --------
+    ```python
+    from qten.utils import io
+
+    io.iodir(".runs")
+    io.env("trial-a")
+    ```
     """
     global _all_env
     global _current_env
@@ -118,10 +171,10 @@ def save(obj: Any, name: str) -> int:
 
     Parameters
     ----------
-    obj
+    obj : Any
         Object to serialize.
-    name
-        Logical name for grouping versions.
+    name : str
+        Logical name used to group versions under the active environment.
 
     Returns
     -------
@@ -132,6 +185,17 @@ def save(obj: Any, name: str) -> int:
     ------
     pickle.PicklingError
         If the object cannot be pickled.
+    RuntimeError
+        If no active environment has been selected with [`env()`][qten.utils.io.env].
+
+    Examples
+    --------
+    ```python
+    from qten.utils import io
+
+    io.env("trial-a")
+    version = io.save({"energy": -1.0}, "results")
+    ```
     """
     root = os.path.join(iodir(), env())
     name_dir = os.path.join(root, name)
@@ -155,9 +219,9 @@ def load(name: str, version: int = -1) -> Any:
 
     Parameters
     ----------
-    name
-        Logical name for grouping versions.
-    version
+    name : str
+        Logical name used to group saved versions.
+    version : int, default=-1
         Version to load; use `-1` for the latest version.
 
     Returns
@@ -171,10 +235,21 @@ def load(name: str, version: int = -1) -> Any:
         If the name or version does not exist.
     pickle.UnpicklingError
         If the pickle data is corrupted.
+    RuntimeError
+        If no active environment has been selected with [`env()`][qten.utils.io.env].
 
     Notes
     -----
     Only load data you trust; pickle is not secure against malicious data.
+
+    Examples
+    --------
+    ```python
+    from qten.utils import io
+
+    latest = io.load("results")
+    first = io.load("results", version=1)
+    ```
     """
     root = os.path.join(iodir(), env())
     name_dir = os.path.join(root, name)
@@ -199,18 +274,21 @@ def list_saved(name: str) -> List[Dict[str, Any]]:
 
     Parameters
     ----------
-    name
-        Logical name for grouping versions.
+    name : str
+        Logical name used to group saved versions.
 
     Returns
     -------
     list[dict[str, Any]]
-        Rows with `version`, `created`, and `size_mib`.
+        Rows with `version`, `created`, and `size_mib` entries for each saved
+        version, sorted by version number.
 
     Raises
     ------
     FileNotFoundError
         If the name does not exist.
+    RuntimeError
+        If no active environment has been selected with [`env()`][qten.utils.io.env].
     """
     root = os.path.join(iodir(), env())
     name_dir = os.path.join(root, name)
