@@ -803,15 +803,22 @@ class Convertible(ABC):
 
     Registration mechanism
     ----------------------
-    `add_conversion(T)` returns a decorator. The decorated function should
-    accept an instance of the source class and return an instance of `T`.
-    Registrations are stored in a module-level conversion table keyed by
-    `(source_type, destination_type)`.
+    `add_conversion(T)` returns a decorator for registering one directed
+    conversion from the class receiving the decorator to `T`. The decorated
+    function should accept one source instance and return one destination
+    instance.
 
-    Unlike [`Functional`][qten.abstracts.Functional] and
-    [`Operable`][qten.abstracts.Operable], conversion dispatch is intentionally
-    one-sided: lookup varies over the source type's MRO and a fixed destination
-    type. Destination supertypes are not searched.
+    For example, `@Source.add_conversion(Target)` stores the decorated function
+    under the exact key `(Source, Target)`. Later, `source.convert(Target)`
+    first checks `(type(source), Target)`. If that exact key is absent, lookup
+    walks the source type's MRO and tries `(SourceParent, Target)`,
+    `(SourceGrandparent, Target)`, and so on.
+
+    The destination type is not relaxed during lookup. A conversion registered
+    for `(Source, BaseTarget)` is not used by `source.convert(DerivedTarget)`,
+    and a conversion registered for `(Source, DerivedTarget)` is not used by
+    `source.convert(BaseTarget)`. Register each destination type explicitly when
+    those conversions should be available.
     """
 
     @classmethod
