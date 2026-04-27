@@ -792,37 +792,82 @@ def nearest_bands(
     points: Optional[Dict[str, Sequence[float]]] = None,
 ) -> Tensor:
     r"""
-    Select bands near ``close_to`` at a single anchor k-point, then project
-    ``H(k)`` onto that subspace for every momentum.
+    Project a momentum-resolved Hamiltonian onto bands selected at one k-point.
 
-    The anchor momentum is located by:
-    - a string label looked up in ``points`` (``"Gamma"`` defaults to the
-      origin when the label is absent from ``points``), or
-    - an explicit fractional-coordinate tuple.
+    The input `h_k` is diagonalized at a single anchor momentum \(k_0\).
+    Eigenvectors whose anchor eigenvalues lie within `tol` of `close_to` are
+    collected into a rectangular matrix \(V\). If the input Hilbert dimension is
+    \(N\) and \(S\) bands are selected, then `V` has shape `(N, S)` and the
+    returned tensor stores \(V^\dagger H(k) V\) for every momentum \(k\).
 
-    ``h_k`` is diagonalized at the anchor k-point, and the eigenvectors whose
-    eigenvalues lie within ``tol`` of ``close_to`` are collected into a
-    rectangular matrix ``V`` of shape ``(N, H)``. The returned tensor is
-    :math:`V^{\dagger} H(k) V` for every ``k``.
+    Projection convention
+    ---------------------
+    At the selected anchor sector, the code computes
+    `eigenvalues, eigenvectors = torch.linalg.eigh(H_anchor)`. The columns of
+    `eigenvectors` with \(|\epsilon_n(k_0) - \mathrm{close\_to}| \le \mathrm{tol}\)
+    form \(V\). The projected block at each momentum is
+    \(H_{\mathrm{proj}}(k) = V^\dagger H(k) V\).
+
+    In implementation terms, this projection is the einsum
+    `torch.einsum("ia,kab,bj->kij", V_dag, h_k.data, V)`.
+
+    Anchor selection
+    ----------------
+    - A string `point` is looked up in `points`.
+    - `"Gamma"` defaults to the fractional origin when absent from `points`.
+    - A coordinate sequence is interpreted directly as fractional coordinates.
+    - Fractional-coordinate differences are wrapped by subtracting the nearest
+      integer, so equivalent periodic coordinates select the same anchor.
+
+    If no eigenvalue falls inside the tolerance window, the result has two
+    zero-dimensional [`IndexSpace`][qten.symbolics.state_space.IndexSpace] axes
+    and data shape `(len(kspace), 0, 0)`.
+
+    Notes
+    -----
+    The selected subspace is fixed by the anchor momentum only. The same
+    anchor eigenvector matrix \(V\) is applied to every \(H(k)\); this is a
+    projection onto an anchor-defined subspace, not a separately diagonalized
+    band selection at each momentum.
 
     Parameters
     ----------
-    `h_k` : `Tensor`
-        Hamiltonian tensor with dims `(MomentumSpace, HilbertSpace, HilbertSpace)`.
-    `point` : `str` or fractional coordinate, default `"Gamma"`
-        Anchor k-point. When a string, it is looked up in `points`.
-    `close_to` : `float`, default `0.0`
+    h_k : Tensor
+        Hamiltonian tensor with dims
+        ([`MomentumSpace`][qten.symbolics.state_space.MomentumSpace],
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace],
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]).
+    point : str or Sequence[float], default="Gamma"
+        Anchor k-point. String labels are resolved through `points`, except
+        `"Gamma"` which defaults to the fractional origin.
+    close_to : float, default=0.0
         Target eigenvalue for the subspace selection.
-    `tol` : `float`, default `1e-6`
-        Half-window around `close_to` for including eigenvectors.
-    `points` : dict, optional
+    tol : float, default=1e-6
+        Half-width of the eigenvalue window around `close_to`.
+    points : dict[str, Sequence[float]], optional
         Mapping from labels to fractional coordinates.
 
     Returns
     -------
-    `Tensor`
-        Tensor with dims `(MomentumSpace, IndexSpace, IndexSpace)` whose last
-        two axes span the selected subspace.
+    Tensor
+        Projected Hamiltonian with dims
+        ([`MomentumSpace`][qten.symbolics.state_space.MomentumSpace],
+        [`IndexSpace`][qten.symbolics.state_space.IndexSpace],
+        [`IndexSpace`][qten.symbolics.state_space.IndexSpace]). The last two
+        axes span the selected subspace.
+
+    Raises
+    ------
+    ValueError
+        If `h_k` is not rank 3, if the momentum space is empty, or if the
+        anchor coordinate dimension does not match the momentum-space
+        dimension.
+    TypeError
+        If the input dimensions are not
+        `(MomentumSpace, HilbertSpace, HilbertSpace)`.
+    KeyError
+        If `point` is a string other than `"Gamma"` and is not present in
+        `points`.
     """
     if h_k.rank() != 3:
         raise ValueError(f"Input tensor must be of rank 3, but has rank {h_k.rank()}")
