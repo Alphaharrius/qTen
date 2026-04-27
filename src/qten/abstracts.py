@@ -462,6 +462,32 @@ class Functional(ABC):
         return method(self, obj, **kwargs)
 
     def __call__(self, obj: Any, **kwargs) -> Any:
+        """
+        Apply this functional to `obj`.
+
+        This is shorthand for [`invoke(obj, **kwargs)`][qten.abstracts.Functional.invoke].
+        Subclasses such as [`Opr`][qten.symbolics.hilbert_space.Opr] may refine
+        the return-value contract, but dispatch still uses the same registered
+        functional handlers.
+
+        Parameters
+        ----------
+        obj : Any
+            Runtime object to dispatch on.
+        **kwargs : Any
+            Additional keyword arguments forwarded to `invoke`.
+
+        Returns
+        -------
+        Any
+            Result returned by the resolved registered handler.
+
+        Raises
+        ------
+        NotImplementedError
+            If no registered handler applies to the runtime input and
+            functional types.
+        """
         return self.invoke(obj, **kwargs)
 
 
