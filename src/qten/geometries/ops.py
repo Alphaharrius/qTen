@@ -515,15 +515,15 @@ def region_tile(
     bases: tuple[OffsetType, ...],
     counts: tuple[int, ...],
 ) -> tuple[OffsetType, ...]:
-    """
+    r"""
     Tile a region by integer combinations of the supplied translation bases.
 
     The returned region contains translations of every point in `region` by
     offsets
 
-    .. math::
-
-        \\sum_i n_i b_i, \\qquad 0 \\le n_i < \\mathrm{counts}[i],
+    $$
+    \sum_i n_i b_i, \qquad 0 \le n_i < \mathrm{counts}[i],
+    $$
 
     where `b_i` are the entries of `bases`.
 
