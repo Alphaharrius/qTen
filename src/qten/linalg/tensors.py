@@ -14,6 +14,8 @@ Core API
   Context manager for forcing newly created QTen tensors onto a device.
 - [`matmul`][qten.linalg.tensors.matmul]
   StateSpace-aware matrix multiplication.
+- [`kron`][qten.linalg.tensors.kron]
+  StateSpace-aware Kronecker product.
 - [`align`][qten.linalg.tensors.align]
   Reorder or expand a tensor axis so it matches a target symbolic dimension.
 - [`union_dims`][qten.linalg.tensors.union_dims]
@@ -83,7 +85,7 @@ import builtins
 from multimethod import DispatchError, multimethod
 import torch
 
-from ..abstracts import Convertible, Operable
+from ..abstracts import Convertible, HasKroneckerProduct, Operable
 from ..plottings import Plottable
 from ..precision import get_precision_config
 from ..utils.devices import Device, DeviceBounded
@@ -201,7 +203,9 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
 
 @need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
-class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
+class Tensor(
+    Generic[T], Operable, Plottable, Convertible, DeviceBounded, HasKroneckerProduct
+):
     r"""
     StateSpace-aware tensor wrapper over `torch.Tensor`.
 
@@ -1637,6 +1641,32 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         return product_dims(self, *indices_group)
 
+    def kron(self, other: "Tensor") -> "Tensor":
+        """
+        Compute the StateSpace-aware Kronecker product with another tensor.
+
+        This method delegates to [`kron(left, right)`][qten.linalg.tensors.kron].
+        The Kronecker product is position-wise across axes: each output axis is
+        built from the tensor product of the corresponding symbolic dimensions.
+
+        Parameters
+        ----------
+        other : Tensor
+            Right operand of the Kronecker product.
+
+        Returns
+        -------
+        Tensor
+            Tensor with data `torch.kron(self.data, other.data)` and
+            position-wise tensor-product dimensions.
+
+        See Also
+        --------
+        [`kron(left, right)`][qten.linalg.tensors.kron]
+            Functional form with full semantics.
+        """
+        return kron(self, other)
+
     def dim_types(self) -> Tuple[type, ...]:
         """
         Return a tuple of the types of the dimensions in the tensor.
@@ -1737,6 +1767,73 @@ def _match_dims_for_matmul(left: Tensor, right: Tensor) -> Tuple[Tensor, Tensor]
     elif right.rank() > left.rank():
         left = promote_rank(left, right.rank())
     return left, right
+
+
+def _kron_dim(left_dim: StateSpace, right_dim: StateSpace) -> StateSpace:
+    if isinstance(left_dim, BroadcastSpace):
+        return right_dim
+    if isinstance(right_dim, BroadcastSpace):
+        return left_dim
+    if isinstance(left_dim, HasKroneckerProduct) and isinstance(
+        right_dim, HasKroneckerProduct
+    ):
+        return cast(StateSpace, left_dim.kron(right_dim))
+    raise TypeError(
+        "kron only supports dimensions implementing HasKroneckerProduct "
+        "(BroadcastSpace allowed as neutral axis), got "
+        f"{type(left_dim).__name__} and {type(right_dim).__name__}."
+    )
+
+
+@auto_promote
+def kron(left: Tensor, right: Tensor) -> Tensor:
+    """
+    Compute the StateSpace-aware Kronecker product between two tensors.
+
+    Semantics
+    ---------
+    This function applies `torch.kron(left.data, right.data)` and propagates
+    symbolic metadata axis-by-axis:
+
+    - The operands must have the same rank.
+    - For each axis `i`, output dim `i` is `left.dims[i] @ right.dims[i]`.
+    - Non-broadcast axes must implement
+      [`HasKroneckerProduct`][qten.abstracts.HasKroneckerProduct].
+    - [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] is treated
+      as a neutral singleton axis, so `BroadcastSpace @ X` and
+      `X @ BroadcastSpace` both map to `X`.
+
+    Parameters
+    ----------
+    left : Tensor
+        Left operand.
+    right : Tensor
+        Right operand.
+
+    Returns
+    -------
+    Tensor
+        Tensor with Kronecker-product data and axis-wise tensor-product dims.
+
+    Raises
+    ------
+    ValueError
+        If `left` and `right` do not have the same rank.
+    TypeError
+        If any axis pair is not compatible with Kronecker-product semantics
+        (except neutral broadcast axes).
+    """
+    if left.rank() != right.rank():
+        raise ValueError(
+            "kron expects tensors with the same rank: "
+            f"got {left.rank()} and {right.rank()}."
+        )
+
+    new_dims = tuple(
+        _kron_dim(left_dim, right_dim)
+        for left_dim, right_dim in zip(left.dims, right.dims)
+    )
+    return Tensor(data=torch.kron(left.data, right.data), dims=new_dims)
 
 
 @auto_promote
@@ -4269,7 +4366,7 @@ def product_dims(tensor: TensorType, *indices_group: Tuple[int, ...]) -> TensorT
         return acc * permuted.data.shape[cursor + offset]
 
     def _tensor_product_dims(acc: StateSpace, g_idx: int) -> StateSpace:
-        return cast(StateSpace, acc @ tensor.dims[g_idx])
+        return _kron_dim(acc, tensor.dims[g_idx])
 
     for is_grouped, group in slots:
         if is_grouped:

@@ -68,6 +68,10 @@ class HasRays(ABC, metaclass=abc.ABCMeta):
     @abstractmethod
     def rays(self) -> Self: ...
 
+class HasKroneckerProduct(ABC, metaclass=abc.ABCMeta):
+    @abstractmethod
+    def kron(self, other: Self) -> Self: ...
+
 A = TypeVar("A", bound="Convertible")
 B = TypeVar("B")
 
