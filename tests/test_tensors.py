@@ -1426,9 +1426,7 @@ def test_kernel_tensor_builds_rank2_tensor_from_kernel():
     left = _simple_hilbert("left", 3)
     right = _simple_hilbert("right", 2)
 
-    out = kernel_tensor(
-        lambda x, y: x.base[0][1] - 10 * y.base[0][1], (left, right)
-    )
+    out = kernel_tensor(lambda x, y: x.base[0][1] - 10 * y.base[0][1], (left, right))
 
     expected = torch.tensor(
         [[0, -10], [1, -9], [2, -8]],
