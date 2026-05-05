@@ -1033,7 +1033,8 @@ def nearest_bands(
     close_to: float = 0.0,
     tol: float = 1e-6,
     points: Optional[Dict[str, Sequence[float]]] = None,
-) -> Tensor:
+    return_basis: bool = False,
+) -> Union[Tensor, Tuple[Tensor, Tensor]]:
     r"""
     Project a momentum-resolved Hamiltonian onto bands selected at one k-point.
 
@@ -1042,6 +1043,9 @@ def nearest_bands(
     collected into a rectangular matrix \(V\). If the input Hilbert dimension is
     \(N\) and \(S\) bands are selected, then `V` has shape `(N, S)` and the
     returned tensor stores \(V^\dagger H(k) V\) for every momentum \(k\).
+    When `return_basis=True`, the function also returns \(V\) as a tensor so
+    projected eigenvectors can be lifted back to the original Hilbert-space
+    basis.
 
     Projection convention
     ---------------------
@@ -1089,15 +1093,23 @@ def nearest_bands(
         Half-width of the eigenvalue window around `close_to`.
     points : dict[str, Sequence[float]], optional
         Mapping from labels to fractional coordinates.
+    return_basis : bool, default=False
+        If `True`, also return the selected anchor eigenvector matrix \(V\)
+        with dims
+        ([`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace],
+        [`IndexSpace`][qten.symbolics.state_space.IndexSpace]).
 
     Returns
     -------
-    Tensor
+    Tensor or tuple[Tensor, Tensor]
         Projected Hamiltonian with dims
         ([`MomentumSpace`][qten.symbolics.state_space.MomentumSpace],
         [`IndexSpace`][qten.symbolics.state_space.IndexSpace],
         [`IndexSpace`][qten.symbolics.state_space.IndexSpace]). The last two
-        axes span the selected subspace.
+        axes span the selected subspace. If `return_basis=True`, the second
+        return value is the selected anchor basis \(V\), with dims
+        ([`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace],
+        [`IndexSpace`][qten.symbolics.state_space.IndexSpace]).
 
     Raises
     ------
@@ -1171,4 +1183,8 @@ def nearest_bands(
     projected = torch.einsum("ia,kab,bj->kij", V_dag, h_k.data, V)
 
     out_space = IndexSpace.linear(n_selected)
-    return Tensor(data=projected, dims=(kspace, out_space, out_space))
+    projected_tensor = Tensor(data=projected, dims=(kspace, out_space, out_space))
+    if return_basis:
+        basis_tensor = Tensor(data=V, dims=(h_k.dims[1], out_space))
+        return projected_tensor, basis_tensor
+    return projected_tensor

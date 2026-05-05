@@ -9,6 +9,7 @@ from qten.bands import (
     bandselect,
     interpolate_path,
 )
+from qten.linalg import eigh
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice
 from qten.linalg.tensors import Tensor
@@ -370,6 +371,47 @@ def test_bands_near_value_empty_subspace_when_no_match():
     assert result.dims[1].dim == 0
     assert result.dims[2].dim == 0
     assert result.data.shape == (2, 0, 0)
+
+
+def test_bands_near_value_can_return_anchor_basis():
+    tensor, band_space = _band_tensor()
+
+    result, basis = nearest_bands(
+        tensor,
+        point="Gamma",
+        close_to=-1.0,
+        tol=1e-6,
+        return_basis=True,
+    )
+
+    assert result.dims[0] == tensor.dims[0]
+    assert basis.dims[0] == band_space
+    assert basis.dims[1] == result.dims[1]
+    assert basis.data.shape == (band_space.dim, 1)
+    expected_basis = torch.eye(4, dtype=torch.complex128)[:, 1:2]
+    assert torch.allclose(basis.data, expected_basis)
+
+
+def test_bands_near_value_basis_lifts_projected_vectors_for_all_k():
+    tensor, band_space = _band_tensor()
+
+    projected, basis = nearest_bands(
+        tensor,
+        point="Gamma",
+        close_to=0.5,
+        tol=1.6,
+        return_basis=True,
+    )
+    _values, coeffs = eigh(projected)
+
+    lifted = basis @ coeffs
+    first_k = lifted[0]
+
+    assert lifted.dims[0] == tensor.dims[0]
+    assert lifted.dims[1] == band_space
+    assert isinstance(lifted.dims[2], IndexSpace)
+    assert first_k.dims[0] == band_space
+    assert first_k.dims[1] == lifted.dims[2]
 
 
 def test_bands_near_value_non_diagonal_projection_math():
