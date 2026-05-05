@@ -553,7 +553,9 @@ def test_hilbert_space_kron_is_consistent():
     )
 
     by_kron = left.kron(right)
-    expected = HilbertSpace.new(tuple(a @ b for a in left.elements() for b in right.elements()))
+    expected = HilbertSpace.new(
+        tuple(a @ b for a in left.elements() for b in right.elements())
+    )
 
     assert by_kron.elements() == expected.elements()
     assert by_kron == expected

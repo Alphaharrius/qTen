@@ -611,9 +611,7 @@ def _(basis: U1Basis) -> U1Span:
 
 @need_validation()
 @dataclass(frozen=True)
-class HilbertSpace(
-    HasRays, StateSpace[U1Basis], Span[U1Basis], HasKroneckerProduct
-):
+class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis], HasKroneckerProduct):
     r"""
     Composite local Hilbert space built from states and state spans.
 

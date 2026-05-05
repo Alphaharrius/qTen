@@ -544,9 +544,7 @@ class TestKron:
 
     def test_tensor_method_kron_matches_functional(self):
         left_space = _simple_hilbert("kron-left", 5, make_irrep=lambda n: n)
-        right_space = _simple_hilbert(
-            "kron-right", 4, make_irrep=lambda n: f"kr-{n}"
-        )
+        right_space = _simple_hilbert("kron-right", 4, make_irrep=lambda n: f"kr-{n}")
 
         left = Tensor(
             data=torch.randn(left_space.dim),
