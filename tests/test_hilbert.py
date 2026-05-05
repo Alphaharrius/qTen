@@ -63,7 +63,7 @@ def test_u1_state_irrep_access_and_replace():
 
     replaced = psi.replace(r1)
     assert replaced.irrep_of(Offset) == r1
-    assert replaced.rep[1] == Orb("p")
+    assert replaced.base[1] == Orb("p")
 
 
 def test_u1_state_rejects_non_unity_type_multiplicity():
