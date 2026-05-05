@@ -75,6 +75,19 @@ from ..linalg.tensors import mapping_matrix
 from ..utils.collections_ext import matchby
 
 
+def _bloch_key(state: U1Basis) -> Tuple[Offset, Tuple[object, ...]]:
+    """
+    Build a stable matching key for Bloch/region basis states.
+
+    States are matched by wrapped real-space offset and all non-offset irreps,
+    which avoids collisions when multiple internal DOFs (e.g. spin/orbital)
+    share the same offset.
+    """
+    offset = state.irrep_of(Offset).fractional()
+    internal = tuple(irrep for irrep in state.base if not isinstance(irrep, Offset))
+    return offset, internal
+
+
 def fourier_kernel(
     K: Tuple[Momentum, ...], R: Tuple[Offset, ...], *, device: Optional[Device] = None
 ) -> torch.Tensor:
@@ -187,7 +200,7 @@ def fourier_transform(
     region_to_bloch: Dict[U1Basis, U1Basis] = matchby(
         region_space,
         bloch_space,
-        lambda psi: cast(U1Basis, psi).irrep_of(Offset).fractional(),
+        lambda psi: _bloch_key(cast(U1Basis, psi)),
     )
 
     map = mapping_matrix(
