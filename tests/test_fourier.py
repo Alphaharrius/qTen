@@ -145,3 +145,40 @@ def test_fourier_tensor_unitarity():
     identity = torch.eye(R, dtype=torch.complex128)
     assert torch.allclose(U_matrix.conj().T @ U_matrix, n_cells * identity)
     assert torch.allclose(U_matrix @ U_matrix.conj().T, n_cells * identity)
+
+
+def test_fourier_transform_matches_internal_irreps():
+    # 1D lattice with two cells and two internal orbitals per cell.
+    basis = ImmutableDenseMatrix([[1]])
+    lat = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    recip = lat.dual
+    k_space = brillouin_zone(recip)
+
+    r0 = Offset(rep=ImmutableDenseMatrix([0]), space=lat)
+    r1 = Offset(rep=ImmutableDenseMatrix([1]), space=lat)
+
+    # Region has both orbitals in both cells.
+    region_space = HilbertSpace.new(
+        [_mode(r0, "a"), _mode(r0, "b"), _mode(r1, "a"), _mode(r1, "b")]
+    )
+    # Bloch has one representative per orbital at fractional offset 0.
+    bloch_space = HilbertSpace.new([_mode(r0, "a"), _mode(r0, "b")])
+
+    ft_tensor = fourier_transform(k_space, bloch_space, region_space)
+    assert ft_tensor.dims == (k_space, bloch_space, region_space)
+    assert ft_tensor.data.shape == (2, 2, 4)
+
+    expected = torch.tensor(
+        [
+            # k = 0
+            [[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0]],
+            # k = 0.5
+            [[1.0, 0.0, -1.0, 0.0], [0.0, 1.0, 0.0, -1.0]],
+        ],
+        dtype=torch.complex128,
+    )
+    assert torch.allclose(ft_tensor.data, expected)
