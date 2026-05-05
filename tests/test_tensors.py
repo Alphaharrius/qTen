@@ -1426,7 +1426,7 @@ def test_kernel_tensor_builds_rank2_tensor_from_kernel():
     left = _simple_hilbert("left", 3)
     right = _simple_hilbert("right", 2)
 
-    out = kernel_tensor(lambda x, y: x.rep[0][1] - 10 * y.rep[0][1], (left, right))
+    out = kernel_tensor(lambda x, y: x.base[0][1] - 10 * y.base[0][1], (left, right))
 
     expected = torch.tensor(
         [[0, -10], [1, -9], [2, -8]],
@@ -1443,7 +1443,7 @@ def test_kernel_tensor_builds_rank3_tensor_from_kernel():
     c = _simple_hilbert("c", 2)
 
     out = kernel_tensor(
-        lambda x, y, z: x.rep[0][1] + 2 * y.rep[0][1] + 3 * z.rep[0][1],
+        lambda x, y, z: x.base[0][1] + 2 * y.base[0][1] + 3 * z.base[0][1],
         (a, b, c),
     )
 
@@ -1451,7 +1451,7 @@ def test_kernel_tensor_builds_rank3_tensor_from_kernel():
     for i, x in enumerate(a.elements()):
         for j, y in enumerate(b.elements()):
             for k, z in enumerate(c.elements()):
-                expected[i, j, k] = x.rep[0][1] + 2 * y.rep[0][1] + 3 * z.rep[0][1]
+                expected[i, j, k] = x.base[0][1] + 2 * y.base[0][1] + 3 * z.base[0][1]
 
     assert out.dims == (a, b, c)
     assert torch.equal(out.data, expected)

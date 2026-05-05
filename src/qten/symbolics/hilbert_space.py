@@ -148,7 +148,7 @@ class U1Basis(
     [`U1Span`][qten.symbolics.hilbert_space.U1Span] of distinct
     [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] values. Ordering (`<`,
     `>`) compares the number of irreps, then the tuple of fully-qualified irrep
-    type names (`module.qualname`) from `self.rep`, then the canonical
+    type names (`module.qualname`) from `self.base`, then the canonical
     irrep-value tuple itself. If irrep values of matching types are not
     orderable, the comparison raises from the underlying irrep objects.
 
@@ -162,7 +162,7 @@ class U1Basis(
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
-            "rep",
+            "base",
             tuple(
                 sorted(
                     self.base,
@@ -290,7 +290,7 @@ class U1Basis(
         """
         Return the unique irrep in this state whose concrete type is `T`.
 
-        This method performs a direct scan over `self.rep` and returns the
+        This method performs a direct scan over `self.base` and returns the
         first irrep satisfying `type(irrep) is T`. Because
         `U1Basis.__post_init__` enforces unity multiplicity for each irrep
         type, the match is unique whenever it exists.
@@ -427,7 +427,7 @@ class U1Basis(
         """
         Get a tuple of concrete irrep types in this [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] in canonical order.
 
-        This is the same order as `self.rep`, which is determined by
+        This is the same order as `self.base`, which is determined by
         sorting on [`full_typename(type(irrep))`][qten.utils.types_ext.full_typename].
 
         Returns
