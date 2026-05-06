@@ -32,6 +32,7 @@ Shape and metadata transforms
 - [`permute`][qten.linalg.tensors.permute]
 - [`transpose`][qten.linalg.tensors.transpose]
 - [`replace_dim`][qten.linalg.tensors.replace_dim]
+- [`update_dim`][qten.linalg.tensors.update_dim]
 - [`factorize_dim`][qten.linalg.tensors.factorize_dim]
 - [`product_dims`][qten.linalg.tensors.product_dims]
 - [`promote_rank`][qten.linalg.tensors.promote_rank]
@@ -329,6 +330,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     - [`squeeze(dim)`][qten.linalg.tensors.Tensor.squeeze]: remove a [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] axis if present.
     - [`replace_dim(dim, new_dim)`][qten.linalg.tensors.Tensor.replace_dim]: replace metadata for one axis with size
       validation.
+    - [`update_dim(dim, func)`][qten.linalg.tensors.Tensor.update_dim]: transform one axis metadata with a callback
+      before validation.
     - [`factorize_dim(dim, rule)`][qten.linalg.tensors.Tensor.factorize_dim]: split one axis into multiple factor spaces.
     - [`product_dims(*groups)`][qten.linalg.tensors.Tensor.product_dims]: combine groups of axes into tensor-product axes.
     - [`promote_rank(tensor, target_rank)`][qten.linalg.tensors.promote_rank]: prepend broadcast axes.
@@ -391,7 +394,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     `align`, `align_all`, `all`, `mean`, `norm`, `argmax`, `argmin`, `astype`,
     [`one_hot`][qten.linalg.tensors.one_hot], `equal`, `allclose`, `expand_to_union`, [`union_dims`][qten.linalg.tensors.union_dims],
     [`mapping_matrix`][qten.linalg.tensors.mapping_matrix], [`eye`][qten.linalg.tensors.eye], [`zeros`][qten.linalg.tensors.zeros], [`ones`][qten.linalg.tensors.ones], [`kernel_tensor`][qten.linalg.tensors.kernel_tensor], [`cat`][qten.linalg.tensors.cat],
-    `replace_dim`, `factorize_dim`, `product_dims`, [`promote_rank`][qten.linalg.tensors.promote_rank],
+    `replace_dim`, `update_dim`, `factorize_dim`, `product_dims`, [`promote_rank`][qten.linalg.tensors.promote_rank],
     `where`, and `nonzero`.
     """
 
@@ -1434,6 +1437,34 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             A new tensor of the same wrapper type with the updated dimension.
         """
         return replace_dim(self, dim, new_dim)
+
+    def update_dim(self, dim: int, func: Callable[[StateSpace], StateSpace]) -> Self:
+        """
+        Transform the StateSpace at the specified dimension with a callback.
+
+        The callback receives the current dimension metadata and must return
+        the replacement [`StateSpace`][qten.symbolics.state_space.StateSpace].
+        Size validation and index normalization follow the same rules as
+        [`replace_dim`][qten.linalg.tensors.Tensor.replace_dim].
+
+        See Also
+        --------
+        [`update_dim(tensor, dim, func)`][qten.linalg.tensors.update_dim]
+            Functional form with the full metadata update semantics.
+
+        Parameters
+        ----------
+        dim : int
+            The index of the dimension to update.
+        func : Callable[[StateSpace], StateSpace]
+            Callback that maps the current StateSpace to a replacement.
+
+        Returns
+        -------
+        Self
+            A new tensor of the same wrapper type with the updated dimension.
+        """
+        return update_dim(self, dim, func)
 
     def __getitem__(self, key):
         """
@@ -4037,6 +4068,42 @@ def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType
     new_dims = list(tensor.dims)
     new_dims[dim] = new_dim
     return replace(tensor, dims=tuple(new_dims))
+
+
+def update_dim(
+    tensor: TensorType,
+    dim: int,
+    func: Callable[[StateSpace], StateSpace],
+) -> TensorType:
+    """
+    Update one symbolic dimension by applying a callback to the current metadata.
+
+    This is a metadata-only operation. The callback is applied to
+    `tensor.dims[dim]`, and the returned StateSpace is then validated through
+    [`replace_dim`][qten.linalg.tensors.replace_dim].
+
+    Parameters
+    ----------
+    tensor : Tensor
+        The tensor to modify.
+    dim : int
+        The index of the dimension to update.
+    func : Callable[[StateSpace], StateSpace]
+        Callback that maps the current StateSpace to a replacement.
+
+    Returns
+    -------
+    TensorType
+        Tensor with unchanged data and the requested updated dimension.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
+    ValueError
+        If the callback returns a size-incompatible StateSpace.
+    """
+    return replace_dim(tensor, dim, func(tensor.dims[dim]))
 
 
 def factorize_dim(

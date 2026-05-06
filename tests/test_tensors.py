@@ -22,6 +22,7 @@ from qten.linalg.tensors import (
     one_hot,
     ones,
     real as tensor_real,
+    update_dim,
     union_dims,
     where,
     zeros,
@@ -1211,6 +1212,72 @@ def test_factorize_dim_then_product_dims_roundtrip_hilbert():
 
     assert restored.dims == tensor.dims
     assert torch.equal(restored.data, tensor.data)
+
+
+def test_update_dim_happy_path_preserves_data():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    data = torch.arange(left.dim * right.dim, dtype=torch.float64).reshape(
+        left.dim, right.dim
+    )
+    tensor = Tensor(data=data, dims=(left, right))
+
+    updated = tensor.update_dim(0, lambda s: s.map(lambda basis: basis))
+
+    assert updated is not tensor
+    assert updated.dims[0] == left.map(lambda basis: basis)
+    assert updated.dims[1] == right
+    assert torch.equal(updated.data, tensor.data)
+
+
+def test_update_dim_function_matches_method():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(torch.randn(left.dim, right.dim), dims=(left, right))
+
+    def fn(space: StateSpace) -> StateSpace:
+        return space.map(lambda basis: basis)
+
+    via_method = tensor.update_dim(0, fn)
+    via_function = update_dim(tensor, 0, fn)
+
+    assert via_function.dims == via_method.dims
+    assert torch.equal(via_function.data, via_method.data)
+
+
+def test_update_dim_supports_negative_index():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    tensor = Tensor(torch.randn(left.dim, right.dim), dims=(left, right))
+
+    updated = tensor.update_dim(-1, lambda s: s.map(lambda basis: basis))
+
+    assert updated.dims[0] == left
+    assert updated.dims[1] == right.map(lambda basis: basis)
+
+
+def test_update_dim_preserves_wrapper_type():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+
+    class CustomTensor(Tensor[torch.Tensor]):
+        pass
+
+    tensor = CustomTensor(torch.randn(left.dim, right.dim), dims=(left, right))
+
+    updated = tensor.update_dim(0, lambda s: s.map(lambda basis: basis))
+
+    assert isinstance(updated, CustomTensor)
+
+
+def test_update_dim_validation_passthrough():
+    left = _simple_hilbert("left", 2)
+    right = _simple_hilbert("right", 3)
+    wrong = _simple_hilbert("wrong", 4)
+    tensor = Tensor(torch.randn(left.dim, right.dim), dims=(left, right))
+
+    with pytest.raises(ValueError, match="does not match tensor data size"):
+        tensor.update_dim(0, lambda _s: wrong)
 
 
 def test_product_dims_non_sequential_groups_hilbert():
