@@ -1641,6 +1641,7 @@ class Tensor(
         """
         return product_dims(self, *indices_group)
 
+    @override
     def kron(self, other: "Tensor") -> "Tensor":
         """
         Compute the StateSpace-aware Kronecker product with another tensor.
@@ -1787,7 +1788,7 @@ def _kron_dim(left_dim: StateSpace, right_dim: StateSpace) -> StateSpace:
 
 @auto_promote
 def kron(left: Tensor, right: Tensor) -> Tensor:
-    """
+    r"""
     Compute the StateSpace-aware Kronecker product between two tensors.
 
     Semantics
@@ -1797,11 +1798,43 @@ def kron(left: Tensor, right: Tensor) -> Tensor:
 
     - The operands must have the same rank.
     - For each axis `i`, output dim `i` is `left.dims[i] @ right.dims[i]`.
+    - Axis pairs are matched by position, not by name or irrep content. The
+      `i`-th dim of `left` is combined only with the `i`-th dim of `right`.
     - Non-broadcast axes must implement
       [`HasKroneckerProduct`][qten.abstracts.HasKroneckerProduct].
+    - For Hilbert-space-like dims, the basis-level tensor product requires
+      disjoint concrete irrep types between the paired dims. For example, a
+      dim whose basis states contain irrep types `(int, str)` can be combined
+      with one containing `(float,)`, but combining it with one containing
+      `(int,)` is rejected because `int` appears on both sides.
     - [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] is treated
       as a neutral singleton axis, so `BroadcastSpace @ X` and
       `X @ BroadcastSpace` both map to `X`.
+
+    Allowed dim products
+    --------------------
+    Let \(L_i = \mathrm{left.dims}[i]\) and
+    \(R_i = \mathrm{right.dims}[i]\). The metadata part of
+    [`kron(left, right)`][qten.linalg.tensors.kron] is allowed only when every
+    paired dim product
+
+    \[
+        L_i \otimes R_i
+    \]
+
+    is defined. For Hilbert-space-like dims, write
+    \(\operatorname{types}(D)\) for the concrete irrep types present in dim
+    \(D\). Then the paired product requires
+
+    \[
+        \operatorname{types}(L_i) \cap \operatorname{types}(R_i) = \varnothing.
+    \]
+
+    For example, a dim with irrep types \((\mathrm{int}, \mathrm{str})\) can
+    be paired with one whose irrep types are \((\mathrm{float},)\), but not
+    with one whose irrep types are \((\mathrm{int},)\), because the shared
+    \(\mathrm{int}\) type would give multiplicity greater than one in the
+    tensor-product basis.
 
     Parameters
     ----------
@@ -1818,7 +1851,8 @@ def kron(left: Tensor, right: Tensor) -> Tensor:
     Raises
     ------
     ValueError
-        If `left` and `right` do not have the same rank.
+        If `left` and `right` do not have the same rank, or if a dim-level
+        Kronecker product rejects overlapping irrep types.
     TypeError
         If any axis pair is not compatible with Kronecker-product semantics
         (except neutral broadcast axes).
