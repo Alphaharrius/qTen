@@ -4013,6 +4013,18 @@ def kernel_tensor(
     return Tensor(data=data, dims=dims)
 
 
+def _normalize_dim_index(rank: int, dim: int) -> int:
+    if dim < 0:
+        dim += rank
+
+    if dim < 0 or dim >= rank:
+        raise IndexError(
+            f"Dimension index {dim} out of range for tensor of rank {rank}"
+        )
+
+    return dim
+
+
 def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType:
     """
     Replace one symbolic dimension without changing tensor data values.
@@ -4043,13 +4055,7 @@ def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType
     ValueError
         If `new_dim` is not size-compatible with the selected data axis.
     """
-    if dim < 0:
-        dim += len(tensor.dims)
-
-    if dim < 0 or dim >= len(tensor.dims):
-        raise IndexError(
-            f"Dimension index {dim} out of range for tensor of rank {len(tensor.dims)}"
-        )
+    dim = _normalize_dim_index(len(tensor.dims), dim)
 
     current_size = tensor.data.shape[dim]
 
@@ -4103,6 +4109,7 @@ def update_dim(
     ValueError
         If the callback returns a size-incompatible StateSpace.
     """
+    dim = _normalize_dim_index(len(tensor.dims), dim)
     return replace_dim(tensor, dim, func(tensor.dims[dim]))
 
 
