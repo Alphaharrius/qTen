@@ -1306,6 +1306,16 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
         return Tensor(data=data, dims=(self, another.rays()))
 
 
+@Operable.__matmul__.register
+def _(space: HilbertSpace, basis: U1Basis) -> HilbertSpace:
+    return HilbertSpace.new(element @ basis for element in space.elements())
+
+
+@Operable.__matmul__.register
+def _(basis: U1Basis, space: HilbertSpace) -> HilbertSpace:
+    return HilbertSpace.new(basis @ element for element in space.elements())
+
+
 @U1Basis.add_conversion(StateSpace)
 def _u1basis_to_hilbertspace(basis: U1Basis) -> StateSpace:
     """Convert a [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] to a [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] containing only that basis state."""

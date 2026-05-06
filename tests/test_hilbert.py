@@ -560,6 +560,36 @@ def test_hilbert_space_factorize_success_two_groups():
     assert factorization.align_dim.elements() == h.elements()
 
 
+def test_hilbert_space_matmul_u1basis_maps_over_elements():
+    left = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(0,)),
+            U1Basis(coef=sy.Integer(1), base=(1,)),
+        )
+    )
+    psi = U1Basis(coef=sy.Integer(2), base=(Orb("x"),))
+
+    out = left @ psi
+
+    assert isinstance(out, HilbertSpace)
+    assert out.elements() == tuple(p @ psi for p in left.elements())
+
+
+def test_u1basis_matmul_hilbert_space_maps_over_elements():
+    right = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(Orb("a"),)),
+            U1Basis(coef=sy.Integer(1), base=(Orb("b"),)),
+        )
+    )
+    psi = U1Basis(coef=sy.Integer(3), base=(0,))
+
+    out = psi @ right
+
+    assert isinstance(out, HilbertSpace)
+    assert out.elements() == tuple(psi @ p for p in right.elements())
+
+
 def test_hilbert_space_factorize_defaults_coef_to_leftmost_factor():
     h = HilbertSpace.new(
         U1Basis(coef=sy.Integer(i + 2), base=(i, j)) for i in (0, 1) for j in ("a", "b")
