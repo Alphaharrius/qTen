@@ -18,12 +18,13 @@ Tensor construction and manipulation
 ------------------------------------
 - [`zeros`][qten.linalg.tensors.zeros], [`ones`][qten.linalg.tensors.ones], [`eye`][qten.linalg.tensors.eye], [`one_hot`][qten.linalg.tensors.one_hot]
 - [`permute`][qten.linalg.tensors.permute], [`transpose`][qten.linalg.tensors.transpose], [`squeeze`][qten.linalg.tensors.squeeze], [`unsqueeze`][qten.linalg.tensors.unsqueeze]
-- [`replace_dim`][qten.linalg.tensors.replace_dim], [`factorize_dim`][qten.linalg.tensors.factorize_dim], [`product_dims`][qten.linalg.tensors.product_dims], [`promote_rank`][qten.linalg.tensors.promote_rank]
+- [`replace_dim`][qten.linalg.tensors.replace_dim], [`update_dim`][qten.linalg.tensors.update_dim], [`factorize_dim`][qten.linalg.tensors.factorize_dim], [`product_dims`][qten.linalg.tensors.product_dims], [`promote_rank`][qten.linalg.tensors.promote_rank]
 - [`align`][qten.linalg.tensors.align], [`align_all`][qten.linalg.tensors.align_all], [`expand_to_union`][qten.linalg.tensors.expand_to_union], [`union_dims`][qten.linalg.tensors.union_dims]
 
 Tensor algebra and queries
 --------------------------
 - [`matmul`][qten.linalg.tensors.matmul], [`norm`][qten.linalg.tensors.norm], [`mean`][qten.linalg.tensors.mean]
+- [`kron`][qten.linalg.tensors.kron]
 - [`all`][qten.linalg.tensors.all], [`allclose`][qten.linalg.tensors.allclose], [`equal`][qten.linalg.tensors.equal], [`isclose`][qten.linalg.tensors.isclose]
 - [`argmax`][qten.linalg.tensors.argmax], [`argmin`][qten.linalg.tensors.argmin], [`nonzero`][qten.linalg.tensors.nonzero], [`where`][qten.linalg.tensors.where]
 - [`real`][qten.linalg.tensors.real], [`imag`][qten.linalg.tensors.imag], [`conj`][qten.linalg.tensors.conj], [`astype`][qten.linalg.tensors.astype]
@@ -71,6 +72,7 @@ from .linalg.tensors import (
     eye as eye,
     factorize_dim as factorize_dim,
     kernel_tensor as kernel_tensor,
+    kron as kron,
     mapping_matrix as mapping_matrix,
     matmul as matmul,
     mean as mean,
@@ -89,6 +91,7 @@ from .linalg.tensors import (
     squeeze as squeeze,
     transpose as transpose,
     union_dims as union_dims,
+    update_dim as update_dim,
     unsqueeze as unsqueeze,
     where as where,
     zeros as zeros,

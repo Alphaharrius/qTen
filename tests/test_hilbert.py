@@ -52,6 +52,27 @@ def test_u1_state_basic_properties_and_overlap():
     assert psi.rays() == _state(r0, "s", sy.Integer(1))
 
 
+def test_u1_state_str_uses_compact_irrep_labels():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={
+            "A": ImmutableDenseMatrix([0]),
+            "B": ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        },
+    )
+    psi_r = U1Basis(coef=sy.Integer(1), base=(lattice.at("B", (1,)), Orb("p")))
+    psi_k = U1Basis(
+        coef=sy.Integer(1),
+        base=(
+            Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lattice.dual),
+        ),
+    )
+
+    assert str(psi_r) == "|r[B; 1/2]⟩⊗|Orb(name='p')⟩"
+    assert str(psi_k) == "|k[1/2]⟩"
+
+
 def test_u1_state_irrep_access_and_replace():
     basis = ImmutableDenseMatrix([[1]])
     lat = _lattice(basis, (2,))
@@ -531,11 +552,34 @@ def test_hilbert_space_tensor_product_order_and_content():
         )
     )
 
-    out = left.tensor_product(right)
+    out = left.kron(right)
     expected = tuple(a @ b for a in left.elements() for b in right.elements())
 
     assert out.dim == left.dim * right.dim
     assert out.elements() == expected
+
+
+def test_hilbert_space_kron_is_consistent():
+    left = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(0,)),
+            U1Basis(coef=sy.Integer(1), base=(1,)),
+        )
+    )
+    right = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(Orb("a"),)),
+            U1Basis(coef=sy.Integer(1), base=(Orb("b"),)),
+        )
+    )
+
+    by_kron = left.kron(right)
+    expected = HilbertSpace.new(
+        tuple(a @ b for a in left.elements() for b in right.elements())
+    )
+
+    assert by_kron.elements() == expected.elements()
+    assert by_kron == expected
 
 
 def test_hilbert_space_factorize_success_two_groups():
@@ -558,6 +602,36 @@ def test_hilbert_space_factorize_success_two_groups():
         U1Basis(coef=sy.Integer(1), base=("c",)),
     )
     assert factorization.align_dim.elements() == h.elements()
+
+
+def test_hilbert_space_matmul_u1basis_maps_over_elements():
+    left = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(0,)),
+            U1Basis(coef=sy.Integer(1), base=(1,)),
+        )
+    )
+    psi = U1Basis(coef=sy.Integer(2), base=(Orb("x"),))
+
+    out = left @ psi
+
+    assert isinstance(out, HilbertSpace)
+    assert out.elements() == tuple(p @ psi for p in left.elements())
+
+
+def test_u1basis_matmul_hilbert_space_maps_over_elements():
+    right = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(Orb("a"),)),
+            U1Basis(coef=sy.Integer(1), base=(Orb("b"),)),
+        )
+    )
+    psi = U1Basis(coef=sy.Integer(3), base=(0,))
+
+    out = psi @ right
+
+    assert isinstance(out, HilbertSpace)
+    assert out.elements() == tuple(psi @ p for p in right.elements())
 
 
 def test_hilbert_space_factorize_defaults_coef_to_leftmost_factor():

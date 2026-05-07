@@ -248,44 +248,6 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
         )
         return replace(self, structure=restructure(new_structure))
 
-    def tensor_product(self, other: Self) -> Self:
-        """
-        Return the tensor-product state space of this space and another space.
-
-        This method defines the protocol used by the `@` operator on
-        [`StateSpace`][qten.symbolics.state_space.StateSpace] instances. The
-        base class cannot construct a generic product because it does not know
-        how to combine two elements of type `T`. Concrete subclasses must
-        implement the element-level product and rebuild a contiguous
-        `structure` for the resulting basis.
-
-        Implementations should preserve deterministic product ordering. The
-        convention used by concrete tensor-product spaces in QTen is the
-        Cartesian product order of `self.elements()` and `other.elements()`,
-        where elements from `self` vary slowest and elements from `other` vary
-        fastest. The returned space should be the same concrete state-space
-        family when the operation is closed over that family.
-
-        Parameters
-        ----------
-        other : StateSpace
-            Right-hand tensor factor. Implementations may require `other` to be
-            the same concrete state-space type as `self`.
-
-        Returns
-        -------
-        StateSpace
-            New state space representing `self ⊗ other`, with contiguous
-            integer indices in the implementation-defined product order.
-
-        Raises
-        ------
-        NotImplementedError
-            Always raised by the base class. Subclasses that support tensor
-            products must override this method.
-        """
-        raise NotImplementedError(f"Tensor product not implemented for {type(self)}!")
-
     @multimethod
     def extract(self, info_type: type[Any]) -> Any:
         """
@@ -318,11 +280,6 @@ class StateSpace(Spatial, Convertible, Generic[T], Span[T]):
 def _(s: StateSpace) -> StateSpace:
     """Identity conversion to allow mapping between different StateSpace subclasses."""
     return s
-
-
-@Operable.__matmul__.register
-def _(a: StateSpace, b: StateSpace):
-    return a.tensor_product(b)
 
 
 def restructure(

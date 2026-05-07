@@ -16,6 +16,8 @@ Core API
   StateSpace-aware matrix multiplication.
 - [`einsum`][qten.linalg.tensors.einsum]
   Einstein-summation helper with StateSpace-aware axis alignment.
+- [`kron`][qten.linalg.tensors.kron]
+  StateSpace-aware Kronecker product.
 - [`align`][qten.linalg.tensors.align]
   Reorder or expand a tensor axis so it matches a target symbolic dimension.
 - [`union_dims`][qten.linalg.tensors.union_dims]
@@ -34,6 +36,7 @@ Shape and metadata transforms
 - [`permute`][qten.linalg.tensors.permute]
 - [`transpose`][qten.linalg.tensors.transpose]
 - [`replace_dim`][qten.linalg.tensors.replace_dim]
+- [`update_dim`][qten.linalg.tensors.update_dim]
 - [`factorize_dim`][qten.linalg.tensors.factorize_dim]
 - [`product_dims`][qten.linalg.tensors.product_dims]
 - [`promote_rank`][qten.linalg.tensors.promote_rank]
@@ -85,7 +88,7 @@ import builtins
 from multimethod import DispatchError, multimethod
 import torch
 
-from ..abstracts import Convertible, Operable
+from ..abstracts import Convertible, HasKroneckerProduct, Operable
 from ..plottings import Plottable
 from ..precision import get_precision_config
 from ..utils.devices import Device, DeviceBounded
@@ -203,7 +206,9 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
 
 @need_validation(_check_data_compatible_with_dims)
 @dataclass(frozen=True, eq=False)
-class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
+class Tensor(
+    Generic[T], Operable, Plottable, Convertible, DeviceBounded, HasKroneckerProduct
+):
     r"""
     StateSpace-aware tensor wrapper over `torch.Tensor`.
 
@@ -331,6 +336,8 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     - [`squeeze(dim)`][qten.linalg.tensors.Tensor.squeeze]: remove a [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] axis if present.
     - [`replace_dim(dim, new_dim)`][qten.linalg.tensors.Tensor.replace_dim]: replace metadata for one axis with size
       validation.
+    - [`update_dim(dim, func)`][qten.linalg.tensors.Tensor.update_dim]: transform one axis metadata with a callback
+      before validation.
     - [`factorize_dim(dim, rule)`][qten.linalg.tensors.Tensor.factorize_dim]: split one axis into multiple factor spaces.
     - [`product_dims(*groups)`][qten.linalg.tensors.Tensor.product_dims]: combine groups of axes into tensor-product axes.
     - [`promote_rank(tensor, target_rank)`][qten.linalg.tensors.promote_rank]: prepend broadcast axes.
@@ -393,7 +400,7 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
     `align`, `align_all`, `all`, `mean`, `norm`, `argmax`, `argmin`, `astype`,
     [`one_hot`][qten.linalg.tensors.one_hot], `equal`, `allclose`, `expand_to_union`, [`union_dims`][qten.linalg.tensors.union_dims],
     [`mapping_matrix`][qten.linalg.tensors.mapping_matrix], [`eye`][qten.linalg.tensors.eye], [`zeros`][qten.linalg.tensors.zeros], [`ones`][qten.linalg.tensors.ones], [`kernel_tensor`][qten.linalg.tensors.kernel_tensor], [`cat`][qten.linalg.tensors.cat],
-    `replace_dim`, `factorize_dim`, `product_dims`, [`promote_rank`][qten.linalg.tensors.promote_rank],
+    `replace_dim`, `update_dim`, `factorize_dim`, `product_dims`, [`promote_rank`][qten.linalg.tensors.promote_rank],
     `where`, and `nonzero`.
     """
 
@@ -1437,6 +1444,34 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
         """
         return replace_dim(self, dim, new_dim)
 
+    def update_dim(self, dim: int, func: Callable[[StateSpace], StateSpace]) -> Self:
+        """
+        Transform the StateSpace at the specified dimension with a callback.
+
+        The callback receives the current dimension metadata and must return
+        the replacement [`StateSpace`][qten.symbolics.state_space.StateSpace].
+        Size validation and index normalization follow the same rules as
+        [`replace_dim`][qten.linalg.tensors.Tensor.replace_dim].
+
+        See Also
+        --------
+        [`update_dim(tensor, dim, func)`][qten.linalg.tensors.update_dim]
+            Functional form with the full metadata update semantics.
+
+        Parameters
+        ----------
+        dim : int
+            The index of the dimension to update.
+        func : Callable[[StateSpace], StateSpace]
+            Callback that maps the current StateSpace to a replacement.
+
+        Returns
+        -------
+        Self
+            A new tensor of the same wrapper type with the updated dimension.
+        """
+        return update_dim(self, dim, func)
+
     def __getitem__(self, key):
         """
         Index tensor data with [`TensorIndexing`][qten.linalg.tensors.TensorIndexing] and return a new [`Tensor`][qten.linalg.tensors.Tensor].
@@ -1638,6 +1673,33 @@ class Tensor(Generic[T], Operable, Plottable, Convertible, DeviceBounded):
             the same index appears in more than one group.
         """
         return product_dims(self, *indices_group)
+
+    @override
+    def kron(self, other: "Tensor") -> "Tensor":
+        """
+        Compute the StateSpace-aware Kronecker product with another tensor.
+
+        This method delegates to [`kron(left, right)`][qten.linalg.tensors.kron].
+        The Kronecker product is position-wise across axes: each output axis is
+        built from the tensor product of the corresponding symbolic dimensions.
+
+        Parameters
+        ----------
+        other : Tensor
+            Right operand of the Kronecker product.
+
+        Returns
+        -------
+        Tensor
+            Tensor with data `torch.kron(self.data, other.data)` and
+            position-wise tensor-product dimensions.
+
+        See Also
+        --------
+        [`kron(left, right)`][qten.linalg.tensors.kron]
+            Functional form with full semantics.
+        """
+        return kron(self, other)
 
     def dim_types(self) -> Tuple[type, ...]:
         """
@@ -2048,6 +2110,106 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     data = torch.einsum(equation, *(operand.data for operand in promoted_operands))
     dims = tuple(label_dims[label] for label in output_labels)
     return Tensor(data=data, dims=dims)
+
+
+def _kron_dim(left_dim: StateSpace, right_dim: StateSpace) -> StateSpace:
+    if isinstance(left_dim, BroadcastSpace):
+        return right_dim
+    if isinstance(right_dim, BroadcastSpace):
+        return left_dim
+    if isinstance(left_dim, HasKroneckerProduct) and isinstance(
+        right_dim, HasKroneckerProduct
+    ):
+        return cast(StateSpace, left_dim.kron(right_dim))
+    raise TypeError(
+        "kron only supports dimensions implementing HasKroneckerProduct "
+        "(BroadcastSpace allowed as neutral axis), got "
+        f"{type(left_dim).__name__} and {type(right_dim).__name__}."
+    )
+
+
+@auto_promote
+def kron(left: Tensor, right: Tensor) -> Tensor:
+    r"""
+    Compute the StateSpace-aware Kronecker product between two tensors.
+
+    Semantics
+    ---------
+    This function applies `torch.kron(left.data, right.data)` and propagates
+    symbolic metadata axis-by-axis:
+
+    - The operands must have the same rank.
+    - For each axis `i`, output dim `i` is `left.dims[i] @ right.dims[i]`.
+    - Axis pairs are matched by position, not by name or irrep content. The
+      `i`-th dim of `left` is combined only with the `i`-th dim of `right`.
+    - Non-broadcast axes must implement
+      [`HasKroneckerProduct`][qten.abstracts.HasKroneckerProduct].
+    - For Hilbert-space-like dims, the basis-level tensor product requires
+      disjoint concrete irrep types between the paired dims. For example, a
+      dim whose basis states contain irrep types `(int, str)` can be combined
+      with one containing `(float,)`, but combining it with one containing
+      `(int,)` is rejected because `int` appears on both sides.
+    - [`BroadcastSpace`][qten.symbolics.state_space.BroadcastSpace] is treated
+      as a neutral singleton axis, so `BroadcastSpace @ X` and
+      `X @ BroadcastSpace` both map to `X`.
+
+    Allowed dim products
+    --------------------
+    Let \(L_i = \mathrm{left.dims}[i]\) and
+    \(R_i = \mathrm{right.dims}[i]\). The metadata part of
+    [`kron(left, right)`][qten.linalg.tensors.kron] is allowed only when every
+    paired dim product
+
+    \[
+        L_i \otimes R_i
+    \]
+
+    is defined. For Hilbert-space-like dims, write
+    \(\operatorname{types}(D)\) for the concrete irrep types present in dim
+    \(D\). Then the paired product requires
+
+    \[
+        \operatorname{types}(L_i) \cap \operatorname{types}(R_i) = \varnothing.
+    \]
+
+    For example, a dim with irrep types \((\mathrm{int}, \mathrm{str})\) can
+    be paired with one whose irrep types are \((\mathrm{float},)\), but not
+    with one whose irrep types are \((\mathrm{int},)\), because the shared
+    \(\mathrm{int}\) type would give multiplicity greater than one in the
+    tensor-product basis.
+
+    Parameters
+    ----------
+    left : Tensor
+        Left operand.
+    right : Tensor
+        Right operand.
+
+    Returns
+    -------
+    Tensor
+        Tensor with Kronecker-product data and axis-wise tensor-product dims.
+
+    Raises
+    ------
+    ValueError
+        If `left` and `right` do not have the same rank, or if a dim-level
+        Kronecker product rejects overlapping irrep types.
+    TypeError
+        If any axis pair is not compatible with Kronecker-product semantics
+        (except neutral broadcast axes).
+    """
+    if left.rank() != right.rank():
+        raise ValueError(
+            "kron expects tensors with the same rank: "
+            f"got {left.rank()} and {right.rank()}."
+        )
+
+    new_dims = tuple(
+        _kron_dim(left_dim, right_dim)
+        for left_dim, right_dim in zip(left.dims, right.dims)
+    )
+    return Tensor(data=torch.kron(left.data, right.data), dims=new_dims)
 
 
 @auto_promote
@@ -4293,6 +4455,18 @@ def kernel_tensor(
     return Tensor(data=data, dims=dims)
 
 
+def _normalize_dim_index(rank: int, dim: int) -> int:
+    if dim < 0:
+        dim += rank
+
+    if dim < 0 or dim >= rank:
+        raise IndexError(
+            f"Dimension index {dim} out of range for tensor of rank {rank}"
+        )
+
+    return dim
+
+
 def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType:
     """
     Replace one symbolic dimension without changing tensor data values.
@@ -4323,13 +4497,7 @@ def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType
     ValueError
         If `new_dim` is not size-compatible with the selected data axis.
     """
-    if dim < 0:
-        dim += len(tensor.dims)
-
-    if dim < 0 or dim >= len(tensor.dims):
-        raise IndexError(
-            f"Dimension index {dim} out of range for tensor of rank {len(tensor.dims)}"
-        )
+    dim = _normalize_dim_index(len(tensor.dims), dim)
 
     current_size = tensor.data.shape[dim]
 
@@ -4348,6 +4516,43 @@ def replace_dim(tensor: TensorType, dim: int, new_dim: StateSpace) -> TensorType
     new_dims = list(tensor.dims)
     new_dims[dim] = new_dim
     return replace(tensor, dims=tuple(new_dims))
+
+
+def update_dim(
+    tensor: TensorType,
+    dim: int,
+    func: Callable[[StateSpace], StateSpace],
+) -> TensorType:
+    """
+    Update one symbolic dimension by applying a callback to the current metadata.
+
+    This is a metadata-only operation. The callback is applied to
+    `tensor.dims[dim]`, and the returned StateSpace is then validated through
+    [`replace_dim`][qten.linalg.tensors.replace_dim].
+
+    Parameters
+    ----------
+    tensor : Tensor
+        The tensor to modify.
+    dim : int
+        The index of the dimension to update.
+    func : Callable[[StateSpace], StateSpace]
+        Callback that maps the current StateSpace to a replacement.
+
+    Returns
+    -------
+    TensorType
+        Tensor with unchanged data and the requested updated dimension.
+
+    Raises
+    ------
+    IndexError
+        If `dim` is out of range for the tensor rank.
+    ValueError
+        If the callback returns a size-incompatible StateSpace.
+    """
+    dim = _normalize_dim_index(len(tensor.dims), dim)
+    return replace_dim(tensor, dim, func(tensor.dims[dim]))
 
 
 def factorize_dim(
@@ -4580,7 +4785,7 @@ def product_dims(tensor: TensorType, *indices_group: Tuple[int, ...]) -> TensorT
         return acc * permuted.data.shape[cursor + offset]
 
     def _tensor_product_dims(acc: StateSpace, g_idx: int) -> StateSpace:
-        return cast(StateSpace, acc @ tensor.dims[g_idx])
+        return _kron_dim(acc, tensor.dims[g_idx])
 
     for is_grouped, group in slots:
         if is_grouped:

@@ -81,6 +81,70 @@ def test_affine_space_origin_returns_zero_offset():
     assert origin.rep == ImmutableDenseMatrix([0, 0])
 
 
+def test_offset_str_and_repr_use_compact_affine_format():
+    affine = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+    offset = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]),
+        space=affine,
+    )
+
+    assert str(offset) == "r[1/2, 0]"
+    assert repr(offset) == "r[1/2, 0]"
+
+
+def test_lattice_offset_str_resolves_named_unit_cell_site():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5, 5)),
+        unit_cell={
+            "A": ImmutableDenseMatrix([0, 0]),
+            "B": ImmutableDenseMatrix([sy.Rational(1, 2), 0]),
+        },
+    )
+
+    assert str(lattice.at("A", (1, 2))) == "r[A; 0, 0]"
+    assert repr(lattice.at("B", (1, 2))) == "r[B; 1/2, 0]"
+
+
+def test_lattice_offset_str_falls_back_when_not_a_named_unit_cell_site():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5)),
+        unit_cell={"B": ImmutableDenseMatrix([sy.Rational(1, 2)])},
+    )
+    offset = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 4)]), space=lattice)
+
+    assert str(offset) == "r[1/4]"
+    assert repr(offset) == "r[1/4]"
+
+
+def test_lattice_offset_str_uses_fractional_coords_for_unlabeled_translation():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(1),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(5)),
+        unit_cell={"A": ImmutableDenseMatrix([0])},
+    )
+    offset = Offset(rep=ImmutableDenseMatrix([3]), space=lattice)
+
+    assert str(offset) == "r[A; 0]"
+    assert repr(offset) == "r[A; 0]"
+
+
+def test_momentum_str_and_repr_use_k_prefix():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    momentum = Momentum(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        space=lattice.dual,
+    )
+
+    assert str(momentum) == "k[1/2]"
+    assert repr(momentum) == "k[1/2]"
+
+
 def test_cartes_lattice():
     basis = ImmutableDenseMatrix([[1, 0], [0, 1]])
     lattice = Lattice(
