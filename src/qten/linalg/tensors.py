@@ -78,6 +78,7 @@ from typing_extensions import override
 from contextlib import ContextDecorator
 from functools import wraps, reduce
 from itertools import product
+import string
 from numbers import Number
 from dataclasses import dataclass, replace
 from threading import local
@@ -1822,10 +1823,15 @@ def _parse_einsum_term(term: str) -> tuple[list[str], int | None]:
             ellipsis_pos = len(labels)
             i += 3
             continue
-        if ch.isalpha():
+        if ch in string.ascii_letters:
             labels.append(ch)
             i += 1
             continue
+        if ch.isalpha():
+            raise ValueError(
+                f"Invalid einsum term {term!r}: unsupported label {ch!r}; "
+                "einsum labels must be ASCII letters [A-Za-z]"
+            )
         raise ValueError(
             f"Invalid einsum term {term!r}: expected letters or ellipsis, got {ch!r}"
         )
@@ -2046,7 +2052,8 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
 
     Equation guide
     --------------
-    The equation uses the same label syntax as `torch.einsum`.
+    The equation uses the same label syntax as `torch.einsum`, with labels
+    restricted to ASCII letters `[A-Za-z]`.
 
     - Each input operand is described by one comma-separated label term.
     - Labels that appear in multiple operands identify axes that should be
@@ -2222,7 +2229,7 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     ----------
     equation : str
         Einstein summation equation in the same format accepted by
-        `torch.einsum`.
+        `torch.einsum`. Label characters must be ASCII letters `[A-Za-z]`.
     *operands : Tensor
         Input tensors whose ranks must match the equation terms after any
         `...` expansion.
@@ -2236,8 +2243,9 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     Raises
     ------
     ValueError
-        If the equation does not match the operand ranks or if any shared label
-        maps to incompatible symbolic dimensions.
+        If the equation uses unsupported label characters, does not match the
+        operand ranks, or if any shared label maps to incompatible symbolic
+        dimensions.
 
     See Also
     --------

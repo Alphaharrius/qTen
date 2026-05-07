@@ -2700,6 +2700,17 @@ def test_einsum_rejects_symbolically_incompatible_shared_labels():
         _ = einsum("i,i->", left, right)
 
 
+def test_einsum_rejects_non_ascii_labels():
+    space = _simple_hilbert("space", 2)
+    tensor = Tensor(data=torch.randn(space.dim), dims=(space,))
+
+    with pytest.raises(
+        ValueError,
+        match=r"unsupported label 'α'.*ASCII letters \[A-Za-z\]",
+    ):
+        _ = einsum("α->", tensor)
+
+
 def test_tensor_real_imag_abs_on_real_tensor():
     left = IndexSpace.linear(3)
     tensor = Tensor(
