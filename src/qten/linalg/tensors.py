@@ -1850,6 +1850,38 @@ def _merge_einsum_dim(
     )
 
 
+def _validate_einsum_repeated_labels(term: Sequence[str], operand: Tensor) -> None:
+    first_axes: dict[str, int] = {}
+    for axis, label in enumerate(term):
+        previous_axis = first_axes.get(label)
+        if previous_axis is None:
+            first_axes[label] = axis
+            continue
+
+        previous_size = operand.data.shape[previous_axis]
+        current_size = operand.data.shape[axis]
+        if previous_size != current_size:
+            raise ValueError(
+                f"einsum repeated label {label!r} within one operand requires "
+                f"matching axis sizes before alignment, got {previous_size} and "
+                f"{current_size}"
+            )
+
+        previous_dim = operand.dims[previous_axis]
+        current_dim = operand.dims[axis]
+        if isinstance(previous_dim, BroadcastSpace) or isinstance(
+            current_dim, BroadcastSpace
+        ):
+            continue
+        if not same_rays(previous_dim, current_dim):
+            raise ValueError(
+                f"einsum repeated label {label!r} within one operand requires "
+                f"compatible dimensions, got {type(previous_dim).__name__}:"
+                f"{previous_dim.dim} vs {type(current_dim).__name__}:"
+                f"{current_dim.dim}"
+            )
+
+
 def _normalize_einsum_operands(
     equation: str, operands: tuple[Tensor, ...]
 ) -> tuple[str, list[list[str]], list[str], tuple[Tensor, ...]]:
@@ -2030,6 +2062,11 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
       leading-ellipsis form for terms that originally omitted `...`.
     - QTen only normalizes input terms. The explicit output term, if present,
       is preserved as written.
+    - Repeating a label within one operand follows diagonal semantics. Those
+      axes must already have matching sizes before any cross-operand
+      alignment, and QTen does not expand a singleton
+      [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] axis just
+      to satisfy a repeated subscript within the same operand.
 
     For example:
 
@@ -2130,6 +2167,31 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     # out.dims == (i, j, tail)
     ```
 
+    Repeated labels within one operand:
+
+    ```python
+    tensor = Tensor(
+        data=torch.randn(space_ab.dim, space_ba.dim),
+        dims=(space_ab, space_ba),
+    )
+
+    out = einsum("ii->i", tensor)
+    # The second axis is aligned to the first before taking the diagonal.
+    # out.dims == (space_ab,)
+    ```
+
+    Repeated labels do not use BroadcastSpace expansion:
+
+    ```python
+    tensor = Tensor(
+        data=torch.randn(1, shared.dim),
+        dims=(BroadcastSpace(), shared),
+    )
+
+    # Raises ValueError because repeated-label axes must already match in size.
+    out = einsum("ii->i", tensor)
+    ```
+
     Higher-rank contraction over one shared index:
 
     ```python
@@ -2182,6 +2244,9 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
         output_labels,
         normalized_operands,
     ) = _normalize_einsum_operands(equation, operands)
+
+    for term, operand in zip(expanded_terms, normalized_operands):
+        _validate_einsum_repeated_labels(term, operand)
 
     label_dims: Dict[str, StateSpace] = {}
     for term, operand in zip(expanded_terms, normalized_operands):

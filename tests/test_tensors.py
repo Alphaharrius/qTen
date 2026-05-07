@@ -2543,6 +2543,54 @@ def test_einsum_expands_broadcast_label_to_concrete_space():
     assert torch.allclose(result.data, torch.tensor(60.0))
 
 
+def test_einsum_aligns_same_ray_repeated_labels_within_one_operand():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    tensor = Tensor(
+        data=torch.randn(space_ab.dim, space_ba.dim),
+        dims=(space_ab, space_ba),
+    )
+
+    result = einsum("ii->i", tensor)
+    expected = torch.einsum("ii->i", tensor.align(1, space_ab).data)
+
+    assert result.dims == (space_ab,)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_rejects_incompatible_repeated_labels_within_one_operand():
+    left_space = _simple_hilbert("left", 3)
+    right_space = _simple_hilbert("right", 3)
+
+    tensor = Tensor(
+        data=torch.randn(left_space.dim, right_space.dim),
+        dims=(left_space, right_space),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="repeated label 'i' within one operand requires compatible dimensions",
+    ):
+        _ = einsum("ii->i", tensor)
+
+
+def test_einsum_rejects_broadcast_repeated_labels_within_one_operand():
+    shared = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.randn(1, shared.dim),
+        dims=(BroadcastSpace(), shared),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="repeated label 'i' within one operand requires matching axis sizes",
+    ):
+        _ = einsum("ii->i", tensor)
+
+
 def test_einsum_supports_mixed_ellipsis_and_non_ellipsis_terms():
     batch = IndexSpace.linear(5)
     left = IndexSpace.linear(2)
