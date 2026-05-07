@@ -2518,6 +2518,69 @@ def test_einsum_expands_broadcast_label_to_concrete_space():
     assert torch.allclose(result.data, torch.tensor(60.0))
 
 
+def test_einsum_supports_mixed_ellipsis_and_non_ellipsis_terms():
+    batch = IndexSpace.linear(5)
+    left = IndexSpace.linear(2)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(batch.dim, left.dim, right.dim),
+        dims=(batch, left, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim),
+        dims=(left, right),
+    )
+
+    result = einsum("...ij,ij->...ij", a, b)
+    expected = torch.einsum("...ij,...ij->...ij", a.data, b.data.unsqueeze(0))
+
+    assert result.dims == (batch, left, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_mixed_non_leading_ellipsis_terms():
+    left = IndexSpace.linear(2)
+    middle = IndexSpace.linear(4)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(left.dim, middle.dim, right.dim),
+        dims=(left, middle, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim),
+        dims=(left, right),
+    )
+
+    result = einsum("i...j,ij->i...j", a, b)
+    expected = torch.einsum("i...j,i...j->i...j", a.data, b.data.unsqueeze(1))
+
+    assert result.dims == (left, middle, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_mixed_trailing_ellipsis_terms():
+    left = IndexSpace.linear(2)
+    middle = IndexSpace.linear(3)
+    right = IndexSpace.linear(4)
+
+    a = Tensor(
+        data=torch.randn(left.dim, middle.dim, right.dim),
+        dims=(left, middle, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, middle.dim),
+        dims=(left, middle),
+    )
+
+    result = einsum("ij...,ij->ij...", a, b)
+    expected = torch.einsum("ij...,ij...->ij...", a.data, b.data.unsqueeze(-1))
+
+    assert result.dims == (left, middle, right)
+    assert torch.allclose(result.data, expected)
+
+
 def test_einsum_rejects_symbolically_incompatible_shared_labels():
     left_space = _simple_hilbert("left", 3)
     right_space = _simple_hilbert("right", 3)

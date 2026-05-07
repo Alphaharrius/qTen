@@ -1852,7 +1852,7 @@ def _merge_einsum_dim(
 
 def _normalize_einsum_operands(
     equation: str, operands: tuple[Tensor, ...]
-) -> tuple[list[list[str]], list[str], tuple[Tensor, ...]]:
+) -> tuple[str, list[list[str]], list[str], tuple[Tensor, ...]]:
     if not operands:
         raise ValueError("einsum expects at least one operand")
 
@@ -1870,6 +1870,7 @@ def _normalize_einsum_operands(
         )
 
     parsed_terms = [_parse_einsum_term(term) for term in input_terms]
+    any_ellipsis = any(ellipsis_pos is not None for _, ellipsis_pos in parsed_terms)
     ellipsis_rank = 0
     for (labels, ellipsis_pos), operand, term in zip(
         parsed_terms, operands, input_terms
@@ -1891,6 +1892,17 @@ def _normalize_einsum_operands(
     ellipsis_labels = [f"@ELLIPSIS{idx}" for idx in range(ellipsis_rank)]
     expanded_terms: list[list[str]] = []
     normalized_operands: list[Tensor] = []
+    normalized_input_terms = (
+        [
+            term if ellipsis_pos is not None else f"...{term}"
+            for term, (_, ellipsis_pos) in zip(input_terms, parsed_terms)
+        ]
+        if any_ellipsis
+        else input_terms.copy()
+    )
+    normalized_equation = ",".join(normalized_input_terms)
+    if output_term is not None:
+        normalized_equation = f"{normalized_equation}->{output_term}"
 
     for (labels, ellipsis_pos), operand in zip(parsed_terms, operands):
         current = operand
@@ -1928,7 +1940,12 @@ def _normalize_einsum_operands(
             *ellipsis_labels,
             *sorted(label for label, count in label_counts.items() if count == 1),
         ]
-        return expanded_terms, output_labels, tuple(normalized_operands)
+        return (
+            normalized_equation,
+            expanded_terms,
+            output_labels,
+            tuple(normalized_operands),
+        )
 
     output_labels_raw, output_ellipsis_pos = _parse_einsum_term(output_term)
     if output_ellipsis_pos is None:
@@ -1947,7 +1964,12 @@ def _normalize_einsum_operands(
                 f"einsum output label {label!r} does not appear in any input operand"
             )
 
-    return expanded_terms, output_labels, tuple(normalized_operands)
+    return (
+        normalized_equation,
+        expanded_terms,
+        output_labels,
+        tuple(normalized_operands),
+    )
 
 
 def _promote_einsum_operands(operands: Sequence[Tensor]) -> tuple[Tensor, ...]:
@@ -1994,7 +2016,16 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     - Labels omitted from the output are summed out.
     - Labels kept in the output determine the order of the output `dims`.
     - `...` is supported and follows torch's broadcast convention for unnamed
-      leading axes.
+      axes. It may appear at the start, middle, or end of a term.
+    - `...ij` means "match the last two labeled axes and let `...` absorb the
+      preceding axes"; `i...j` means "match the first labeled axis, the last
+      labeled axis, and let `...` absorb the axes in between".
+    - If any input term uses `...`, QTen normalizes any input term that omits
+      it by inserting an ellipsis in the corresponding position before calling
+      `torch.einsum`. This lets mixed equations such as `"...ij,ij->...ij"`
+      behave like torch-style broadcasted contractions.
+    - QTen only normalizes input terms. The explicit output term, if present,
+      is preserved as written.
 
     For example:
 
@@ -2002,6 +2033,10 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     - `"ij,jk->ik"` means matrix multiplication over the shared `j` axis.
     - `"abc,dbe->acde"` means multiply over the shared `b` axis and keep the
       surviving axes in the explicit output order `(a, c, d, e)`.
+    - `"...ij,ij->...ij"` means "broadcast the `ij` operand across the leading
+      unnamed axes of the other operand, then keep those axes in the output".
+    - `"i...j,ij->i...j"` means "broadcast the `ij` operand across the unnamed
+      middle axes between `i` and `j`".
 
     Symbolic alignment rules
     ------------------------
@@ -2040,6 +2075,51 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
 
     out = einsum("ij,jk->ik", left, right)
     # out.dims == (m, n)
+    ```
+
+    Mixed leading ellipsis:
+
+    ```python
+    batch = IndexSpace.linear(5)
+    i = IndexSpace.linear(2)
+    j = IndexSpace.linear(3)
+
+    left = Tensor(data=torch.randn(batch.dim, i.dim, j.dim), dims=(batch, i, j))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("...ij,ij->...ij", left, right)
+    # Equivalent numeric contraction: torch.einsum("...ij,...ij->...ij", ...)
+    # out.dims == (batch, i, j)
+    ```
+
+    Mixed middle ellipsis:
+
+    ```python
+    i = IndexSpace.linear(2)
+    middle = IndexSpace.linear(4)
+    j = IndexSpace.linear(3)
+
+    left = Tensor(data=torch.randn(i.dim, middle.dim, j.dim), dims=(i, middle, j))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("i...j,ij->i...j", left, right)
+    # Equivalent numeric contraction: torch.einsum("i...j,i...j->i...j", ...)
+    # out.dims == (i, middle, j)
+    ```
+
+    Mixed trailing ellipsis:
+
+    ```python
+    i = IndexSpace.linear(2)
+    j = IndexSpace.linear(3)
+    tail = IndexSpace.linear(4)
+
+    left = Tensor(data=torch.randn(i.dim, j.dim, tail.dim), dims=(i, j, tail))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("ij...,ij->ij...", left, right)
+    # Equivalent numeric contraction: torch.einsum("ij...,ij...->ij...", ...)
+    # out.dims == (i, j, tail)
     ```
 
     Higher-rank contraction over one shared index:
@@ -2088,9 +2168,12 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     [`align`][qten.linalg.tensors.align]
         Axis-alignment primitive used to reconcile same-labeled symbolic dims.
     """
-    expanded_terms, output_labels, normalized_operands = _normalize_einsum_operands(
-        equation, operands
-    )
+    (
+        normalized_equation,
+        expanded_terms,
+        output_labels,
+        normalized_operands,
+    ) = _normalize_einsum_operands(equation, operands)
 
     label_dims: Dict[str, StateSpace] = {}
     for term, operand in zip(expanded_terms, normalized_operands):
@@ -2107,7 +2190,9 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
         aligned_operands.append(current)
 
     promoted_operands = _promote_einsum_operands(aligned_operands)
-    data = torch.einsum(equation, *(operand.data for operand in promoted_operands))
+    data = torch.einsum(
+        normalized_equation, *(operand.data for operand in promoted_operands)
+    )
     dims = tuple(label_dims[label] for label in output_labels)
     return Tensor(data=data, dims=dims)
 
