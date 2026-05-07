@@ -1841,6 +1841,12 @@ def _merge_einsum_dim(
         return candidate
     if isinstance(candidate, BroadcastSpace):
         return current
+    if type(current) is not type(candidate):
+        raise ValueError(
+            f"einsum label {label!r} has incompatible dimensions: "
+            f"{type(current).__name__}:{current.dim} vs "
+            f"{type(candidate).__name__}:{candidate.dim}"
+        )
     if same_rays(current, candidate):
         return current
     raise ValueError(

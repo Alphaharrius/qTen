@@ -2577,6 +2577,20 @@ def test_einsum_rejects_incompatible_repeated_labels_within_one_operand():
         _ = einsum("ii->i", tensor)
 
 
+def test_einsum_rejects_same_ray_statespace_type_mismatch():
+    structure = OrderedDict([("k1", 0), ("k2", 1)])
+    left_space = HilbertSpace(structure=structure)
+    right_space = MomentumSpace(structure=structure)
+
+    left = Tensor(data=torch.randn(left_space.dim), dims=(left_space,))
+    right = Tensor(data=torch.randn(right_space.dim), dims=(right_space,))
+
+    with pytest.raises(
+        ValueError, match="einsum label 'i' has incompatible dimensions"
+    ):
+        _ = einsum("i,i->i", left, right)
+
+
 def test_einsum_rejects_broadcast_repeated_labels_within_one_operand():
     shared = IndexSpace.linear(3)
     tensor = Tensor(
