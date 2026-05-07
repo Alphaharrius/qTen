@@ -66,6 +66,7 @@ from .linalg.tensors import (
     cat as cat,
     conj as conj,
     equal as equal,
+    einsum as einsum,
     expand_to_union as expand_to_union,
     eye as eye,
     factorize_dim as factorize_dim,
