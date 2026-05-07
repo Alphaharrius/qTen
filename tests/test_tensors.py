@@ -2400,6 +2400,31 @@ def test_einsum_aligns_shared_labels_before_contraction():
     assert torch.allclose(result.data, expected)
 
 
+def test_einsum_keeps_first_seen_ordering_for_same_ray_labels():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    left_ab = Tensor(data=torch.randn(space_ab.dim), dims=(space_ab,))
+    right_ba = Tensor(data=torch.randn(space_ba.dim), dims=(space_ba,))
+
+    result_ab = einsum("i,i->i", left_ab, right_ba)
+    expected_ab = torch.einsum("i,i->i", left_ab.data, right_ba.align(0, space_ab).data)
+
+    assert result_ab.dims == (space_ab,)
+    assert torch.allclose(result_ab.data, expected_ab)
+
+    left_ba = Tensor(data=torch.randn(space_ba.dim), dims=(space_ba,))
+    right_ab = Tensor(data=torch.randn(space_ab.dim), dims=(space_ab,))
+
+    result_ba = einsum("i,i->i", left_ba, right_ab)
+    expected_ba = torch.einsum("i,i->i", left_ba.data, right_ab.align(0, space_ba).data)
+
+    assert result_ba.dims == (space_ba,)
+    assert torch.allclose(result_ba.data, expected_ba)
+
+
 def test_einsum_supports_elementwise_labeled_product_with_broadcast():
     left = IndexSpace.linear(2)
     shared = IndexSpace.linear(3)

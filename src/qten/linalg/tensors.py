@@ -2004,7 +2004,7 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     - [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] may
       expand to a concrete labeled space,
     - axes with the same rays but different ordering are permuted into a
-      common canonical ordering before contraction.
+      shared target ordering before contraction.
 
     Equation guide
     --------------
@@ -2045,11 +2045,15 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
     - if two axes with the same label already share the same
       [`StateSpace`][qten.symbolics.state_space.StateSpace], nothing changes,
     - if they have the same rays in a different order, the operand is
-      permuted to a common ordering,
+      permuted to the first compatible non-[`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace]
+      ordering encountered for that label,
     - if one side is [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace],
       it is expanded to the concrete shared space,
     - if two same-labeled concrete axes are not symbolically compatible, the
       call raises `ValueError`.
+
+    When multiple same-ray orderings are possible, swapping operand order can
+    therefore change the output `dims` ordering for shared labels.
 
     This means einsum compatibility is stricter than raw shape-only tensor
     math: matching sizes alone are not enough when a label represents a
