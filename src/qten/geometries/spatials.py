@@ -747,6 +747,25 @@ def _matrix_to_ndarray(mat: ImmutableDenseMatrix) -> np.ndarray:
     return np.array(mat.evalf(), dtype=precision.np_float)
 
 
+def _format_rep_coords(rep: ImmutableDenseMatrix) -> str:
+    if rep.shape[1] == 1:
+        return "[" + ", ".join(str(sympify(v)) for v in rep) + "]"
+    rows = ("[" + ", ".join(str(sympify(x)) for x in row) + "]" for row in rep.tolist())
+    return "[" + ", ".join(rows) + "]"
+
+
+def _resolved_lattice_site(
+    offset: "Offset[Lattice]",
+) -> tuple[str, ImmutableDenseMatrix] | None:
+    fractional = offset.fractional().rep
+    for site_name, site_offset in offset.space.unit_cell.items():
+        delta = offset.rep - site_offset.rep
+        if all(sy.simplify(coord - sy.floor(coord)) == 0 for coord in delta):
+            if fractional == offset.space.unit_cell[site_name].rep:
+                return site_name, site_offset.rep
+    return None
+
+
 @lru_cache
 def _space_basis_as_ndarray(space: AffineSpace) -> np.ndarray:
     return _matrix_to_ndarray(space.basis)
@@ -857,18 +876,21 @@ class Offset(Generic[S], Spatial, HasBase[S]):
 
     String representations
     ----------------------
-    - `str(offset)` returns `Offset(rep ∈ basis)` in a compact symbolic form.
-    - If `rep` is a column vector, it is flattened and shown as a one-dimensional
-      Python list like `['1/2', '0']`.
-    - If `rep` is not a single column, it is shown as a nested list preserving
-      its matrix shape.
-    - The ambient-space basis is always shown as a nested list of stringified
-      SymPy entries after the `∈` symbol.
+    - `str(offset)` returns a short coordinate-style label.
+    - Offsets in a plain [`AffineSpace`][qten.geometries.spatials.AffineSpace]
+      print as `r[...]`, using the stored coordinates `rep` directly.
+    - Offsets in a [`Lattice`][qten.geometries.spatials.Lattice] print using
+      fractional intra-cell coordinates `offset.fractional().rep`.
+    - If those fractional coordinates match a named unit-cell site, the label
+      is `r[site; frac]`.
+    - Otherwise the label is `r[frac]`.
     - `repr(offset)` is identical to `str(offset)`.
 
-    This means the string form shows the coordinate representation and the
-    basis it lives in, not the Cartesian vector `space.basis @ rep`
-    (mathematically \(A r\)).
+    This means the string form emphasizes compact symbolic labels that work
+    well inside [`U1Basis`][qten.symbolics.hilbert_space.U1Basis], rather than
+    printing the full ambient basis matrix. For lattice offsets, the display is
+    intentionally invariant under lattice translations: translating by an
+    integer cell vector does not change the printed fractional label.
 
     Let \(x = (r_x, S_x)\) and \(y = (r_y, S_y)\), where
     \(r_x, r_y \in \mathbb{R}^{d \times 1}\) are coordinate columns and
@@ -1046,20 +1068,20 @@ class Offset(Generic[S], Spatial, HasBase[S]):
 
     def __str__(self):
         """
-        Return a symbolic display of the stored coordinates and ambient basis.
+        Return a short symbolic label for this offset.
 
-        Column-vector coordinates are flattened for readability; higher-rank
-        matrix representations keep their nested-list structure. The basis of
-        `space` is always included so the printed coordinates remain
-        unambiguous.
+        Offsets in an affine space print as `r[...]` using their stored
+        coordinates. Offsets on a lattice print from their fractional
+        intra-cell coordinates: `r[site; frac]` when those coordinates match a
+        named unit-cell site, otherwise `r[frac]`.
         """
-        # If it's a column vector, flatten to 1D python list
-        if self.rep.shape[1] == 1:
-            vec = [str(sympify(v)) for v in list(self.rep)]
-        else:
-            vec = [[str(sympify(x)) for x in row] for row in self.rep.tolist()]
-        basis = [[str(sympify(x)) for x in row] for row in self.space.basis.tolist()]
-        return f"Offset({vec} ∈ {basis})"
+        if isinstance(self.space, Lattice):
+            resolved = _resolved_lattice_site(cast("Offset[Lattice]", self))
+            if resolved is not None:
+                site_name, site_fractional = resolved
+                return f"r[{site_name}; {_format_rep_coords(site_fractional)[1:-1]}]"
+            return f"r{_format_rep_coords(self.fractional().rep)}"
+        return f"r{_format_rep_coords(self.rep)}"
 
     def __repr__(self):
         """Return the same display string as [`__str__()`][qten.geometries.spatials.Offset.__str__]."""
@@ -1145,20 +1167,12 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
 
     String representations
     ----------------------
-    `Momentum` inherits [`Offset.__str__()`][qten.geometries.spatials.Offset.__str__]
-    and [`Offset.__repr__()`][qten.geometries.spatials.Offset.__repr__].
-    Concretely:
-
-    - `str(momentum)` prints `Offset(rep ∈ basis)`, not a separate
-      `Momentum(...)` wrapper.
-    - `rep` is the reciprocal-coordinate column, flattened when it is a single
-      column.
-    - `basis` is the reciprocal-lattice basis, so the display still makes it
-      clear that the object lives in momentum space.
+    - `str(momentum)` prints `k[...]`.
     - `repr(momentum)` is identical to `str(momentum)`.
 
-    This is intentionally representation-centric: it shows the stored
-    reciprocal coordinates and reciprocal basis directly.
+    This keeps reciprocal-space labels compact and distinct from real-space
+    [`Offset`][qten.geometries.spatials.Offset] labels, especially when
+    embedded inside [`U1Basis`][qten.symbolics.hilbert_space.U1Basis].
 
     Attributes
     ----------
@@ -1219,6 +1233,14 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
         rebase_transform_mat = _rebase_transform_matrix(self.space, space)
         new_rep = rebase_transform_mat @ self.rep
         return Momentum(rep=ImmutableDenseMatrix(new_rep), space=space)
+
+    def __str__(self) -> str:
+        """Return a short symbolic label `k[...]` for this momentum."""
+        return f"k{_format_rep_coords(self.rep)}"
+
+    def __repr__(self) -> str:
+        """Return the same display string as [`__str__()`][qten.geometries.spatials.Momentum.__str__]."""
+        return str(self)
 
 
 @Operable.__contains__.register

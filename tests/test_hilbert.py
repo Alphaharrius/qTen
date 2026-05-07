@@ -52,6 +52,27 @@ def test_u1_state_basic_properties_and_overlap():
     assert psi.rays() == _state(r0, "s", sy.Integer(1))
 
 
+def test_u1_state_str_uses_compact_irrep_labels():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={
+            "A": ImmutableDenseMatrix([0]),
+            "B": ImmutableDenseMatrix([sy.Rational(1, 2)]),
+        },
+    )
+    psi_r = U1Basis(coef=sy.Integer(1), base=(lattice.at("B", (1,)), Orb("p")))
+    psi_k = U1Basis(
+        coef=sy.Integer(1),
+        base=(
+            Momentum(rep=ImmutableDenseMatrix([sy.Rational(1, 2)]), space=lattice.dual),
+        ),
+    )
+
+    assert str(psi_r) == "|r[B; 1/2]⟩⊗|Orb(name='p')⟩"
+    assert str(psi_k) == "|k[1/2]⟩"
+
+
 def test_u1_state_irrep_access_and_replace():
     basis = ImmutableDenseMatrix([[1]])
     lat = _lattice(basis, (2,))
