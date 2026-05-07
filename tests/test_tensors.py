@@ -2445,6 +2445,27 @@ def test_einsum_supports_elementwise_labeled_product_with_broadcast():
     assert torch.allclose(result.data, expected)
 
 
+def test_einsum_promotes_operands_to_common_dtype():
+    left = IndexSpace.linear(2)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(left.dim, right.dim, dtype=torch.float32),
+        dims=(left, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim, dtype=torch.complex64),
+        dims=(left, right),
+    )
+
+    result = einsum("ij,ij->ij", a, b)
+    expected = torch.einsum("ij,ij->ij", a.data, b.data)
+
+    assert result.dims == (left, right)
+    assert result.data.dtype == torch.promote_types(a.data.dtype, b.data.dtype)
+    assert torch.allclose(result.data, expected)
+
+
 def test_einsum_supports_symbolically_aligned_matrix_multiplication():
     mode_a = make_mode("a", 2)
     mode_b = make_mode("b", 3)
