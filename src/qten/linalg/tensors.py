@@ -2021,9 +2021,13 @@ def einsum(equation: str, *operands: Tensor) -> Tensor:
       preceding axes"; `i...j` means "match the first labeled axis, the last
       labeled axis, and let `...` absorb the axes in between".
     - If any input term uses `...`, QTen normalizes any input term that omits
-      it by inserting an ellipsis in the corresponding position before calling
-      `torch.einsum`. This lets mixed equations such as `"...ij,ij->...ij"`
-      behave like torch-style broadcasted contractions.
+      it by prepending a leading ellipsis in the internal `torch.einsum`
+      equation. This lets mixed equations such as `"...ij,ij->...ij"` behave
+      like torch-style broadcasted contractions.
+    - For symbolic alignment, QTen may still insert singleton axes at the
+      explicit ellipsis position of another term (for example when reconciling
+      `"i...j,ij->i...j"`), but the normalized torch equation itself uses the
+      leading-ellipsis form for terms that originally omitted `...`.
     - QTen only normalizes input terms. The explicit output term, if present,
       is preserved as written.
 
