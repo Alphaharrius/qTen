@@ -22,6 +22,8 @@ Decompositions
 
 Convenience re-exports
 ----------------------
+- [`einsum`][qten.linalg.tensors.einsum]
+  Tensor contraction helper re-exported from [`qten.linalg.tensors`][qten.linalg.tensors].
 - [`norm`][qten.linalg.tensors.norm]
   Tensor norm helper re-exported from [`qten.linalg.tensors`][qten.linalg.tensors].
 
@@ -39,4 +41,4 @@ from .decompose import (
     qr as qr,
     svd as svd,
 )
-from .tensors import norm as norm
+from .tensors import einsum as einsum, norm as norm

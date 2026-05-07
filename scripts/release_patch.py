@@ -23,7 +23,9 @@ def _extract_torch_spec(pyproject: dict) -> str | None:
 
 
 def _replace_optional(text: str, pattern: str, repl: str) -> tuple[str, int]:
-    updated, count = re.subn(pattern, repl, text, count=1, flags=re.MULTILINE | re.DOTALL)
+    updated, count = re.subn(
+        pattern, repl, text, count=1, flags=re.MULTILINE | re.DOTALL
+    )
     return updated, count
 
 
@@ -45,37 +47,45 @@ def rewrite_pyproject(path: Path) -> None:
             for dep in parsed.get("project", {}).get("dependencies", [])
         ):
             return
-        raise SystemExit("No torch dependency found under [project.optional-dependencies].")
+        raise SystemExit(
+            "No torch dependency found under [project.optional-dependencies]."
+        )
 
     if torch_spec not in parsed.get("project", {}).get("dependencies", []):
         original = _replace_once(
             original,
-            r'(?ms)^dependencies = \[\n(?P<body>.*?)^\]',
+            r"(?ms)^dependencies = \[\n(?P<body>.*?)^\]",
             lambda m: f'dependencies = [\n{m.group("body")}    "{torch_spec}",\n]',
         )
 
     original, _ = _replace_optional(
         original,
-        r'(?ms)^\[project\.optional-dependencies\]\n.*?(?=^\[)',
+        r"(?ms)^\[project\.optional-dependencies\]\n.*?(?=^\[)",
         "",
     )
     original, _ = _replace_optional(
         original,
-        r'(?ms)^conflicts = \[\n.*?^\]\n\n',
+        r"(?ms)^conflicts = \[\n.*?^\]\n\n",
         "",
     )
     original, _ = _replace_optional(
         original,
-        r'(?ms)^torch = \[\n.*?^\]\n\n',
+        r"(?ms)^torch = \[\n.*?^\]\n\n",
         "",
     )
     original, _ = _replace_optional(
         original,
-        r'(?ms)^torchvision = \[\n.*?^\]\n\n',
+        r"(?ms)^torchvision = \[\n.*?^\]\n\n",
         "",
     )
 
-    for index_name in ("pytorch-cu126", "pytorch-cu128", "pytorch-cu129", "pytorch-cu130", "pytorch-cpu"):
+    for index_name in (
+        "pytorch-cu126",
+        "pytorch-cu128",
+        "pytorch-cu129",
+        "pytorch-cu130",
+        "pytorch-cpu",
+    ):
         original, _ = _replace_optional(
             original,
             rf'(?ms)^\[\[tool\.uv\.index\]\]\nname = "{re.escape(index_name)}"\n.*?(?=^\[\[tool\.uv\.index\]\]|^\[)',

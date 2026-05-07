@@ -13,6 +13,7 @@ from qten.linalg.tensors import (
     allclose,
     astype,
     cat,
+    einsum,
     equal,
     imag as tensor_imag,
     isclose as tensor_isclose,
@@ -2375,6 +2376,339 @@ def test_tensor_real_imag_abs_module_functions_match_methods():
     assert torch.equal(tensor_real(tensor).data, tensor.real().data)
     assert torch.equal(tensor_imag(tensor).data, tensor.imag().data)
     assert torch.equal(tensor_abs(tensor).data, tensor.abs().data)
+
+
+def test_einsum_aligns_shared_labels_before_contraction():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+    out = IndexSpace.linear(4)
+
+    left_data = torch.randn(out.dim, space_ab.dim)
+    right_data_ba = torch.randn(space_ba.dim, out.dim)
+
+    left = Tensor(data=left_data, dims=(out, space_ab))
+    right = Tensor(data=right_data_ba, dims=(space_ba, out))
+
+    result = einsum("ik,kj->ij", left, right)
+
+    aligned_right = right.align(0, space_ab)
+    expected = torch.einsum("ik,kj->ij", left.data, aligned_right.data)
+
+    assert result.dims == (out, out)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_keeps_first_seen_ordering_for_same_ray_labels():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    left_ab = Tensor(data=torch.randn(space_ab.dim), dims=(space_ab,))
+    right_ba = Tensor(data=torch.randn(space_ba.dim), dims=(space_ba,))
+
+    result_ab = einsum("i,i->i", left_ab, right_ba)
+    expected_ab = torch.einsum("i,i->i", left_ab.data, right_ba.align(0, space_ab).data)
+
+    assert result_ab.dims == (space_ab,)
+    assert torch.allclose(result_ab.data, expected_ab)
+
+    left_ba = Tensor(data=torch.randn(space_ba.dim), dims=(space_ba,))
+    right_ab = Tensor(data=torch.randn(space_ab.dim), dims=(space_ab,))
+
+    result_ba = einsum("i,i->i", left_ba, right_ab)
+    expected_ba = torch.einsum("i,i->i", left_ba.data, right_ab.align(0, space_ba).data)
+
+    assert result_ba.dims == (space_ba,)
+    assert torch.allclose(result_ba.data, expected_ba)
+
+
+def test_einsum_supports_elementwise_labeled_product_with_broadcast():
+    left = IndexSpace.linear(2)
+    shared = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.tensor([[1.0], [2.0]], dtype=torch.float64),
+        dims=(left, BroadcastSpace()),
+    )
+    b = Tensor(
+        data=torch.tensor([[10.0, 20.0, 30.0]], dtype=torch.float64),
+        dims=(BroadcastSpace(), shared),
+    )
+
+    result = einsum("ij,ij->ij", a, b)
+    expected = torch.einsum("ij,ij->ij", a.data, b.data)
+
+    assert result.dims == (left, shared)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_promotes_operands_to_common_dtype():
+    left = IndexSpace.linear(2)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(left.dim, right.dim, dtype=torch.float32),
+        dims=(left, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim, dtype=torch.complex64),
+        dims=(left, right),
+    )
+
+    result = einsum("ij,ij->ij", a, b)
+    expected = torch.einsum("ij,ij->ij", a.data, b.data)
+
+    assert result.dims == (left, right)
+    assert result.data.dtype == torch.promote_types(a.data.dtype, b.data.dtype)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_symbolically_aligned_matrix_multiplication():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    mode_c = make_mode("c", 4)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+    space_c = _space_from_modes(mode_c)
+
+    left_data = torch.randn(space_c.dim, space_ab.dim)
+    right_data = torch.randn(space_ba.dim, space_c.dim)
+
+    left = Tensor(data=left_data, dims=(space_c, space_ab))
+    right = Tensor(data=right_data, dims=(space_ba, space_c))
+
+    result = einsum("ij,jk->ik", left, right)
+    expected = torch.einsum("ij,jk->ik", left.data, right.align(0, space_ab).data)
+
+    assert result.dims == (space_c, space_c)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_higher_rank_contraction_over_one_index():
+    left = IndexSpace.linear(2)
+    contract = IndexSpace.linear(3)
+    right = IndexSpace.linear(4)
+
+    a = Tensor(
+        data=torch.randn(left.dim, right.dim, contract.dim),
+        dims=(left, right, contract),
+    )
+    b = Tensor(
+        data=torch.randn(contract.dim, right.dim),
+        dims=(contract, right),
+    )
+
+    result = einsum("abc,cd->abd", a, b)
+    expected = torch.einsum("abc,cd->abd", a.data, b.data)
+
+    assert result.dims == (left, right, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_higher_rank_contraction_over_two_indices():
+    left = IndexSpace.linear(2)
+    contract_1 = IndexSpace.linear(3)
+    contract_2 = IndexSpace.linear(4)
+    right = IndexSpace.linear(5)
+
+    a = Tensor(
+        data=torch.randn(left.dim, contract_1.dim, contract_2.dim),
+        dims=(left, contract_1, contract_2),
+    )
+    b = Tensor(
+        data=torch.randn(contract_1.dim, contract_2.dim, right.dim),
+        dims=(contract_1, contract_2, right),
+    )
+
+    result = einsum("abc,bcd->ad", a, b)
+    expected = torch.einsum("abc,bcd->ad", a.data, b.data)
+
+    assert result.dims == (left, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_higher_rank_contraction_over_three_indices():
+    outer = IndexSpace.linear(2)
+    contract_1 = IndexSpace.linear(3)
+    contract_2 = IndexSpace.linear(4)
+    contract_3 = IndexSpace.linear(5)
+    tail = IndexSpace.linear(6)
+
+    a = Tensor(
+        data=torch.randn(outer.dim, contract_1.dim, contract_2.dim, contract_3.dim),
+        dims=(outer, contract_1, contract_2, contract_3),
+    )
+    b = Tensor(
+        data=torch.randn(contract_1.dim, contract_2.dim, contract_3.dim, tail.dim),
+        dims=(contract_1, contract_2, contract_3, tail),
+    )
+
+    result = einsum("abcd,bcde->ae", a, b)
+    expected = torch.einsum("abcd,bcde->ae", a.data, b.data)
+
+    assert result.dims == (outer, tail)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_expands_broadcast_label_to_concrete_space():
+    shared = IndexSpace.linear(3)
+    left = Tensor(data=torch.tensor([1.0, 2.0, 3.0]), dims=(shared,))
+    right = Tensor(data=torch.tensor([10.0]), dims=(BroadcastSpace(),))
+
+    result = einsum("b,b->", left, right)
+
+    assert result.dims == ()
+    assert torch.allclose(result.data, torch.tensor(60.0))
+
+
+def test_einsum_aligns_same_ray_repeated_labels_within_one_operand():
+    mode_a = make_mode("a", 2)
+    mode_b = make_mode("b", 3)
+    space_ab = _space_from_modes(mode_a, mode_b)
+    space_ba = _space_from_modes(mode_b, mode_a)
+
+    tensor = Tensor(
+        data=torch.randn(space_ab.dim, space_ba.dim),
+        dims=(space_ab, space_ba),
+    )
+
+    result = einsum("ii->i", tensor)
+    expected = torch.einsum("ii->i", tensor.align(1, space_ab).data)
+
+    assert result.dims == (space_ab,)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_rejects_incompatible_repeated_labels_within_one_operand():
+    left_space = _simple_hilbert("left", 3)
+    right_space = _simple_hilbert("right", 3)
+
+    tensor = Tensor(
+        data=torch.randn(left_space.dim, right_space.dim),
+        dims=(left_space, right_space),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="repeated label 'i' within one operand requires compatible dimensions",
+    ):
+        _ = einsum("ii->i", tensor)
+
+
+def test_einsum_rejects_same_ray_statespace_type_mismatch():
+    structure = OrderedDict([("k1", 0), ("k2", 1)])
+    left_space = HilbertSpace(structure=structure)
+    right_space = MomentumSpace(structure=structure)
+
+    left = Tensor(data=torch.randn(left_space.dim), dims=(left_space,))
+    right = Tensor(data=torch.randn(right_space.dim), dims=(right_space,))
+
+    with pytest.raises(
+        ValueError, match="einsum label 'i' has incompatible dimensions"
+    ):
+        _ = einsum("i,i->i", left, right)
+
+
+def test_einsum_rejects_broadcast_repeated_labels_within_one_operand():
+    shared = IndexSpace.linear(3)
+    tensor = Tensor(
+        data=torch.randn(1, shared.dim),
+        dims=(BroadcastSpace(), shared),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="repeated label 'i' within one operand requires matching axis sizes",
+    ):
+        _ = einsum("ii->i", tensor)
+
+
+def test_einsum_supports_mixed_ellipsis_and_non_ellipsis_terms():
+    batch = IndexSpace.linear(5)
+    left = IndexSpace.linear(2)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(batch.dim, left.dim, right.dim),
+        dims=(batch, left, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim),
+        dims=(left, right),
+    )
+
+    result = einsum("...ij,ij->...ij", a, b)
+    expected = torch.einsum("...ij,...ij->...ij", a.data, b.data.unsqueeze(0))
+
+    assert result.dims == (batch, left, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_mixed_non_leading_ellipsis_terms():
+    left = IndexSpace.linear(2)
+    middle = IndexSpace.linear(4)
+    right = IndexSpace.linear(3)
+
+    a = Tensor(
+        data=torch.randn(left.dim, middle.dim, right.dim),
+        dims=(left, middle, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, right.dim),
+        dims=(left, right),
+    )
+
+    result = einsum("i...j,ij->i...j", a, b)
+    expected = torch.einsum("i...j,i...j->i...j", a.data, b.data.unsqueeze(1))
+
+    assert result.dims == (left, middle, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_supports_mixed_trailing_ellipsis_terms():
+    left = IndexSpace.linear(2)
+    middle = IndexSpace.linear(3)
+    right = IndexSpace.linear(4)
+
+    a = Tensor(
+        data=torch.randn(left.dim, middle.dim, right.dim),
+        dims=(left, middle, right),
+    )
+    b = Tensor(
+        data=torch.randn(left.dim, middle.dim),
+        dims=(left, middle),
+    )
+
+    result = einsum("ij...,ij->ij...", a, b)
+    expected = torch.einsum("ij...,ij...->ij...", a.data, b.data.unsqueeze(-1))
+
+    assert result.dims == (left, middle, right)
+    assert torch.allclose(result.data, expected)
+
+
+def test_einsum_rejects_symbolically_incompatible_shared_labels():
+    left_space = _simple_hilbert("left", 3)
+    right_space = _simple_hilbert("right", 3)
+
+    left = Tensor(data=torch.randn(left_space.dim), dims=(left_space,))
+    right = Tensor(data=torch.randn(right_space.dim), dims=(right_space,))
+
+    with pytest.raises(ValueError, match="incompatible dimensions"):
+        _ = einsum("i,i->", left, right)
+
+
+def test_einsum_rejects_non_ascii_labels():
+    space = _simple_hilbert("space", 2)
+    tensor = Tensor(data=torch.randn(space.dim), dims=(space,))
+
+    with pytest.raises(
+        ValueError,
+        match=r"unsupported label 'α'.*ASCII letters \[A-Za-z\]",
+    ):
+        _ = einsum("α->", tensor)
 
 
 def test_tensor_real_imag_abs_on_real_tensor():

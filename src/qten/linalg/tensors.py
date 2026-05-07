@@ -14,6 +14,8 @@ Core API
   Context manager for forcing newly created QTen tensors onto a device.
 - [`matmul`][qten.linalg.tensors.matmul]
   StateSpace-aware matrix multiplication.
+- [`einsum`][qten.linalg.tensors.einsum]
+  Einstein-summation helper with StateSpace-aware axis alignment.
 - [`kron`][qten.linalg.tensors.kron]
   StateSpace-aware Kronecker product.
 - [`align`][qten.linalg.tensors.align]
@@ -76,6 +78,7 @@ from typing_extensions import override
 from contextlib import ContextDecorator
 from functools import wraps, reduce
 from itertools import product
+import string
 from numbers import Number
 from dataclasses import dataclass, replace
 from threading import local
@@ -1799,6 +1802,488 @@ def _match_dims_for_matmul(left: Tensor, right: Tensor) -> Tuple[Tensor, Tensor]
     elif right.rank() > left.rank():
         left = promote_rank(left, right.rank())
     return left, right
+
+
+def _parse_einsum_term(term: str) -> tuple[list[str], int | None]:
+    labels: list[str] = []
+    ellipsis_pos: int | None = None
+    i = 0
+    while i < len(term):
+        ch = term[i]
+        if ch.isspace():
+            i += 1
+            continue
+        if ch == ".":
+            if term[i : i + 3] != "...":
+                raise ValueError(f"Invalid einsum term {term!r}: malformed ellipsis")
+            if ellipsis_pos is not None:
+                raise ValueError(
+                    f"Invalid einsum term {term!r}: multiple ellipses are not allowed"
+                )
+            ellipsis_pos = len(labels)
+            i += 3
+            continue
+        if ch in string.ascii_letters:
+            labels.append(ch)
+            i += 1
+            continue
+        if ch.isalpha():
+            raise ValueError(
+                f"Invalid einsum term {term!r}: unsupported label {ch!r}; "
+                "einsum labels must be ASCII letters [A-Za-z]"
+            )
+        raise ValueError(
+            f"Invalid einsum term {term!r}: expected letters or ellipsis, got {ch!r}"
+        )
+    return labels, ellipsis_pos
+
+
+def _merge_einsum_dim(
+    current: StateSpace | None, candidate: StateSpace, label: str
+) -> StateSpace:
+    if current is None:
+        return candidate
+    if isinstance(current, BroadcastSpace):
+        return candidate
+    if isinstance(candidate, BroadcastSpace):
+        return current
+    if type(current) is not type(candidate):
+        raise ValueError(
+            f"einsum label {label!r} has incompatible dimensions: "
+            f"{type(current).__name__}:{current.dim} vs "
+            f"{type(candidate).__name__}:{candidate.dim}"
+        )
+    if same_rays(current, candidate):
+        return current
+    raise ValueError(
+        f"einsum label {label!r} has incompatible dimensions: "
+        f"{type(current).__name__}:{current.dim} vs "
+        f"{type(candidate).__name__}:{candidate.dim}"
+    )
+
+
+def _validate_einsum_repeated_labels(term: Sequence[str], operand: Tensor) -> None:
+    first_axes: dict[str, int] = {}
+    for axis, label in enumerate(term):
+        previous_axis = first_axes.get(label)
+        if previous_axis is None:
+            first_axes[label] = axis
+            continue
+
+        previous_size = operand.data.shape[previous_axis]
+        current_size = operand.data.shape[axis]
+        if previous_size != current_size:
+            raise ValueError(
+                f"einsum repeated label {label!r} within one operand requires "
+                f"matching axis sizes before alignment, got {previous_size} and "
+                f"{current_size}"
+            )
+
+        previous_dim = operand.dims[previous_axis]
+        current_dim = operand.dims[axis]
+        if isinstance(previous_dim, BroadcastSpace) or isinstance(
+            current_dim, BroadcastSpace
+        ):
+            continue
+        if not same_rays(previous_dim, current_dim):
+            raise ValueError(
+                f"einsum repeated label {label!r} within one operand requires "
+                f"compatible dimensions, got {type(previous_dim).__name__}:"
+                f"{previous_dim.dim} vs {type(current_dim).__name__}:"
+                f"{current_dim.dim}"
+            )
+
+
+def _normalize_einsum_operands(
+    equation: str, operands: tuple[Tensor, ...]
+) -> tuple[str, list[list[str]], list[str], tuple[Tensor, ...]]:
+    if not operands:
+        raise ValueError("einsum expects at least one operand")
+
+    if "->" in equation:
+        lhs, rhs = equation.split("->", 1)
+        output_term = rhs.strip()
+    else:
+        lhs = equation
+        output_term = None
+
+    input_terms = [term.strip() for term in lhs.split(",")]
+    if len(input_terms) != len(operands):
+        raise ValueError(
+            f"einsum equation expects {len(input_terms)} operands, got {len(operands)}"
+        )
+
+    parsed_terms = [_parse_einsum_term(term) for term in input_terms]
+    any_ellipsis = any(ellipsis_pos is not None for _, ellipsis_pos in parsed_terms)
+    ellipsis_rank = 0
+    for (labels, ellipsis_pos), operand, term in zip(
+        parsed_terms, operands, input_terms
+    ):
+        named_count = len(labels)
+        if ellipsis_pos is None:
+            if operand.rank() != named_count:
+                raise ValueError(
+                    f"einsum term {term!r} expects rank {named_count}, got {operand.rank()}"
+                )
+            continue
+        current_ellipsis_rank = operand.rank() - named_count
+        if current_ellipsis_rank < 0:
+            raise ValueError(
+                f"einsum term {term!r} has too many labels for rank {operand.rank()}"
+            )
+        ellipsis_rank = max(ellipsis_rank, current_ellipsis_rank)
+
+    ellipsis_labels = [f"@ELLIPSIS{idx}" for idx in range(ellipsis_rank)]
+    expanded_terms: list[list[str]] = []
+    normalized_operands: list[Tensor] = []
+    normalized_input_terms = (
+        [
+            term if ellipsis_pos is not None else f"...{term}"
+            for term, (_, ellipsis_pos) in zip(input_terms, parsed_terms)
+        ]
+        if any_ellipsis
+        else input_terms.copy()
+    )
+    normalized_equation = ",".join(normalized_input_terms)
+    if output_term is not None:
+        normalized_equation = f"{normalized_equation}->{output_term}"
+
+    for (labels, ellipsis_pos), operand in zip(parsed_terms, operands):
+        current = operand
+        if ellipsis_pos is None:
+            if ellipsis_rank:
+                for _ in range(ellipsis_rank):
+                    current = current.unsqueeze(0)
+                expanded_terms.append([*ellipsis_labels, *labels])
+            else:
+                expanded_terms.append(labels.copy())
+            normalized_operands.append(current)
+            continue
+
+        current_ellipsis_rank = current.rank() - len(labels)
+        missing = ellipsis_rank - current_ellipsis_rank
+        for _ in range(missing):
+            current = current.unsqueeze(ellipsis_pos)
+        expanded_terms.append(
+            [
+                *labels[:ellipsis_pos],
+                *ellipsis_labels,
+                *labels[ellipsis_pos:],
+            ]
+        )
+        normalized_operands.append(current)
+
+    if output_term is None:
+        label_counts: Dict[str, int] = OrderedDict()
+        for term in expanded_terms:
+            for label in term:
+                if label in ellipsis_labels:
+                    continue
+                label_counts[label] = label_counts.get(label, 0) + 1
+        output_labels = [
+            *ellipsis_labels,
+            *sorted(label for label, count in label_counts.items() if count == 1),
+        ]
+        return (
+            normalized_equation,
+            expanded_terms,
+            output_labels,
+            tuple(normalized_operands),
+        )
+
+    output_labels_raw, output_ellipsis_pos = _parse_einsum_term(output_term)
+    if output_ellipsis_pos is None:
+        output_labels = output_labels_raw
+    else:
+        output_labels = [
+            *output_labels_raw[:output_ellipsis_pos],
+            *ellipsis_labels,
+            *output_labels_raw[output_ellipsis_pos:],
+        ]
+
+    available_labels = {label for term in expanded_terms for label in term}
+    for label in output_labels:
+        if label not in available_labels:
+            raise ValueError(
+                f"einsum output label {label!r} does not appear in any input operand"
+            )
+
+    return (
+        normalized_equation,
+        expanded_terms,
+        output_labels,
+        tuple(normalized_operands),
+    )
+
+
+def _promote_einsum_operands(operands: Sequence[Tensor]) -> tuple[Tensor, ...]:
+    if not operands:
+        return ()
+    target_device = _common_device(*operands)
+    common_dtype = reduce(
+        torch.promote_types,
+        (operand.data.dtype for operand in operands[1:]),
+        operands[0].data.dtype,
+    )
+    promoted: list[Tensor] = []
+    for operand in operands:
+        current = operand
+        if current.device != target_device:
+            current = current.to_device(target_device)
+        if current.data.dtype != common_dtype:
+            current = replace(current, data=current.data.to(common_dtype))
+        promoted.append(current)
+    return tuple(promoted)
+
+
+def einsum(equation: str, *operands: Tensor) -> Tensor:
+    r"""
+    Contract tensors with Einstein summation while aligning symbolic dims.
+
+    This mirrors `torch.einsum` at the numeric level, but first reconciles
+    every labeled axis through QTen's [`StateSpace`][qten.symbolics.state_space.StateSpace]
+    semantics:
+
+    - same labeled axes must be symbolically compatible,
+    - [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] may
+      expand to a concrete labeled space,
+    - axes with the same rays but different ordering are permuted into a
+      shared target ordering before contraction.
+
+    Equation guide
+    --------------
+    The equation uses the same label syntax as `torch.einsum`, with labels
+    restricted to ASCII letters `[A-Za-z]`.
+
+    - Each input operand is described by one comma-separated label term.
+    - Labels that appear in multiple operands identify axes that should be
+      multiplied together.
+    - Labels omitted from the output are summed out.
+    - Labels kept in the output determine the order of the output `dims`.
+    - `...` is supported and follows torch's broadcast convention for unnamed
+      axes. It may appear at the start, middle, or end of a term.
+    - `...ij` means "match the last two labeled axes and let `...` absorb the
+      preceding axes"; `i...j` means "match the first labeled axis, the last
+      labeled axis, and let `...` absorb the axes in between".
+    - If any input term uses `...`, QTen normalizes any input term that omits
+      it by prepending a leading ellipsis in the internal `torch.einsum`
+      equation. This lets mixed equations such as `"...ij,ij->...ij"` behave
+      like torch-style broadcasted contractions.
+    - When a term originally omits `...`, QTen pads that operand with leading
+      singleton broadcast axes (via `unsqueeze(0)`) and uses the leading-ellipsis
+      form in the normalized `torch.einsum` equation. For example,
+      `"i...j,ij->i...j"` is internally reconciled by treating the `ij` operand
+      as a leading-ellipsis term rather than inserting singleton axes into the
+      middle of that operand.
+    - QTen only normalizes input terms. The explicit output term, if present,
+      is preserved as written.
+    - Repeating a label within one operand follows diagonal semantics. Those
+      axes must already have matching sizes before any cross-operand
+      alignment, and QTen does not expand a singleton
+      [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace] axis just
+      to satisfy a repeated subscript within the same operand.
+
+    For example:
+
+    - `"ij,ij->ij"` means elementwise multiplication.
+    - `"ij,jk->ik"` means matrix multiplication over the shared `j` axis.
+    - `"abc,dbe->acde"` means multiply over the shared `b` axis and keep the
+      surviving axes in the explicit output order `(a, c, d, e)`.
+    - `"...ij,ij->...ij"` means "broadcast the `ij` operand across the leading
+      unnamed axes of the other operand, then keep those axes in the output".
+    - `"i...j,ij->i...j"` means "broadcast the `ij` operand across the unnamed
+      middle axes between `i` and `j`".
+
+    Symbolic alignment rules
+    ------------------------
+    Before dispatching to `torch.einsum`, QTen aligns axes label-by-label:
+
+    - if two axes with the same label already share the same
+      [`StateSpace`][qten.symbolics.state_space.StateSpace], nothing changes,
+    - if they have the same rays in a different order, the operand is
+      permuted to the first compatible non-[`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace]
+      ordering encountered for that label,
+    - if one side is [`BroadcastSpace()`][qten.symbolics.state_space.BroadcastSpace],
+      it is expanded to the concrete shared space,
+    - if two same-labeled concrete axes are not symbolically compatible, the
+      call raises `ValueError`.
+
+    When multiple same-ray orderings are possible, swapping operand order can
+    therefore change the output `dims` ordering for shared labels.
+
+    This means einsum compatibility is stricter than raw shape-only tensor
+    math: matching sizes alone are not enough when a label represents a
+    symbolic axis.
+
+    Examples
+    --------
+    Elementwise product with broadcast:
+
+    ```python
+    left = Tensor(data=torch.randn(2, 1), dims=(row_space, BroadcastSpace()))
+    right = Tensor(data=torch.randn(1, 3), dims=(BroadcastSpace(), col_space))
+
+    out = einsum("ij,ij->ij", left, right)
+    # out.dims == (row_space, col_space)
+    ```
+
+    Matrix multiplication:
+
+    ```python
+    left = Tensor(data=torch.randn(m.dim, k.dim), dims=(m, k))
+    right = Tensor(data=torch.randn(k.dim, n.dim), dims=(k, n))
+
+    out = einsum("ij,jk->ik", left, right)
+    # out.dims == (m, n)
+    ```
+
+    Mixed leading ellipsis:
+
+    ```python
+    batch = IndexSpace.linear(5)
+    i = IndexSpace.linear(2)
+    j = IndexSpace.linear(3)
+
+    left = Tensor(data=torch.randn(batch.dim, i.dim, j.dim), dims=(batch, i, j))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("...ij,ij->...ij", left, right)
+    # Equivalent numeric contraction: torch.einsum("...ij,...ij->...ij", ...)
+    # out.dims == (batch, i, j)
+    ```
+
+    Mixed middle ellipsis:
+
+    ```python
+    i = IndexSpace.linear(2)
+    middle = IndexSpace.linear(4)
+    j = IndexSpace.linear(3)
+
+    left = Tensor(data=torch.randn(i.dim, middle.dim, j.dim), dims=(i, middle, j))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("i...j,ij->i...j", left, right)
+    # Equivalent numeric contraction: torch.einsum("i...j,i...j->i...j", ...)
+    # out.dims == (i, middle, j)
+    ```
+
+    Mixed trailing ellipsis:
+
+    ```python
+    i = IndexSpace.linear(2)
+    j = IndexSpace.linear(3)
+    tail = IndexSpace.linear(4)
+
+    left = Tensor(data=torch.randn(i.dim, j.dim, tail.dim), dims=(i, j, tail))
+    right = Tensor(data=torch.randn(i.dim, j.dim), dims=(i, j))
+
+    out = einsum("ij...,ij->ij...", left, right)
+    # Equivalent numeric contraction: torch.einsum("ij...,ij...->ij...", ...)
+    # out.dims == (i, j, tail)
+    ```
+
+    Repeated labels within one operand:
+
+    ```python
+    tensor = Tensor(
+        data=torch.randn(space_ab.dim, space_ba.dim),
+        dims=(space_ab, space_ba),
+    )
+
+    out = einsum("ii->i", tensor)
+    # The second axis is aligned to the first before taking the diagonal.
+    # out.dims == (space_ab,)
+    ```
+
+    Repeated labels do not use BroadcastSpace expansion:
+
+    ```python
+    tensor = Tensor(
+        data=torch.randn(1, shared.dim),
+        dims=(BroadcastSpace(), shared),
+    )
+
+    # Raises ValueError because repeated-label axes must already match in size.
+    out = einsum("ii->i", tensor)
+    ```
+
+    Higher-rank contraction over one shared index:
+
+    ```python
+    out = einsum("abc,dbe->acde", x, y)
+    ```
+
+    This computes
+    \(out[a, c, d, e] = \sum_b x[a, b, c] \; y[d, b, e]\).
+
+    Higher-rank contraction over multiple shared indices:
+
+    ```python
+    out = einsum("abcd,bcde->ae", x, y)
+    ```
+
+    This sums over the shared `b`, `c`, and `d` labels and keeps only the
+    surviving `a` and `e` axes in the output.
+
+    Parameters
+    ----------
+    equation : str
+        Einstein summation equation in the same format accepted by
+        `torch.einsum`. Label characters must be ASCII letters `[A-Za-z]`.
+    *operands : Tensor
+        Input tensors whose ranks must match the equation terms after any
+        `...` expansion.
+
+    Returns
+    -------
+    Tensor
+        Tensor whose data is computed by `torch.einsum` on the aligned operand
+        data and whose `dims` follow the einsum output labels.
+
+    Raises
+    ------
+    ValueError
+        If the equation uses unsupported label characters, does not match the
+        operand ranks, or if any shared label maps to incompatible symbolic
+        dimensions.
+
+    See Also
+    --------
+    [`matmul`][qten.linalg.tensors.matmul]
+        Specialized contraction helper for standard matrix multiplication.
+    [`align`][qten.linalg.tensors.align]
+        Axis-alignment primitive used to reconcile same-labeled symbolic dims.
+    """
+    (
+        normalized_equation,
+        expanded_terms,
+        output_labels,
+        normalized_operands,
+    ) = _normalize_einsum_operands(equation, operands)
+
+    for term, operand in zip(expanded_terms, normalized_operands):
+        _validate_einsum_repeated_labels(term, operand)
+
+    label_dims: Dict[str, StateSpace] = {}
+    for term, operand in zip(expanded_terms, normalized_operands):
+        for axis, label in enumerate(term):
+            label_dims[label] = _merge_einsum_dim(
+                label_dims.get(label), operand.dims[axis], label
+            )
+
+    aligned_operands: list[Tensor] = []
+    for term, operand in zip(expanded_terms, normalized_operands):
+        current = operand
+        for axis, label in enumerate(term):
+            current = current.align(axis, label_dims[label])
+        aligned_operands.append(current)
+
+    promoted_operands = _promote_einsum_operands(aligned_operands)
+    data = torch.einsum(
+        normalized_equation, *(operand.data for operand in promoted_operands)
+    )
+    dims = tuple(label_dims[label] for label in output_labels)
+    return Tensor(data=data, dims=dims)
 
 
 def _kron_dim(left_dim: StateSpace, right_dim: StateSpace) -> StateSpace:
