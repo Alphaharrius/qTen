@@ -24,6 +24,7 @@ Tensor construction and manipulation
 Tensor algebra and queries
 --------------------------
 - [`matmul`][qten.linalg.tensors.matmul], [`norm`][qten.linalg.tensors.norm], [`mean`][qten.linalg.tensors.mean]
+- [`kron`][qten.linalg.tensors.kron]
 - [`all`][qten.linalg.tensors.all], [`allclose`][qten.linalg.tensors.allclose], [`equal`][qten.linalg.tensors.equal], [`isclose`][qten.linalg.tensors.isclose]
 - [`argmax`][qten.linalg.tensors.argmax], [`argmin`][qten.linalg.tensors.argmin], [`nonzero`][qten.linalg.tensors.nonzero], [`where`][qten.linalg.tensors.where]
 - [`real`][qten.linalg.tensors.real], [`imag`][qten.linalg.tensors.imag], [`conj`][qten.linalg.tensors.conj], [`astype`][qten.linalg.tensors.astype]
@@ -70,6 +71,7 @@ from .linalg.tensors import (
     eye as eye,
     factorize_dim as factorize_dim,
     kernel_tensor as kernel_tensor,
+    kron as kron,
     mapping_matrix as mapping_matrix,
     matmul as matmul,
     mean as mean,

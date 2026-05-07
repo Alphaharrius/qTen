@@ -531,11 +531,34 @@ def test_hilbert_space_tensor_product_order_and_content():
         )
     )
 
-    out = left.tensor_product(right)
+    out = left.kron(right)
     expected = tuple(a @ b for a in left.elements() for b in right.elements())
 
     assert out.dim == left.dim * right.dim
     assert out.elements() == expected
+
+
+def test_hilbert_space_kron_is_consistent():
+    left = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(0,)),
+            U1Basis(coef=sy.Integer(1), base=(1,)),
+        )
+    )
+    right = HilbertSpace.new(
+        (
+            U1Basis(coef=sy.Integer(1), base=(Orb("a"),)),
+            U1Basis(coef=sy.Integer(1), base=(Orb("b"),)),
+        )
+    )
+
+    by_kron = left.kron(right)
+    expected = HilbertSpace.new(
+        tuple(a @ b for a in left.elements() for b in right.elements())
+    )
+
+    assert by_kron.elements() == expected.elements()
+    assert by_kron == expected
 
 
 def test_hilbert_space_factorize_success_two_groups():

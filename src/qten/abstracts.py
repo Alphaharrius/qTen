@@ -897,3 +897,32 @@ class Convertible(ABC):
                 f"No conversion from {source_type.__name__} to {T.__name__}!"
             )
         return cast(Callable[["Convertible"], B], convertor)(self)
+
+
+class HasKroneckerProduct(ABC):
+    """
+    Protocol for objects that can take the Kronecker product with another object.
+
+    The Kronecker product is a tensor product of two matrices.
+
+    Implementer workflow
+    --------------------
+    The implementation should return a new object that represents the Kronecker product of this object and `other`.
+    """
+
+    @abstractmethod
+    def kron(self, other: Self) -> Self:
+        """
+        Return the Kronecker product of this object and `other`.
+
+        Parameters
+        ----------
+        other : Self
+            The other object to take the Kronecker product with.
+
+        Returns
+        -------
+        Self
+            The Kronecker product of this object and `other`.
+        """
+        raise NotImplementedError()

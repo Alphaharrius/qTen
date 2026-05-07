@@ -17,6 +17,7 @@ from qten.linalg.tensors import (
     imag as tensor_imag,
     isclose as tensor_isclose,
     kernel_tensor,
+    kron,
     matmul,
     nonzero,
     one_hot,
@@ -513,6 +514,93 @@ class TestMatmul:
         assert result.data.dtype == torch.complex64
         expected = torch.matmul(data_left.to(torch.complex64), data_right)
         assert torch.allclose(result.data, expected)
+
+
+class TestKron:
+    def test_basic_kron_preserves_axiswise_tensor_product_dims(self):
+        left_row = _simple_hilbert("kron-left-row", 2, make_irrep=lambda n: n)
+        left_col = _simple_hilbert("kron-left-col", 3, make_irrep=lambda n: f"lc-{n}")
+        right_row = _simple_hilbert("kron-right-row", 4, make_irrep=lambda n: float(n))
+        right_col = _simple_hilbert(
+            "kron-right-col", 5, make_irrep=lambda n: complex(n, 0)
+        )
+
+        left = Tensor(
+            data=torch.randn(left_row.dim, left_col.dim),
+            dims=(left_row, left_col),
+        )
+        right = Tensor(
+            data=torch.randn(right_row.dim, right_col.dim),
+            dims=(right_row, right_col),
+        )
+
+        out = kron(left, right)
+
+        assert torch.allclose(out.data, torch.kron(left.data, right.data))
+        assert out.dims == (
+            left_row.kron(right_row),
+            left_col.kron(right_col),
+        )
+
+    def test_tensor_method_kron_matches_functional(self):
+        left_space = _simple_hilbert("kron-left", 5, make_irrep=lambda n: n)
+        right_space = _simple_hilbert("kron-right", 4, make_irrep=lambda n: f"kr-{n}")
+
+        left = Tensor(
+            data=torch.randn(left_space.dim),
+            dims=(left_space,),
+        )
+        right = Tensor(
+            data=torch.randn(right_space.dim),
+            dims=(right_space,),
+        )
+
+        by_method = left.kron(right)
+        by_function = kron(left, right)
+
+        assert by_method.dims == by_function.dims
+        assert torch.allclose(by_method.data, by_function.data)
+
+    def test_kron_treats_broadcast_axes_as_neutral(self, matmul_ctx):
+        left = Tensor(
+            data=torch.randn(1, matmul_ctx.space1.dim),
+            dims=(BroadcastSpace(), matmul_ctx.space1),
+        )
+        right = Tensor(
+            data=torch.randn(matmul_ctx.space2.dim, 1),
+            dims=(matmul_ctx.space2, BroadcastSpace()),
+        )
+
+        out = kron(left, right)
+
+        assert out.dims == (matmul_ctx.space2, matmul_ctx.space1)
+        assert torch.allclose(out.data, torch.kron(left.data, right.data))
+
+    def test_kron_rejects_rank_mismatch(self, matmul_ctx):
+        left = Tensor(
+            data=torch.randn(matmul_ctx.space1.dim),
+            dims=(matmul_ctx.space1,),
+        )
+        right = Tensor(
+            data=torch.randn(matmul_ctx.space2.dim, matmul_ctx.space1.dim),
+            dims=(matmul_ctx.space2, matmul_ctx.space1),
+        )
+
+        with pytest.raises(ValueError, match="same rank"):
+            _ = kron(left, right)
+
+    def test_kron_rejects_non_hilbert_non_broadcast_dims(self):
+        left = Tensor(
+            data=torch.randn(3),
+            dims=(IndexSpace.linear(3),),
+        )
+        right = Tensor(
+            data=torch.randn(4),
+            dims=(IndexSpace.linear(4),),
+        )
+
+        with pytest.raises(TypeError, match="HasKroneckerProduct"):
+            _ = kron(left, right)
 
 
 @pytest.fixture
@@ -1239,7 +1327,12 @@ def test_product_dims_non_sequential_groups_hilbert():
 
     out = tensor.product_dims((1, 4), (5, 2))
 
-    expected_dims = (spaces[0], spaces[1] @ spaces[4], spaces[5] @ spaces[2], spaces[3])
+    expected_dims = (
+        spaces[0],
+        spaces[1].kron(spaces[4]),
+        spaces[5].kron(spaces[2]),
+        spaces[3],
+    )
     expected_data = data.permute(0, 1, 4, 5, 2, 3).reshape(
         spaces[0].dim,
         spaces[1].dim * spaces[4].dim,

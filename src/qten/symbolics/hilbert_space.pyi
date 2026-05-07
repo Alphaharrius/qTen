@@ -4,6 +4,7 @@ from ..abstracts import (
     AbstractKet as AbstractKet,
     Convertible as Convertible,
     Functional as Functional,
+    HasKroneckerProduct as HasKroneckerProduct,
     HasRays as HasRays,
     Operable as Operable,
     Span as Span,
@@ -73,7 +74,7 @@ class U1Span(Span[U1Basis], Spatial, HasRays, Convertible):
     def cross_gram(self, ket: U1Span) -> sy.ImmutableDenseMatrix: ...
 
 @dataclass(frozen=True)
-class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
+class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis], HasKroneckerProduct):
     def __hash__(self) -> int: ...
     @staticmethod
     def new(itr: Iterable[U1Basis]) -> HilbertSpace: ...
@@ -88,8 +89,7 @@ class HilbertSpace(HasRays, StateSpace[U1Basis], Span[U1Basis]):
     def factorize(
         self, *irrep_types: tuple[type, ...], coef_on: int | None = None
     ) -> StateSpaceFactorization: ...
-    @override
-    def tensor_product(self, other: HilbertSpace) -> HilbertSpace: ...
+    def kron(self, other: HilbertSpace) -> HilbertSpace: ...
     @override
     def rays(self) -> HilbertSpace: ...
     def cross_gram(
