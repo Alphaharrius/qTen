@@ -18,7 +18,7 @@ Tensor construction and manipulation
 ------------------------------------
 - [`zeros`][qten.linalg.tensors.zeros], [`ones`][qten.linalg.tensors.ones], [`eye`][qten.linalg.tensors.eye], [`one_hot`][qten.linalg.tensors.one_hot]
 - [`permute`][qten.linalg.tensors.permute], [`transpose`][qten.linalg.tensors.transpose], [`squeeze`][qten.linalg.tensors.squeeze], [`unsqueeze`][qten.linalg.tensors.unsqueeze]
-- [`replace_dim`][qten.linalg.tensors.replace_dim], [`factorize_dim`][qten.linalg.tensors.factorize_dim], [`product_dims`][qten.linalg.tensors.product_dims], [`promote_rank`][qten.linalg.tensors.promote_rank]
+- [`replace_dim`][qten.linalg.tensors.replace_dim], [`update_dim`][qten.linalg.tensors.update_dim], [`factorize_dim`][qten.linalg.tensors.factorize_dim], [`product_dims`][qten.linalg.tensors.product_dims], [`promote_rank`][qten.linalg.tensors.promote_rank]
 - [`align`][qten.linalg.tensors.align], [`align_all`][qten.linalg.tensors.align_all], [`expand_to_union`][qten.linalg.tensors.expand_to_union], [`union_dims`][qten.linalg.tensors.union_dims]
 
 Tensor algebra and queries
@@ -90,6 +90,7 @@ from .linalg.tensors import (
     squeeze as squeeze,
     transpose as transpose,
     union_dims as union_dims,
+    update_dim as update_dim,
     unsqueeze as unsqueeze,
     where as where,
     zeros as zeros,
