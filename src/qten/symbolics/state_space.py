@@ -711,7 +711,9 @@ class KPointSet:
         """
         Re-express every named point in a new reciprocal lattice.
         """
-        rebased = OrderedDict((name, k.rebase(recip)) for name, k in self.points.items())
+        rebased = OrderedDict(
+            (name, k.rebase(recip)) for name, k in self.points.items()
+        )
         return KPointSet(recip=recip, points=rebased)
 
     def resolve(self, name: str) -> Momentum:

@@ -14,14 +14,13 @@ representations. The underlying basis, span, and operator classes are defined in
 [`qten.symbolics.hilbert_space`][qten.symbolics.hilbert_space].
 """
 
-from typing import Callable, Optional, Sequence, TypeVar, Union, cast, overload
+from typing import Callable, Optional, Sequence, TypeVar, cast, overload
 import torch
 
 from ..geometries import AffineSpace, Momentum, Offset, ReciprocalLattice
 from ..geometries.spatials import OffsetType
 from ..linalg.tensors import Tensor
 from . import FuncOpr, HilbertSpace, Opr, StateSpace
-from .state_space import MomentumSpace
 from ..utils.devices import Device
 
 T = TypeVar("T")
@@ -284,4 +283,3 @@ def match_indices(
         ),
         dims=(src,),
     )
-

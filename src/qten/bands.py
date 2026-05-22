@@ -189,10 +189,7 @@ def interpolate_path(
 
     basis_mat = np.array(recip.basis.evalf(), dtype=float)
     wp_frac = np.array(
-        [
-            [float(k.rep[j, 0]) for j in range(dim)]
-            for k in resolved_wp
-        ],
+        [[float(k.rep[j, 0]) for j in range(dim)] for k in resolved_wp],
         dtype=float,
     )
     wp_cart = wp_frac @ basis_mat.T

@@ -16,7 +16,6 @@ from qten.bands import (
     proj_wannierization,
     svd_projection,
 )
-from qten.geometries import BasisTransform, InverseBasisTransform
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
 from qten.geometries.spatials import AffineSpace, Lattice, Offset
@@ -560,7 +559,9 @@ def _recip_3d():
 
 def test_interpolate_path_returns_bzpath_with_correct_n_points():
     recip = _recip_2d()
-    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)})
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
     path = interpolate_path(recip, ["G", "X", "M"], kpoints, n_points=50)
 
     assert isinstance(path, BzPath)
@@ -572,7 +573,9 @@ def test_interpolate_path_returns_bzpath_with_correct_n_points():
 def test_interpolate_path_waypoint_indices_match_waypoints():
     recip = _recip_2d()
     route = ["G", "X", "M", "G"]
-    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)})
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
     path = interpolate_path(recip, route, kpoints, n_points=100)
 
     assert len(path.waypoint_indices) == len(route)
@@ -623,7 +626,11 @@ def test_interpolate_path_distributes_proportionally():
     recip = _recip_2d()
     kpoints = KPointSet.from_points(
         recip,
-        {"G": (0, 0), "X": (sy.Rational(2, 3), 0), "M": (sy.Rational(2, 3), sy.Rational(1, 3))},
+        {
+            "G": (0, 0),
+            "X": (sy.Rational(2, 3), 0),
+            "M": (sy.Rational(2, 3), sy.Rational(1, 3)),
+        },
     )
     path = interpolate_path(recip, ["G", "X", "M"], kpoints, n_points=100)
 
@@ -639,7 +646,9 @@ def test_interpolate_path_distributes_proportionally():
 
 def test_interpolate_path_path_positions_are_monotonic():
     recip = _recip_2d()
-    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)})
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
     path = interpolate_path(recip, ["G", "X", "M", "G"], kpoints, n_points=60)
 
     positions = np.array(path.path_positions)
