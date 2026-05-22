@@ -211,6 +211,11 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
 class Tensor(
     Generic[T], Operable, Plottable, Convertible, DeviceBounded, HasKroneckerProduct
 ):
+    r"""
+    StateSpace-aware tensor wrapper over `torch.Tensor`.
+
+    See the extended class documentation below for full API details.
+    """
     _strict_dims: ClassVar[bool] = False
     """
     Runtime marker for subclasses with non-negotiable symbolic-dimension
