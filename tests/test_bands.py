@@ -705,9 +705,7 @@ def test_interpolate_path_applies_waypoint_transform():
     recip = _recip_2d()
     waypoints = [(0.0, 0.0), (1.0, 0.0)]
     transform = BasisTransform(ImmutableDenseMatrix([[0.5, 0.0], [0.0, 1.0]]))
-    path = interpolate_path(
-        recip, waypoints, n_points=12, waypoint_transform=transform
-    )
+    path = interpolate_path(recip, waypoints, n_points=12, waypoint_transform=transform)
 
     elements = path.k_space.elements()
     start = elements[path.path_order[0]]
@@ -723,7 +721,10 @@ def test_interpolate_path_rejects_non_basis_transform_waypoint_transform():
     bad_transform = np.eye(3)
     with pytest.raises(TypeError, match="BasisTransform"):
         interpolate_path(
-            recip, [(0.0, 0.0), (1.0, 0.0)], n_points=10, waypoint_transform=bad_transform
+            recip,
+            [(0.0, 0.0), (1.0, 0.0)],
+            n_points=10,
+            waypoint_transform=bad_transform,
         )
 
 
