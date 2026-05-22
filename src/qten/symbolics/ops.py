@@ -15,7 +15,7 @@ representations. The underlying basis, span, and operator classes are defined in
 """
 
 from collections import OrderedDict
-from typing import Callable, Dict, Optional, Sequence, TypeVar, Union, cast, overload
+from typing import Callable, Optional, Sequence, TypeVar, Union, cast, overload
 import numpy as np
 import sympy as sy
 from sympy import ImmutableDenseMatrix
@@ -23,8 +23,6 @@ import torch
 
 from ..geometries import (
     AffineSpace,
-    BasisTransform,
-    InverseBasisTransform,
     Momentum,
     Offset,
     ReciprocalLattice,
@@ -32,7 +30,7 @@ from ..geometries import (
 from ..geometries.spatials import OffsetType
 from ..linalg.tensors import Tensor
 from . import FuncOpr, HilbertSpace, Opr, StateSpace
-from .state_space import BzPath, MomentumSpace
+from .state_space import BzPath, KPointSet, MomentumSpace
 from ..utils.devices import Device
 
 T = TypeVar("T")
@@ -299,41 +297,28 @@ def match_indices(
 
 def interpolate_reciprocal_path(
     recip: ReciprocalLattice,
-    waypoints: Sequence[Union[tuple[float, ...], str]],
+    waypoints: Sequence[str],
+    points: KPointSet,
     n_points: int = 100,
-    labels: Optional[Sequence[str]] = None,
-    points: Optional[Dict[str, tuple[float, ...]]] = None,
-    waypoint_transform: Optional[Union[BasisTransform, InverseBasisTransform]] = None,
 ) -> BzPath:
     """
     Build a dense reciprocal-space sample along a piecewise-linear path.
 
-    Waypoints are interpreted as fractional reciprocal coordinates unless they
-    are strings. String waypoints are resolved through `points` and also supply
-    default labels when `labels` is omitted.
+    Waypoints are resolved by name from `points`, then rebased into `recip`.
 
     Parameters
     ----------
     recip : ReciprocalLattice
         Reciprocal lattice whose basis converts fractional waypoints to
         Cartesian coordinates for distance allocation.
-    waypoints : Sequence[tuple[float, ...] | str]
-        At least two waypoint coordinates or names. Named waypoints must appear
-        in `points`.
+    waypoints : Sequence[str]
+        At least two waypoint names in path order. Each name must exist in
+        `points`.
+    points : KPointSet
+        Named reciprocal-space points with their source reciprocal lattice.
+        They are rebased to `recip` before interpolation.
     n_points : int, default 100
         Total number of dense path samples, including all waypoints.
-    labels : Optional[Sequence[str]], optional
-        Labels for waypoints. If omitted, names or coordinate strings are used.
-    points : Optional[Dict[str, tuple[float, ...]]], optional
-        Mapping used to resolve string waypoints to fractional coordinates.
-    waypoint_transform : Optional[BasisTransform | InverseBasisTransform], optional
-        Optional basis transform applied to waypoint fractional coordinates
-        before interpolation.
-        For [`BasisTransform`][qten.geometries.basis_transform.BasisTransform],
-        transformed coordinates are computed as `frac @ M.T`.
-        For [`InverseBasisTransform`][qten.geometries.basis_transform.InverseBasisTransform],
-        transformed coordinates are computed as `frac @ M^{-T}`.
-
     Returns
     -------
     BzPath
@@ -342,61 +327,42 @@ def interpolate_reciprocal_path(
 
     Raises
     ------
+    TypeError
+        If `points` is not a [`KPointSet`][qten.symbolics.state_space.KPointSet].
     ValueError
         If fewer than two waypoints are supplied, a named waypoint is missing,
-        waypoint dimensions do not match the reciprocal lattice, `n_points` is
-        too small, all waypoints are identical, `labels` has the wrong length,
-        `waypoint_transform` is neither a `BasisTransform` nor an
-        `InverseBasisTransform`, or the transform matrix shape does not match
-        `(recip.dim, recip.dim)`.
+        `n_points` is too small, or all waypoints are identical.
     """
     if len(waypoints) < 2:
         raise ValueError("At least two waypoints are required to define a path.")
+    if not isinstance(points, KPointSet):
+        raise TypeError("points must be provided as a KPointSet.")
+    rebased_points = points.rebase(recip)
 
-    _points: Dict[str, tuple[float, ...]] = points or {}
-
-    resolved_wp: list[tuple[float, ...]] = []
-    auto_labels: list[str] = []
-    for i, wp in enumerate(waypoints):
-        if isinstance(wp, str):
-            if wp not in _points:
-                raise ValueError(
-                    f"Waypoint {i} is the name '{wp}' but it was not found in "
-                    f"the points dictionary. Available names: "
-                    f"{sorted(_points.keys()) if _points else '(empty)'}."
-                )
-            resolved_wp.append(_points[wp])
-            auto_labels.append(wp)
-        else:
-            resolved_wp.append(tuple(wp))
-            auto_labels.append(str(tuple(wp)))
-
+    resolved_wp: list[Momentum] = []
     dim = recip.dim
-    for i, wp in enumerate(resolved_wp):
-        if len(wp) != dim:
-            raise ValueError(f"Waypoint {i} has {len(wp)} components, expected {dim}.")
+    for i, wp in enumerate(waypoints):
+        if wp not in rebased_points.points:
+            raise ValueError(
+                f"Waypoint {i} is the name '{wp}' but it was not found in "
+                f"the points dictionary. Available names: "
+                f"{sorted(rebased_points.points.keys()) if rebased_points.points else '(empty)'}."
+            )
+        resolved_wp.append(rebased_points.points[wp])
+
     if n_points < len(resolved_wp):
         raise ValueError(
             f"n_points ({n_points}) must be >= number of waypoints ({len(resolved_wp)})."
         )
 
     basis_mat = np.array(recip.basis.evalf(), dtype=float)
-    wp_frac = np.array(resolved_wp, dtype=float)
-    if waypoint_transform is not None:
-        if isinstance(waypoint_transform, BasisTransform):
-            transform_mat = np.array(waypoint_transform.M.evalf(), dtype=float)
-        elif isinstance(waypoint_transform, InverseBasisTransform):
-            transform_mat = np.array(waypoint_transform.M.inv().evalf(), dtype=float)
-        else:
-            raise TypeError(
-                "waypoint_transform must be a BasisTransform or InverseBasisTransform."
-            )
-        if transform_mat.shape != (dim, dim):
-            raise ValueError(
-                "waypoint_transform must have shape "
-                f"({dim}, {dim}), got {transform_mat.shape}."
-            )
-        wp_frac = wp_frac @ transform_mat.T
+    wp_frac = np.array(
+        [
+            [float(k.rep[j, 0]) for j in range(dim)]
+            for k in resolved_wp
+        ],
+        dtype=float,
+    )
     wp_cart = wp_frac @ basis_mat.T
 
     seg_lengths = np.array(
@@ -461,18 +427,9 @@ def interpolate_reciprocal_path(
     dists = np.linalg.norm(diffs, axis=1)
     positions = np.concatenate(([0.0], np.cumsum(dists)))
 
-    if labels is None:
-        labels = tuple(auto_labels)
-    else:
-        if len(labels) != len(resolved_wp):
-            raise ValueError(
-                f"Number of labels ({len(labels)}) must match number of waypoints ({len(resolved_wp)})."
-            )
-        labels = tuple(labels)
-
     return BzPath(
         k_space=k_space,
-        labels=labels,
+        labels=tuple(waypoints),
         waypoint_indices=tuple(waypoint_indices),
         path_order=tuple(path_order),
         path_positions=tuple(float(p) for p in positions),

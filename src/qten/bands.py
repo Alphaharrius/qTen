@@ -78,6 +78,7 @@ from .symbolics import (
     FuncOpr,
     HilbertSpace,
     IndexSpace,
+    KPointSet,
     MomentumBlockSpace,
     MomentumSpace,
     Opr,
@@ -111,48 +112,27 @@ def _basis_states_at_fractional_offset(
 
 def interpolate_path(
     recip: ReciprocalLattice,
-    waypoints: Sequence[Union[Tuple[float, ...], str]],
+    waypoints: Sequence[str],
+    points: KPointSet,
     n_points: int = 100,
-    labels: Optional[Sequence[str]] = None,
-    points: Optional[Dict[str, Tuple[float, ...]]] = None,
-    waypoint_transform: Optional[Union[BasisTransform, InverseBasisTransform]] = None,
 ) -> BzPath:
     """
     Build a sampled Brillouin-zone path in a reciprocal lattice.
 
-    This is a backward-compatible wrapper around
-    [`interpolate_reciprocal_path`][qten.symbolics.ops.interpolate_reciprocal_path].
-    New code may call that symbolic helper directly.
+    This wrapper resolves a symbolic waypoint route against a [`KPointSet`][qten.symbolics.state_space.KPointSet],
+    rebases those points into `recip`, then samples the dense path.
 
     Parameters
     ----------
     recip : ReciprocalLattice
         Reciprocal lattice in which waypoint coordinates are interpreted.
-    waypoints : Sequence[Union[Tuple[float, ...], str]]
-        Sequence of explicit fractional coordinates or names looked up in
-        `points`.
-        For example, `[(0.0, 0.0), (0.5, 0.0), (0.5, 0.5)]`
-        samples a path through three explicit two-dimensional reciprocal
-        coordinates, while `["G", "X", "M"]` resolves coordinates from the
-        `points` mapping.
+    waypoints : Sequence[str]
+        Waypoint names in path order, e.g. `["G", "X", "M", "G"]`.
     n_points : int
         Number of samples used along the full interpolated path.
-    labels : Sequence[str] | None
-        Optional display labels for the waypoint ticks.
-        For example, `["Γ", "X", "M"]` can label a path whose named inputs are
-        `["G", "X", "M"]`.
-    points : Dict[str, Tuple[float, ...]] | None
-        Optional mapping from waypoint names to fractional reciprocal
-        coordinates. For example,
-        `{"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)}`.
-    waypoint_transform : BasisTransform | InverseBasisTransform | None
-        Optional basis transform applied to waypoint fractional coordinates
-        before interpolation.
-        For [`BasisTransform`][qten.geometries.basis_transform.BasisTransform],
-        transformed coordinates are computed as `frac @ M.T`.
-        For [`InverseBasisTransform`][qten.geometries.basis_transform.InverseBasisTransform],
-        transformed coordinates are computed as `frac @ M^{-T}`.
-
+    points : KPointSet
+        Named reciprocal-space points carrying their source reciprocal lattice.
+        They are rebased to `recip` before interpolation.
     Returns
     -------
     BzPath
@@ -161,16 +141,16 @@ def interpolate_path(
 
     Raises
     ------
+    TypeError
+        If `points` is not a [`KPointSet`][qten.symbolics.state_space.KPointSet].
     ValueError
         If fewer than two waypoints are supplied, if a named waypoint is not
-        present in `points`, if waypoint coordinate dimensions do not match
-        `recip.dim`, if `n_points` is too small for the number of waypoints, if
-        all waypoints are identical, or if `labels` does not match the number
-        of waypoints.
+        present in `points`, if `n_points` is too small for the number of
+        waypoints, or if all waypoints are identical.
 
     See Also
     --------
-    [`interpolate_reciprocal_path(recip, waypoints, n_points, labels, points, waypoint_transform)`][qten.symbolics.ops.interpolate_reciprocal_path]
+    [`interpolate_reciprocal_path(recip, waypoints, points, n_points)`][qten.symbolics.ops.interpolate_reciprocal_path]
         Canonical implementation used by this compatibility wrapper.
 
     Examples
@@ -178,27 +158,30 @@ def interpolate_path(
     ```python
     path = interpolate_path(
         recip,
-        waypoints=[(0.0, 0.0), (0.5, 0.0), (0.5, 0.5)],
-        labels=["Γ", "X", "M"],
+        waypoints=["G", "X", "M"],
+        points=KPointSet.from_points(
+            recip,
+            {"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)},
+        ),
     )
     ```
 
     ```python
     path = interpolate_path(
-        recip,
+        recip=new_recip,
         waypoints=["G", "X", "M"],
-        labels=["Γ", "X", "M"],
-        points={"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)},
+        points=original_kpoints,  # KPointSet tied to old reciprocal basis
     )
     ```
     """
+    if not isinstance(points, KPointSet):
+        raise TypeError("points must be provided as a KPointSet.")
+    rebased_points = points.rebase(recip)
     return interpolate_reciprocal_path(
         recip=recip,
         waypoints=waypoints,
         n_points=n_points,
-        labels=labels,
-        points=points,
-        waypoint_transform=waypoint_transform,
+        points=rebased_points,
     )
 
 

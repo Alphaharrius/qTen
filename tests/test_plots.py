@@ -13,6 +13,7 @@ from qten.geometries.spatials import Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
 from qten.symbolics.state_space import brillouin_zone
 from qten.symbolics.state_space import IndexSpace
+from qten.symbolics.state_space import KPointSet
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
@@ -1044,11 +1045,15 @@ def _make_2d_lattice_and_spaces():
 
 def test_bandstructure_plot_with_bz_path_plotly():
     lat, bloch_space, region_space, h_real = _make_2d_lattice_and_spaces()
+    kpoints = KPointSet.from_points(
+        lat.dual,
+        {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)},
+    )
     path = interpolate_reciprocal_path(
         lat.dual,
-        [(0, 0), (0.5, 0), (0.5, 0.5), (0, 0)],
+        ["Gamma", "X", "M", "Gamma"],
+        kpoints,
         n_points=30,
-        labels=["Gamma", "X", "M", "Gamma"],
     )
 
     F = fourier_transform(path.k_space, bloch_space, region_space)
@@ -1077,11 +1082,15 @@ def test_bandstructure_plot_with_bz_path_matplotlib():
     import matplotlib.pyplot as plt
 
     lat, bloch_space, region_space, h_real = _make_2d_lattice_and_spaces()
+    kpoints = KPointSet.from_points(
+        lat.dual,
+        {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)},
+    )
     path = interpolate_reciprocal_path(
         lat.dual,
-        [(0, 0), (0.5, 0), (0.5, 0.5), (0, 0)],
+        ["Gamma", "X", "M", "Gamma"],
+        kpoints,
         n_points=30,
-        labels=["Gamma", "X", "M", "Gamma"],
     )
 
     F = fourier_transform(path.k_space, bloch_space, region_space)

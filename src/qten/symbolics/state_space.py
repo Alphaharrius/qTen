@@ -25,6 +25,7 @@ from functools import lru_cache
 from itertools import islice
 
 from multimethod import multimethod
+from sympy import ImmutableDenseMatrix
 
 from ..abstracts import Convertible, Operable, Span
 from ..validations import need_validation
@@ -664,6 +665,64 @@ class BzPath:
     Cumulative Cartesian arc-length coordinate for each dense path sample,
     used as the continuous x-axis parameter along the path.
     """
+
+
+@dataclass(frozen=True)
+class KPointSet:
+    """
+    Named high-symmetry momentum points tied to one reciprocal lattice.
+
+    This object keeps point labels and their momentum values together so they
+    can be carried across transformations and rebased as one unit.
+    """
+
+    recip: ReciprocalLattice
+    points: OrderedDict[str, Momentum]
+
+    @staticmethod
+    def from_points(
+        recip: ReciprocalLattice,
+        points: dict[str, Union[Momentum, Tuple[float, ...]]],
+    ) -> "KPointSet":
+        """
+        Build a labeled point set from momenta or fractional tuples.
+
+        Tuple values are interpreted as fractional coordinates in `recip`.
+        Momentum values are rebased into `recip`.
+        """
+        normalized: OrderedDict[str, Momentum] = OrderedDict()
+        dim = recip.dim
+        for name, value in points.items():
+            if isinstance(value, Momentum):
+                normalized[name] = value.rebase(recip)
+                continue
+            frac = tuple(value)
+            if len(frac) != dim:
+                raise ValueError(
+                    f"Point '{name}' has {len(frac)} components, expected {dim}."
+                )
+            normalized[name] = Momentum(
+                rep=ImmutableDenseMatrix(frac),
+                space=recip,
+            )
+        return KPointSet(recip=recip, points=normalized)
+
+    def rebase(self, recip: ReciprocalLattice) -> "KPointSet":
+        """
+        Re-express every named point in a new reciprocal lattice.
+        """
+        rebased = OrderedDict((name, k.rebase(recip)) for name, k in self.points.items())
+        return KPointSet(recip=recip, points=rebased)
+
+    def resolve(self, name: str) -> Momentum:
+        """
+        Return the momentum bound to `name`.
+        """
+        if name not in self.points:
+            raise KeyError(
+                f"Point '{name}' not found. Available names: {tuple(self.points.keys())}."
+            )
+        return self.points[name]
 
 
 @Momentum.add_conversion(StateSpace)
