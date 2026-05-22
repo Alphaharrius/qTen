@@ -53,6 +53,13 @@ For broader domain APIs, see:
 - [`qten.utils`][qten.utils]
 """
 
+from . import geometries as geometries
+from . import linalg as linalg
+from . import phys as phys
+from . import pointgroups as pointgroups
+from . import symbolics as symbolics
+from . import utils as utils
+
 from .precision import set_precision as set_precision
 from .linalg._mb_tensor import MomentumBlockTensor as MomentumBlockTensor
 
