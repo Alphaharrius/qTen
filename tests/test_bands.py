@@ -16,6 +16,7 @@ from qten.bands import (
     proj_wannierization,
     svd_projection,
 )
+from qten.geometries import BasisTransform, InverseBasisTransform
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
 from qten.geometries.spatials import AffineSpace, Lattice, Offset
@@ -698,6 +699,63 @@ def test_interpolate_path_mixed_names_and_tuples():
 
     assert path.labels == ("Gamma", "(0.5, 0)")
     assert len(path.path_order) == 10
+
+
+def test_interpolate_path_applies_waypoint_transform():
+    recip = _recip_2d()
+    waypoints = [(0.0, 0.0), (1.0, 0.0)]
+    transform = BasisTransform(ImmutableDenseMatrix([[0.5, 0.0], [0.0, 1.0]]))
+    path = interpolate_path(
+        recip, waypoints, n_points=12, waypoint_transform=transform
+    )
+
+    elements = path.k_space.elements()
+    start = elements[path.path_order[0]]
+    end = elements[path.path_order[-1]]
+    start_frac = np.array([float(start.rep[j, 0]) for j in range(recip.dim)])
+    end_frac = np.array([float(end.rep[j, 0]) for j in range(recip.dim)])
+    assert np.allclose(start_frac, [0.0, 0.0], atol=1e-9)
+    assert np.allclose(end_frac, [0.5, 0.0], atol=1e-9)
+
+
+def test_interpolate_path_rejects_non_basis_transform_waypoint_transform():
+    recip = _recip_2d()
+    bad_transform = np.eye(3)
+    with pytest.raises(TypeError, match="BasisTransform"):
+        interpolate_path(
+            recip, [(0.0, 0.0), (1.0, 0.0)], n_points=10, waypoint_transform=bad_transform
+        )
+
+
+def test_interpolate_path_waypoint_transform_shape_mismatch_raises():
+    recip = _recip_2d()
+    waypoints = [(0.0, 0.0), (1.0, 0.0)]
+    bad_shape_transform = BasisTransform(
+        ImmutableDenseMatrix([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    )
+    with pytest.raises(ValueError, match="waypoint_transform"):
+        interpolate_path(
+            recip,
+            waypoints,
+            n_points=10,
+            waypoint_transform=bad_shape_transform,
+        )
+
+
+def test_interpolate_path_accepts_inverse_basis_transform_object():
+    recip = _recip_2d()
+    waypoints = [(0.0, 0.0), (1.0, 0.0)]
+    inverse_transform = InverseBasisTransform(
+        ImmutableDenseMatrix([[2.0, 0.0], [0.0, 1.0]])
+    )
+    path = interpolate_path(
+        recip, waypoints, n_points=10, waypoint_transform=inverse_transform
+    )
+
+    elements = path.k_space.elements()
+    end = elements[path.path_order[-1]]
+    end_frac = np.array([float(end.rep[j, 0]) for j in range(recip.dim)])
+    assert np.allclose(end_frac, [0.5, 0.0], atol=1e-9)
 
 
 def test_interpolate_path_accessible_via_ops():

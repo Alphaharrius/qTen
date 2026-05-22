@@ -115,6 +115,7 @@ def interpolate_path(
     n_points: int = 100,
     labels: Optional[Sequence[str]] = None,
     points: Optional[Dict[str, Tuple[float, ...]]] = None,
+    waypoint_transform: Optional[Union[BasisTransform, InverseBasisTransform]] = None,
 ) -> BzPath:
     """
     Build a sampled Brillouin-zone path in a reciprocal lattice.
@@ -144,6 +145,13 @@ def interpolate_path(
         Optional mapping from waypoint names to fractional reciprocal
         coordinates. For example,
         `{"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)}`.
+    waypoint_transform : BasisTransform | InverseBasisTransform | None
+        Optional basis transform applied to waypoint fractional coordinates
+        before interpolation.
+        For [`BasisTransform`][qten.geometries.basis_transform.BasisTransform],
+        transformed coordinates are computed as `frac @ M.T`.
+        For [`InverseBasisTransform`][qten.geometries.basis_transform.InverseBasisTransform],
+        transformed coordinates are computed as `frac @ M^{-T}`.
 
     Returns
     -------
@@ -162,7 +170,7 @@ def interpolate_path(
 
     See Also
     --------
-    [`interpolate_reciprocal_path(recip, waypoints, n_points, labels, points)`][qten.symbolics.ops.interpolate_reciprocal_path]
+    [`interpolate_reciprocal_path(recip, waypoints, n_points, labels, points, waypoint_transform)`][qten.symbolics.ops.interpolate_reciprocal_path]
         Canonical implementation used by this compatibility wrapper.
 
     Examples
@@ -190,6 +198,7 @@ def interpolate_path(
         n_points=n_points,
         labels=labels,
         points=points,
+        waypoint_transform=waypoint_transform,
     )
 
 

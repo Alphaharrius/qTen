@@ -21,7 +21,14 @@ import sympy as sy
 from sympy import ImmutableDenseMatrix
 import torch
 
-from ..geometries import AffineSpace, Momentum, Offset, ReciprocalLattice
+from ..geometries import (
+    AffineSpace,
+    BasisTransform,
+    InverseBasisTransform,
+    Momentum,
+    Offset,
+    ReciprocalLattice,
+)
 from ..geometries.spatials import OffsetType
 from ..linalg.tensors import Tensor
 from . import FuncOpr, HilbertSpace, Opr, StateSpace
@@ -296,6 +303,7 @@ def interpolate_reciprocal_path(
     n_points: int = 100,
     labels: Optional[Sequence[str]] = None,
     points: Optional[Dict[str, tuple[float, ...]]] = None,
+    waypoint_transform: Optional[Union[BasisTransform, InverseBasisTransform]] = None,
 ) -> BzPath:
     """
     Build a dense reciprocal-space sample along a piecewise-linear path.
@@ -318,6 +326,13 @@ def interpolate_reciprocal_path(
         Labels for waypoints. If omitted, names or coordinate strings are used.
     points : Optional[Dict[str, tuple[float, ...]]], optional
         Mapping used to resolve string waypoints to fractional coordinates.
+    waypoint_transform : Optional[BasisTransform | InverseBasisTransform], optional
+        Optional basis transform applied to waypoint fractional coordinates
+        before interpolation.
+        For [`BasisTransform`][qten.geometries.basis_transform.BasisTransform],
+        transformed coordinates are computed as `frac @ M.T`.
+        For [`InverseBasisTransform`][qten.geometries.basis_transform.InverseBasisTransform],
+        transformed coordinates are computed as `frac @ M^{-T}`.
 
     Returns
     -------
@@ -330,8 +345,10 @@ def interpolate_reciprocal_path(
     ValueError
         If fewer than two waypoints are supplied, a named waypoint is missing,
         waypoint dimensions do not match the reciprocal lattice, `n_points` is
-        too small, all waypoints are identical, or `labels` has the wrong
-        length.
+        too small, all waypoints are identical, `labels` has the wrong length,
+        `waypoint_transform` is neither a `BasisTransform` nor an
+        `InverseBasisTransform`, or the transform matrix shape does not match
+        `(recip.dim, recip.dim)`.
     """
     if len(waypoints) < 2:
         raise ValueError("At least two waypoints are required to define a path.")
@@ -365,6 +382,21 @@ def interpolate_reciprocal_path(
 
     basis_mat = np.array(recip.basis.evalf(), dtype=float)
     wp_frac = np.array(resolved_wp, dtype=float)
+    if waypoint_transform is not None:
+        if isinstance(waypoint_transform, BasisTransform):
+            transform_mat = np.array(waypoint_transform.M.evalf(), dtype=float)
+        elif isinstance(waypoint_transform, InverseBasisTransform):
+            transform_mat = np.array(waypoint_transform.M.inv().evalf(), dtype=float)
+        else:
+            raise TypeError(
+                "waypoint_transform must be a BasisTransform or InverseBasisTransform."
+            )
+        if transform_mat.shape != (dim, dim):
+            raise ValueError(
+                "waypoint_transform must have shape "
+                f"({dim}, {dim}), got {transform_mat.shape}."
+            )
+        wp_frac = wp_frac @ transform_mat.T
     wp_cart = wp_frac @ basis_mat.T
 
     seg_lengths = np.array(
