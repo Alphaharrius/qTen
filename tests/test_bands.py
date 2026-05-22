@@ -30,7 +30,6 @@ from qten.symbolics.state_space import (
     MomentumSpace,
     brillouin_zone,
 )
-from qten.symbolics import interpolate_reciprocal_path
 
 
 def _space(name: str, n: int) -> HilbertSpace:
@@ -734,13 +733,6 @@ def test_interpolate_path_accessible_via_ops():
     recip = _recip_2d()
     kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0)})
     path = ip(recip, ["G", "X"], kpoints, n_points=10)
-    assert isinstance(path, BzPath)
-
-
-def test_interpolate_reciprocal_path_accessible_via_geometries():
-    recip = _recip_2d()
-    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0)})
-    path = interpolate_reciprocal_path(recip, ["G", "X"], kpoints, n_points=10)
     assert isinstance(path, BzPath)
 
 

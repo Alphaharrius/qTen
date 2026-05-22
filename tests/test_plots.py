@@ -7,7 +7,7 @@ import pytest
 import sympy as sy
 import torch
 
-from qten.symbolics import interpolate_reciprocal_path
+from qten.bands import interpolate_path
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
 from qten.geometries.spatials import Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
@@ -1049,7 +1049,7 @@ def test_bandstructure_plot_with_bz_path_plotly():
         lat.dual,
         {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)},
     )
-    path = interpolate_reciprocal_path(
+    path = interpolate_path(
         lat.dual,
         ["Gamma", "X", "M", "Gamma"],
         kpoints,
@@ -1086,7 +1086,7 @@ def test_bandstructure_plot_with_bz_path_matplotlib():
         lat.dual,
         {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)},
     )
-    path = interpolate_reciprocal_path(
+    path = interpolate_path(
         lat.dual,
         ["Gamma", "X", "M", "Gamma"],
         kpoints,

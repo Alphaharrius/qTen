@@ -30,7 +30,6 @@ Symbolic operations
 - [`fractional_opr()`][qten.symbolics.ops.fractional_opr]
 - [`region_hilbert()`][qten.symbolics.ops.region_hilbert]
 - [`hilbert_opr_repr()`][qten.symbolics.ops.hilbert_opr_repr]
-- [`interpolate_reciprocal_path()`][qten.symbolics.ops.interpolate_reciprocal_path]
 
 Point-group operations
 ----------------------
@@ -62,7 +61,6 @@ from .symbolics import (
     fractional_opr as fractional_opr,
     region_hilbert as region_hilbert,
     hilbert_opr_repr as hilbert_opr_repr,
-    interpolate_reciprocal_path as interpolate_reciprocal_path,
     rebase_opr as rebase_opr,
     translate_opr as translate_opr,
 )
