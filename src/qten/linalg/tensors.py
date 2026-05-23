@@ -211,38 +211,6 @@ def _check_data_compatible_with_dims(tensor: "Tensor") -> None:
 class Tensor(
     Generic[T], Operable, Plottable, Convertible, DeviceBounded, HasKroneckerProduct
 ):
-    _strict_dims: ClassVar[bool] = False
-    """
-    Runtime marker for subclasses with non-negotiable symbolic-dimension
-    invariants.
-
-    The default [`Tensor`][qten.linalg.tensors.Tensor] class is permissive:
-    generic helpers may freely change rank, replace axes, insert broadcast
-    dimensions, or remove dimensions while still returning the same concrete
-    wrapper type. A subclass may opt out of that behavior by setting
-    `_strict_dims = True`, typically through the
-    [`strict_dims`][qten.linalg.tensors.strict_dims] decorator.
-
-    When this marker is enabled, generic tensor helpers treat the subclass as a
-    structured view with additional layout invariants beyond "data plus dims".
-    If an operation cannot safely preserve those invariants, the helper should
-    return a plain [`Tensor`][qten.linalg.tensors.Tensor] instead of the
-    subclass.
-
-    Typical examples of invariant-breaking operations are:
-    - rank reduction such as [`mean`][qten.linalg.tensors.mean],
-      [`argmax`][qten.linalg.tensors.argmax], or
-      [`norm`][qten.linalg.tensors.norm],
-    - rank increase such as [`unsqueeze`][qten.linalg.tensors.unsqueeze],
-    - axis replacement or reshaping that changes the structural meaning of one
-      axis, such as [`factorize_dim`][qten.linalg.tensors.factorize_dim] or
-      [`product_dims`][qten.linalg.tensors.product_dims].
-
-    This marker is only a policy signal. The actual downgrade behavior is
-    implemented by generic helpers through
-    [`_wrap_tensor_result(...)`][qten.linalg.tensors._wrap_tensor_result].
-    """
-
     r"""
     StateSpace-aware tensor wrapper over `torch.Tensor`.
 
@@ -459,6 +427,37 @@ class Tensor(
     `where`, and `nonzero`.
     """
 
+    _strict_dims: ClassVar[bool] = False
+    """
+    Runtime marker for subclasses with non-negotiable symbolic-dimension
+    invariants.
+
+    The default [`Tensor`][qten.linalg.tensors.Tensor] class is permissive:
+    generic helpers may freely change rank, replace axes, insert broadcast
+    dimensions, or remove dimensions while still returning the same concrete
+    wrapper type. A subclass may opt out of that behavior by setting
+    `_strict_dims = True`, typically through the
+    [`strict_dims`][qten.linalg.tensors.strict_dims] decorator.
+
+    When this marker is enabled, generic tensor helpers treat the subclass as a
+    structured view with additional layout invariants beyond "data plus dims".
+    If an operation cannot safely preserve those invariants, the helper should
+    return a plain [`Tensor`][qten.linalg.tensors.Tensor] instead of the
+    subclass.
+
+    Typical examples of invariant-breaking operations are:
+    - rank reduction such as [`mean`][qten.linalg.tensors.mean],
+      [`argmax`][qten.linalg.tensors.argmax], or
+      [`norm`][qten.linalg.tensors.norm],
+    - rank increase such as [`unsqueeze`][qten.linalg.tensors.unsqueeze],
+    - axis replacement or reshaping that changes the structural meaning of one
+      axis, such as [`factorize_dim`][qten.linalg.tensors.factorize_dim] or
+      [`product_dims`][qten.linalg.tensors.product_dims].
+
+    This marker is only a policy signal. The actual downgrade behavior is
+    implemented by generic helpers through
+    [`_wrap_tensor_result(...)`][qten.linalg.tensors._wrap_tensor_result].
+    """
     data: T
     """
     Underlying `torch.Tensor` storing the numeric values. Its shape must match
