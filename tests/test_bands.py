@@ -18,7 +18,7 @@ from qten.bands import (
 )
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
-from qten.geometries.spatials import AffineSpace, Lattice, Offset
+from qten.geometries.spatials import AffineSpace, KPointSet, Lattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from qten.symbolics.state_space import (
@@ -28,7 +28,6 @@ from qten.symbolics.state_space import (
     MomentumSpace,
     brillouin_zone,
 )
-from qten.symbolics import interpolate_reciprocal_path
 
 
 def _space(name: str, n: int) -> HilbertSpace:
@@ -559,7 +558,11 @@ def _recip_3d():
 
 def test_interpolate_path_returns_bzpath_with_correct_n_points():
     recip = _recip_2d()
-    path = interpolate_path(recip, [(0, 0), (0.5, 0), (0.5, 0.5)], n_points=50)
+    waypoints = ["G", "X", "M"]
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=50)
 
     assert isinstance(path, BzPath)
     assert isinstance(path.k_space, MomentumSpace)
@@ -569,63 +572,48 @@ def test_interpolate_path_returns_bzpath_with_correct_n_points():
 
 def test_interpolate_path_waypoint_indices_match_waypoints():
     recip = _recip_2d()
-    waypoints = [(0, 0), (0.5, 0), (0.5, 0.5), (0, 0)]
-    path = interpolate_path(recip, waypoints, n_points=100)
+    waypoints = ["G", "X", "M", "G"]
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=100)
 
     assert len(path.waypoint_indices) == len(waypoints)
     assert len(path.path_order) == 100
     assert path.waypoint_indices[0] == 0
     assert path.waypoint_indices[-1] == 99
+    assert path.labels == tuple(waypoints)
 
     elements = path.k_space.elements()
     for wp_pos, wp in zip(path.waypoint_indices, waypoints):
         k_idx = path.path_order[wp_pos]
         k = elements[k_idx]
         frac = np.array([float(k.rep[j, 0]) for j in range(recip.dim)])
-        expected = np.array(wp, dtype=float)
+        expected_k = kpoints.points[wp]
+        expected = np.array([float(expected_k.rep[j, 0]) for j in range(recip.dim)])
         assert np.allclose(frac, expected, atol=1e-9)
 
 
-def test_interpolate_path_auto_labels():
+def test_interpolate_path_requires_kpointset():
     recip = _recip_2d()
-    path = interpolate_path(recip, [(0, 0), (0.5, 0)], n_points=10)
-
-    assert len(path.labels) == 2
-    assert path.labels[0] == str((0, 0))
-    assert path.labels[1] == str((0.5, 0))
-
-
-def test_interpolate_path_custom_labels():
-    recip = _recip_2d()
-    path = interpolate_path(
-        recip, [(0, 0), (0.5, 0)], n_points=10, labels=["Gamma", "X"]
-    )
-
-    assert path.labels == ("Gamma", "X")
-
-
-def test_interpolate_path_label_count_mismatch_raises():
-    recip = _recip_2d()
-    with pytest.raises(ValueError, match="labels"):
-        interpolate_path(recip, [(0, 0), (0.5, 0)], n_points=10, labels=["Gamma"])
+    with pytest.raises(TypeError, match="KPointSet"):
+        interpolate_path(recip, ["G", "X"], None, n_points=10)
 
 
 def test_interpolate_path_too_few_waypoints_raises():
     recip = _recip_2d()
+    kpoints = KPointSet.from_points(recip, {"G": (0, 0)})
     with pytest.raises(ValueError, match="two waypoints"):
-        interpolate_path(recip, [(0, 0)], n_points=10)
-
-
-def test_interpolate_path_wrong_dim_raises():
-    recip = _recip_2d()
-    with pytest.raises(ValueError, match="components"):
-        interpolate_path(recip, [(0, 0, 0), (0.5, 0, 0)], n_points=10)
+        interpolate_path(recip, ["G"], kpoints, n_points=10)
 
 
 def test_interpolate_path_3d_lattice():
     recip = _recip_3d()
-    waypoints = [(0, 0, 0), (0.5, 0, 0), (0.5, 0.5, 0), (0, 0, 0)]
-    path = interpolate_path(recip, waypoints, n_points=80)
+    waypoints = ["G", "X", "M", "G"]
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0, 0), "X": (0.5, 0, 0), "M": (0.5, 0.5, 0)}
+    )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=80)
 
     assert len(path.path_order) == 80
     # Closed loop: first and last waypoint share one k-point, so k_space has
@@ -637,13 +625,22 @@ def test_interpolate_path_3d_lattice():
 
 def test_interpolate_path_distributes_proportionally():
     recip = _recip_2d()
-    path = interpolate_path(recip, [(0, 0), (1, 0), (1, 0.5)], n_points=100)
+    waypoints = ["G", "X", "M"]
+    kpoints = KPointSet.from_points(
+        recip,
+        {
+            "G": (0, 0),
+            "X": (sy.Rational(2, 3), 0),
+            "M": (sy.Rational(2, 3), sy.Rational(1, 3)),
+        },
+    )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=100)
 
     idx0, idx1, idx2 = path.waypoint_indices
     seg1_count = idx1 - idx0
     seg2_count = idx2 - idx1
 
-    # Segment 1 has length 1, segment 2 has length 0.5 (in Cartesian space
+    # Segment 1 has length 2/3, segment 2 has length 1/3 (in Cartesian space
     # with unit-basis reciprocal lattice), so ~2:1 ratio.
     assert seg1_count > seg2_count
     assert abs(seg1_count / max(seg2_count, 1) - 2.0) < 0.5
@@ -651,7 +648,11 @@ def test_interpolate_path_distributes_proportionally():
 
 def test_interpolate_path_path_positions_are_monotonic():
     recip = _recip_2d()
-    path = interpolate_path(recip, [(0, 0), (0.5, 0), (0.5, 0.5), (0, 0)], n_points=60)
+    waypoints = ["G", "X", "M", "G"]
+    kpoints = KPointSet.from_points(
+        recip, {"G": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
+    )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=60)
 
     positions = np.array(path.path_positions)
     assert positions[0] == 0.0
@@ -661,7 +662,9 @@ def test_interpolate_path_path_positions_are_monotonic():
 
 def test_interpolate_path_closed_loop_deduplicates():
     recip = _recip_2d()
-    path = interpolate_path(recip, [(0, 0), (0.5, 0), (0, 0)], n_points=20)
+    waypoints = ["G", "X", "G"]
+    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0)})
+    path = interpolate_path(recip, waypoints, kpoints, n_points=20)
 
     assert len(path.path_order) == 20
     # First and last path positions map to the same k_space index.
@@ -669,15 +672,16 @@ def test_interpolate_path_closed_loop_deduplicates():
     assert path.k_space.dim == 19
 
 
-def test_interpolate_path_named_route_with_points_dict():
+def test_interpolate_path_named_route_uses_kpointset():
     recip = _recip_2d()
-    pts = {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
-    path = interpolate_path(
-        recip, ["Gamma", "X", "M", "Gamma"], n_points=40, points=pts
+    waypoints = ["Gamma", "X", "M", "Gamma"]
+    kpoints = KPointSet.from_points(
+        recip, {"Gamma": (0, 0), "X": (0.5, 0), "M": (0.5, 0.5)}
     )
+    path = interpolate_path(recip, waypoints, kpoints, n_points=40)
 
     assert len(path.path_order) == 40
-    assert path.labels == ("Gamma", "X", "M", "Gamma")
+    assert path.labels == tuple(waypoints)
 
     elements = path.k_space.elements()
     first_k = elements[path.path_order[0]]
@@ -687,30 +691,66 @@ def test_interpolate_path_named_route_with_points_dict():
 
 def test_interpolate_path_named_route_missing_point_raises():
     recip = _recip_2d()
+    waypoints = ["Gamma", "Z"]
+    kpoints = KPointSet.from_points(recip, {"Gamma": (0, 0)})
     with pytest.raises(ValueError, match="not found"):
-        interpolate_path(recip, ["Gamma", "Z"], n_points=10, points={"Gamma": (0, 0)})
+        interpolate_path(recip, waypoints, kpoints, n_points=10)
 
 
-def test_interpolate_path_mixed_names_and_tuples():
+def test_interpolate_path_rebases_from_kpointset_source_recip():
+    recip_target = _recip_2d()
+    lattice_other = Lattice(
+        basis=ImmutableDenseMatrix([[2, 0], [0, 1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    recip_other = lattice_other.dual
+
+    kpoints = KPointSet.from_points(
+        recip_other,
+        {
+            "G": (0, 0),
+            "X": (sy.Rational(1, 2), sy.Rational(1, 4)),
+        },
+    )
+    waypoints = ["G", "X"]
+    path = interpolate_path(recip_target, waypoints, kpoints, n_points=8)
+    elements = path.k_space.elements()
+    first_k = elements[path.path_order[path.waypoint_indices[0]]]
+    last_k = elements[path.path_order[path.waypoint_indices[1]]]
+
+    expected_start = kpoints.points["G"].rebase(recip_target)
+    expected_end = kpoints.points["X"].rebase(recip_target)
+    assert first_k == expected_start
+    assert last_k == expected_end
+
+
+def test_interpolate_path_wraps_rebased_waypoints_to_fractional_cell():
     recip = _recip_2d()
-    pts = {"Gamma": (0, 0)}
-    path = interpolate_path(recip, ["Gamma", (0.5, 0)], n_points=10, points=pts)
+    kpoints = KPointSet.from_points(
+        recip,
+        {
+            "G": (0, 0),
+            "X": (sy.Rational(3, 2), sy.Rational(-1, 4)),
+        },
+    )
 
-    assert path.labels == ("Gamma", "(0.5, 0)")
-    assert len(path.path_order) == 10
+    waypoints = ["G", "X"]
+    path = interpolate_path(recip, waypoints, kpoints, n_points=8)
+    elements = path.k_space.elements()
+    end_k = elements[path.path_order[path.waypoint_indices[1]]]
+
+    assert end_k == kpoints.points["X"].rebase(recip).fractional()
+    assert end_k.rep == ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(3, 4)])
 
 
 def test_interpolate_path_accessible_via_ops():
     from qten.bands import interpolate_path as ip
 
     recip = _recip_2d()
-    path = ip(recip, [(0, 0), (0.5, 0)], n_points=10)
-    assert isinstance(path, BzPath)
-
-
-def test_interpolate_reciprocal_path_accessible_via_geometries():
-    recip = _recip_2d()
-    path = interpolate_reciprocal_path(recip, [(0, 0), (0.5, 0)], n_points=10)
+    waypoints = ["G", "X"]
+    kpoints = KPointSet.from_points(recip, {"G": (0, 0), "X": (0.5, 0)})
+    path = ip(recip, waypoints, kpoints, n_points=10)
     assert isinstance(path, BzPath)
 
 

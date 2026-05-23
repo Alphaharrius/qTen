@@ -42,8 +42,7 @@ Hilbert-space helpers
 Hilbert-space helper functions include
 [`region_hilbert`][qten.symbolics.ops.region_hilbert],
 [`hilbert_opr_repr`][qten.symbolics.ops.hilbert_opr_repr],
-[`match_indices`][qten.symbolics.ops.match_indices], and
-[`interpolate_reciprocal_path`][qten.symbolics.ops.interpolate_reciprocal_path].
+and [`match_indices`][qten.symbolics.ops.match_indices].
 """
 
 from ._base import Multiple as Multiple
@@ -74,7 +73,6 @@ from .hilbert_space import (
 from .ops import (
     fractional_opr as fractional_opr,
     hilbert_opr_repr as hilbert_opr_repr,
-    interpolate_reciprocal_path as interpolate_reciprocal_path,
     match_indices as match_indices,
     rebase_opr as rebase_opr,
     region_hilbert as region_hilbert,

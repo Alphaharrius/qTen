@@ -51,6 +51,7 @@ Additional geometry-related APIs are available in:
 
 from .spatials import (
     AffineSpace as AffineSpace,
+    KPointSet as KPointSet,
     Lattice as Lattice,
     ReciprocalLattice as ReciprocalLattice,
     Offset as Offset,

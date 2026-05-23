@@ -34,6 +34,7 @@ inside the first reciprocal cell.
 """
 
 from dataclasses import dataclass, field
+from collections import OrderedDict
 from numbers import Number
 from typing import (
     Tuple,
@@ -1241,6 +1242,56 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
     def __repr__(self) -> str:
         """Return the same display string as [`__str__()`][qten.geometries.spatials.Momentum.__str__]."""
         return str(self)
+
+
+@dataclass(frozen=True)
+class KPointSet:
+    """
+    Named high-symmetry momentum points tied to one reciprocal lattice.
+
+    This object keeps point labels and their momentum values together so they
+    can be carried across transformations and rebased as one unit.
+    """
+
+    recip: ReciprocalLattice
+    points: OrderedDict[str, Momentum]
+
+    @staticmethod
+    def from_points(
+        recip: ReciprocalLattice,
+        points: dict[str, Union[Momentum, Tuple[sy.Rational, ...]]],
+    ) -> "KPointSet":
+        """
+        Build a labeled point set from momenta or fractional tuples.
+
+        Tuple values are interpreted as fractional coordinates in `recip`.
+        Momentum values are rebased into `recip`.
+        """
+        normalized: OrderedDict[str, Momentum] = OrderedDict()
+        dim = recip.dim
+        for name, value in points.items():
+            if isinstance(value, Momentum):
+                normalized[name] = value.rebase(recip)
+                continue
+            frac = tuple(value)
+            if len(frac) != dim:
+                raise ValueError(
+                    f"Point '{name}' has {len(frac)} components, expected {dim}."
+                )
+            normalized[name] = Momentum(
+                rep=ImmutableDenseMatrix(frac),
+                space=recip,
+            )
+        return KPointSet(recip=recip, points=normalized)
+
+    def rebase(self, recip: ReciprocalLattice) -> "KPointSet":
+        """
+        Re-express every named point in a new reciprocal lattice.
+        """
+        rebased = OrderedDict(
+            (name, k.rebase(recip)) for name, k in self.points.items()
+        )
+        return KPointSet(recip=recip, points=rebased)
 
 
 @Operable.__contains__.register

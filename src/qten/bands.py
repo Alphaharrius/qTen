@@ -63,6 +63,7 @@ import torch
 from .geometries import (
     BasisTransform,
     InverseBasisTransform,
+    KPointSet,
     Lattice,
     Momentum,
     Offset,
@@ -85,7 +86,6 @@ from .symbolics import (
     U1Basis,
     brillouin_zone,
     fractional_opr,
-    interpolate_reciprocal_path,
     rebase_opr,
     restructure,
 )
@@ -111,40 +111,24 @@ def _basis_states_at_fractional_offset(
 
 def interpolate_path(
     recip: ReciprocalLattice,
-    waypoints: Sequence[Union[Tuple[float, ...], str]],
+    waypoints: Sequence[str],
+    points: KPointSet,
     n_points: int = 100,
-    labels: Optional[Sequence[str]] = None,
-    points: Optional[Dict[str, Tuple[float, ...]]] = None,
 ) -> BzPath:
     """
     Build a sampled Brillouin-zone path in a reciprocal lattice.
-
-    This is a backward-compatible wrapper around
-    [`interpolate_reciprocal_path`][qten.symbolics.ops.interpolate_reciprocal_path].
-    New code may call that symbolic helper directly.
 
     Parameters
     ----------
     recip : ReciprocalLattice
         Reciprocal lattice in which waypoint coordinates are interpreted.
-    waypoints : Sequence[Union[Tuple[float, ...], str]]
-        Sequence of explicit fractional coordinates or names looked up in
-        `points`.
-        For example, `[(0.0, 0.0), (0.5, 0.0), (0.5, 0.5)]`
-        samples a path through three explicit two-dimensional reciprocal
-        coordinates, while `["G", "X", "M"]` resolves coordinates from the
-        `points` mapping.
+    waypoints : Sequence[str]
+        Waypoint names in path order, e.g. `["G", "X", "M", "G"]`.
     n_points : int
         Number of samples used along the full interpolated path.
-    labels : Sequence[str] | None
-        Optional display labels for the waypoint ticks.
-        For example, `["Γ", "X", "M"]` can label a path whose named inputs are
-        `["G", "X", "M"]`.
-    points : Dict[str, Tuple[float, ...]] | None
-        Optional mapping from waypoint names to fractional reciprocal
-        coordinates. For example,
-        `{"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)}`.
-
+    points : KPointSet
+        Named reciprocal-space points carrying their source reciprocal lattice.
+        They are rebased to `recip` before interpolation.
     Returns
     -------
     BzPath
@@ -153,43 +137,131 @@ def interpolate_path(
 
     Raises
     ------
+    TypeError
+        If `points` is not a [`KPointSet`][qten.geometries.spatials.KPointSet].
     ValueError
         If fewer than two waypoints are supplied, if a named waypoint is not
-        present in `points`, if waypoint coordinate dimensions do not match
-        `recip.dim`, if `n_points` is too small for the number of waypoints, if
-        all waypoints are identical, or if `labels` does not match the number
-        of waypoints.
-
-    See Also
-    --------
-    [`interpolate_reciprocal_path(recip, waypoints, n_points, labels, points)`][qten.symbolics.ops.interpolate_reciprocal_path]
-        Canonical implementation used by this compatibility wrapper.
+        present in `points`, if `n_points` is too small for the number of
+        waypoints, or if all waypoints are identical.
 
     Examples
     --------
     ```python
     path = interpolate_path(
         recip,
-        waypoints=[(0.0, 0.0), (0.5, 0.0), (0.5, 0.5)],
-        labels=["Γ", "X", "M"],
+        waypoints=["G", "X", "M"],
+        points=KPointSet.from_points(
+            recip,
+            {"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)},
+        ),
     )
     ```
 
     ```python
     path = interpolate_path(
-        recip,
+        recip=new_recip,
         waypoints=["G", "X", "M"],
-        labels=["Γ", "X", "M"],
-        points={"G": (0.0, 0.0), "X": (0.5, 0.0), "M": (0.5, 0.5)},
+        points=original_kpoints,  # KPointSet tied to old reciprocal basis
     )
     ```
     """
-    return interpolate_reciprocal_path(
-        recip=recip,
-        waypoints=waypoints,
-        n_points=n_points,
-        labels=labels,
-        points=points,
+    if not isinstance(points, KPointSet):
+        raise TypeError("points must be provided as a KPointSet.")
+    if len(waypoints) < 2:
+        raise ValueError("At least two waypoints are required to define a path.")
+    rebased_points = points.rebase(recip)
+
+    resolved_wp: list[Momentum] = []
+    dim = recip.dim
+    for i, wp in enumerate(waypoints):
+        if wp not in rebased_points.points:
+            raise ValueError(
+                f"Waypoint {i} is the name '{wp}' but it was not found in "
+                f"the points dictionary. Available names: "
+                f"{sorted(rebased_points.points.keys()) if rebased_points.points else '(empty)'}."
+            )
+        resolved_wp.append(rebased_points.points[wp].fractional())
+
+    if n_points < len(resolved_wp):
+        raise ValueError(
+            f"n_points ({n_points}) must be >= number of waypoints ({len(resolved_wp)})."
+        )
+
+    basis_mat = np.array(recip.basis.evalf(), dtype=float)
+    wp_frac = np.array(
+        [[float(k.rep[j, 0]) for j in range(dim)] for k in resolved_wp],
+        dtype=float,
+    )
+    wp_cart = wp_frac @ basis_mat.T
+
+    seg_lengths = np.array(
+        [
+            np.linalg.norm(wp_cart[i + 1] - wp_cart[i])
+            for i in range(len(resolved_wp) - 1)
+        ]
+    )
+    total_length = seg_lengths.sum()
+    n_segments = len(resolved_wp) - 1
+
+    if total_length < 1e-15:
+        raise ValueError("All waypoints are identical; path has zero length.")
+
+    remaining = n_points - n_segments - 1
+    interior_per_seg = np.zeros(n_segments, dtype=int)
+    if remaining > 0:
+        ideal = (seg_lengths / total_length) * remaining
+        interior_per_seg = np.floor(ideal).astype(int)
+        deficit = remaining - interior_per_seg.sum()
+        fracs = ideal - interior_per_seg
+        for idx in np.argsort(-fracs)[:deficit]:
+            interior_per_seg[idx] += 1
+
+    all_fracs: list[np.ndarray] = []
+    waypoint_indices: list[int] = []
+
+    for seg in range(n_segments):
+        n_interior = int(interior_per_seg[seg])
+        n_seg_points = n_interior + 1
+        t_vals = np.linspace(0.0, 1.0, n_seg_points, endpoint=False)
+        start = wp_frac[seg]
+        end = wp_frac[seg + 1]
+        waypoint_indices.append(len(all_fracs))
+        for t in t_vals:
+            all_fracs.append(start + t * (end - start))
+
+    waypoint_indices.append(len(all_fracs))
+    all_fracs.append(wp_frac[-1])
+
+    seen: dict[Momentum, int] = {}
+    unique_momenta: list[Momentum] = []
+    path_order: list[int] = []
+
+    for frac in all_fracs:
+        rep = ImmutableDenseMatrix(
+            [sy.Rational(f).limit_denominator(10**9) for f in frac]
+        )
+        k = Momentum(rep=rep, space=recip)
+        if k not in seen:
+            seen[k] = len(unique_momenta)
+            unique_momenta.append(k)
+        path_order.append(seen[k])
+
+    structure: OrderedDict[Momentum, int] = OrderedDict(
+        (k, i) for i, k in enumerate(unique_momenta)
+    )
+    k_space = MomentumSpace(structure=structure)
+
+    all_cart = np.stack(all_fracs) @ basis_mat.T
+    diffs = np.diff(all_cart, axis=0)
+    dists = np.linalg.norm(diffs, axis=1)
+    positions = np.concatenate(([0.0], np.cumsum(dists)))
+
+    return BzPath(
+        k_space=k_space,
+        labels=tuple(waypoints),
+        waypoint_indices=tuple(waypoint_indices),
+        path_order=tuple(path_order),
+        path_positions=tuple(float(p) for p in positions),
     )
 
 

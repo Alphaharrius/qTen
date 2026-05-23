@@ -22,6 +22,7 @@ from .boundary import (
     PeriodicBoundary as PeriodicBoundary,
 )
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 from sympy import ImmutableDenseMatrix
@@ -135,3 +136,14 @@ class Momentum(Offset[ReciprocalLattice], Convertible):
     def fractional(self) -> Momentum: ...
     def base(self) -> ReciprocalLattice: ...
     def rebase(self, space: ReciprocalLattice) -> Momentum: ...
+
+@dataclass(frozen=True)
+class KPointSet:
+    recip: ReciprocalLattice
+    points: OrderedDict[str, Momentum]
+    @staticmethod
+    def from_points(
+        recip: ReciprocalLattice,
+        points: dict[str, Momentum | tuple[sy.Rational, ...]],
+    ) -> KPointSet: ...
+    def rebase(self, recip: ReciprocalLattice) -> KPointSet: ...
