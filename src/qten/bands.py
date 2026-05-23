@@ -63,6 +63,7 @@ import torch
 from .geometries import (
     BasisTransform,
     InverseBasisTransform,
+    KPointSet,
     Lattice,
     Momentum,
     Offset,
@@ -78,7 +79,6 @@ from .symbolics import (
     FuncOpr,
     HilbertSpace,
     IndexSpace,
-    KPointSet,
     MomentumBlockSpace,
     MomentumSpace,
     Opr,
@@ -138,7 +138,7 @@ def interpolate_path(
     Raises
     ------
     TypeError
-        If `points` is not a [`KPointSet`][qten.symbolics.state_space.KPointSet].
+        If `points` is not a [`KPointSet`][qten.geometries.spatials.KPointSet].
     ValueError
         If fewer than two waypoints are supplied, if a named waypoint is not
         present in `points`, if `n_points` is too small for the number of

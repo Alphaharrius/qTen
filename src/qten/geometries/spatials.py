@@ -1259,7 +1259,7 @@ class KPointSet:
     @staticmethod
     def from_points(
         recip: ReciprocalLattice,
-        points: dict[str, Union[Momentum, Tuple[float, ...]]],
+        points: dict[str, Union[Momentum, Tuple[sy.Rational, ...]]],
     ) -> "KPointSet":
         """
         Build a labeled point set from momenta or fractional tuples.
@@ -1292,17 +1292,6 @@ class KPointSet:
             (name, k.rebase(recip)) for name, k in self.points.items()
         )
         return KPointSet(recip=recip, points=rebased)
-
-    def resolve(self, name: str) -> Momentum:
-        """
-        Return the momentum bound to `name`.
-        """
-        if name not in self.points:
-            raise KeyError(
-                f"Point '{name}' not found. Available names: {tuple(self.points.keys())}."
-            )
-        return self.points[name]
-
 
 @Operable.__contains__.register
 def _(lattice: ReciprocalLattice, momentum: Momentum) -> bool:

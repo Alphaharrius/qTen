@@ -18,13 +18,12 @@ from qten.bands import (
 )
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
-from qten.geometries.spatials import AffineSpace, Lattice, Offset
+from qten.geometries.spatials import AffineSpace, KPointSet, Lattice, Offset
 from qten.linalg.tensors import Tensor
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
 from qten.symbolics.state_space import (
     BzPath,
     IndexSpace,
-    KPointSet,
     MomentumBlockSpace,
     MomentumSpace,
     brillouin_zone,
@@ -590,7 +589,7 @@ def test_interpolate_path_waypoint_indices_match_waypoints():
         k_idx = path.path_order[wp_pos]
         k = elements[k_idx]
         frac = np.array([float(k.rep[j, 0]) for j in range(recip.dim)])
-        expected_k = kpoints.resolve(wp)
+        expected_k = kpoints.points[wp]
         expected = np.array([float(expected_k.rep[j, 0]) for j in range(recip.dim)])
         assert np.allclose(frac, expected, atol=1e-9)
 
@@ -720,8 +719,8 @@ def test_interpolate_path_rebases_from_kpointset_source_recip():
     first_k = elements[path.path_order[path.waypoint_indices[0]]]
     last_k = elements[path.path_order[path.waypoint_indices[1]]]
 
-    expected_start = kpoints.resolve("G").rebase(recip_target)
-    expected_end = kpoints.resolve("X").rebase(recip_target)
+    expected_start = kpoints.points["G"].rebase(recip_target)
+    expected_end = kpoints.points["X"].rebase(recip_target)
     assert first_k == expected_start
     assert last_k == expected_end
 
@@ -741,7 +740,7 @@ def test_interpolate_path_wraps_rebased_waypoints_to_fractional_cell():
     elements = path.k_space.elements()
     end_k = elements[path.path_order[path.waypoint_indices[1]]]
 
-    assert end_k == kpoints.resolve("X").rebase(recip).fractional()
+    assert end_k == kpoints.points["X"].rebase(recip).fractional()
     assert end_k.rep == ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(3, 4)])
 
 

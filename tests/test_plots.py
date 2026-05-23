@@ -9,11 +9,10 @@ import torch
 
 from qten.bands import interpolate_path
 from qten.symbolics.hilbert_space import U1Basis, HilbertSpace
-from qten.geometries.spatials import Lattice, Offset
+from qten.geometries.spatials import KPointSet, Lattice, Offset
 from qten.geometries.boundary import PeriodicBoundary
 from qten.symbolics.state_space import brillouin_zone
 from qten.symbolics.state_space import IndexSpace
-from qten.symbolics.state_space import KPointSet
 from qten.linalg.tensors import Tensor
 from qten.geometries.fourier import fourier_transform
 from qten.plottings import Plottable
