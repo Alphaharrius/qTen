@@ -66,18 +66,6 @@ class BzPath:
     path_order: tuple
     path_positions: tuple
 
-@dataclass(frozen=True)
-class KPointSet:
-    recip: ReciprocalLattice
-    points: OrderedDict[str, Momentum]
-    @staticmethod
-    def from_points(
-        recip: ReciprocalLattice,
-        points: dict[str, Momentum | tuple[float, ...]],
-    ) -> KPointSet: ...
-    def rebase(self, recip: ReciprocalLattice) -> KPointSet: ...
-    def resolve(self, name: str) -> Momentum: ...
-
 def momentum_to_momentumspace(k: Momentum) -> MomentumSpace: ...
 @lru_cache
 def brillouin_zone(lattice: ReciprocalLattice) -> MomentumSpace: ...

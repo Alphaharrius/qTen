@@ -51,7 +51,6 @@ from .state_space import (
     BzPath as BzPath,
     BroadcastSpace as BroadcastSpace,
     IndexSpace as IndexSpace,
-    KPointSet as KPointSet,
     MomentumBlockSpace as MomentumBlockSpace,
     MomentumSpace as MomentumSpace,
     StateSpace as StateSpace,
