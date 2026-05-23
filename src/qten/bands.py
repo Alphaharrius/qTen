@@ -132,8 +132,7 @@ def interpolate_path(
         They are rebased to `recip` before interpolation.
     wrap_fractional : bool, default=True
         If True, wrap each rebased waypoint into the canonical fractional cell
-        before interpolation. Set to False to preserve raw rebased coordinates
-        (useful for unfolded path visualization/debugging).
+        before interpolation. Set to False to preserve raw rebased coordinates.
     Returns
     -------
     BzPath
