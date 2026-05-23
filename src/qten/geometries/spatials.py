@@ -1293,6 +1293,7 @@ class KPointSet:
         )
         return KPointSet(recip=recip, points=rebased)
 
+
 @Operable.__contains__.register
 def _(lattice: ReciprocalLattice, momentum: Momentum) -> bool:
     if momentum.space != lattice:
