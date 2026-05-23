@@ -744,6 +744,31 @@ def test_interpolate_path_wraps_rebased_waypoints_to_fractional_cell():
     assert end_k.rep == ImmutableDenseMatrix([sy.Rational(1, 2), sy.Rational(3, 4)])
 
 
+def test_interpolate_path_can_preserve_unwrapped_rebased_waypoints():
+    recip = _recip_2d()
+    kpoints = KPointSet.from_points(
+        recip,
+        {
+            "G": (0, 0),
+            "X": (sy.Rational(3, 2), sy.Rational(-1, 4)),
+        },
+    )
+
+    waypoints = ["G", "X"]
+    path = interpolate_path(
+        recip,
+        waypoints,
+        kpoints,
+        n_points=8,
+        wrap_fractional=False,
+    )
+    elements = path.k_space.elements()
+    end_k = elements[path.path_order[path.waypoint_indices[1]]]
+
+    assert end_k == kpoints.points["X"].rebase(recip)
+    assert end_k.rep == ImmutableDenseMatrix([sy.Rational(3, 2), sy.Rational(-1, 4)])
+
+
 def test_interpolate_path_accessible_via_ops():
     from qten.bands import interpolate_path as ip
 
