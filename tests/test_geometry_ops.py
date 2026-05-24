@@ -239,7 +239,7 @@ def test_get_strip_region_2d_supports_affine_origin():
     )
 
 
-def test_get_strip_region_2d_uses_primitive_direction():
+def test_get_strip_region_2d_inherits_direction_scale_transversely():
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(2),
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
@@ -256,9 +256,12 @@ def test_get_strip_region_2d_uses_primitive_direction():
     assert tuple(tuple(site.rep) for site in region) == (
         (0, 0),
         (0, 1),
+        (0, 2),
         (1, 1),
         (1, 2),
+        (1, 3),
         (2, 2),
+        (7, 1),
     )
 
 
@@ -277,10 +280,13 @@ def test_get_strip_region_2d_matches_diagonal_examples():
     )
     assert set(tuple(site.rep) for site in region) == {
         (0, 0),
-        (1, 1),
-        (2, 2),
         (0, 1),
+        (0, 2),
+        (1, 1),
         (1, 2),
+        (1, 3),
+        (2, 2),
+        (15, 1),
     }
 
     region = get_strip_region_2d(
@@ -291,13 +297,18 @@ def test_get_strip_region_2d_matches_diagonal_examples():
     )
     assert set(tuple(site.rep) for site in region) == {
         (0, 0),
-        (1, 1),
-        (2, 2),
         (0, 1),
-        (1, 2),
-        (15, 1),
         (0, 2),
+        (0, 3),
+        (0, 4),
+        (1, 1),
+        (1, 2),
         (1, 3),
+        (2, 2),
+        (14, 2),
+        (15, 1),
+        (15, 2),
+        (15, 3),
     }
 
     region = get_strip_region_2d(
@@ -309,10 +320,13 @@ def test_get_strip_region_2d_matches_diagonal_examples():
     )
     assert set(tuple(site.rep) for site in region) == {
         (0, 2),
+        (0, 3),
+        (0, 4),
         (1, 1),
         (2, 2),
         (1, 2),
         (1, 3),
+        (15, 3),
     }
 
     region = get_strip_region_2d(
@@ -323,10 +337,13 @@ def test_get_strip_region_2d_matches_diagonal_examples():
     )
     assert set(tuple(site.rep) for site in region) == {
         (0, 0),
-        (1, 1),
-        (2, 2),
         (1, 0),
+        (1, 1),
+        (1, 15),
+        (2, 0),
         (2, 1),
+        (2, 2),
+        (3, 1),
     }
 
 
