@@ -114,6 +114,7 @@ def interpolate_path(
     waypoints: Sequence[str],
     points: KPointSet,
     n_points: int = 100,
+    wrap_fractional: bool = True,
 ) -> BzPath:
     """
     Build a sampled Brillouin-zone path in a reciprocal lattice.
@@ -129,6 +130,9 @@ def interpolate_path(
     points : KPointSet
         Named reciprocal-space points carrying their source reciprocal lattice.
         They are rebased to `recip` before interpolation.
+    wrap_fractional : bool, default=True
+        If True, wrap each rebased waypoint into the canonical fractional cell
+        before interpolation. Set to False to preserve raw rebased coordinates.
     Returns
     -------
     BzPath
@@ -180,7 +184,8 @@ def interpolate_path(
                 f"the points dictionary. Available names: "
                 f"{sorted(rebased_points.points.keys()) if rebased_points.points else '(empty)'}."
             )
-        resolved_wp.append(rebased_points.points[wp].fractional())
+        rebased_wp = rebased_points.points[wp]
+        resolved_wp.append(rebased_wp.fractional() if wrap_fractional else rebased_wp)
 
     if n_points < len(resolved_wp):
         raise ValueError(
