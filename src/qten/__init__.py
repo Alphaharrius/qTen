@@ -102,3 +102,19 @@ from .linalg.tensors import (
 
 from .utils.devices import Device as Device
 from .utils import io as io
+
+# Bind top-level modules and subpackages so `import qten; qten.linalg` works
+# consistently for runtime access and editor discovery.
+from . import abstracts as abstracts
+from . import bands as bands
+from . import geometries as geometries
+from . import linalg as linalg
+from . import ops as ops
+from . import optim as optim
+from . import phys as phys
+from . import plottings as plottings
+from . import pointgroups as pointgroups
+from . import precision as precision
+from . import symbolics as symbolics
+from . import utils as utils
+from . import validations as validations
