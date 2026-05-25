@@ -24,7 +24,12 @@ def relative_doc_link(from_doc_path: Path, target_doc_path: Path) -> str:
     )
 
 
-def write_module_page(module_name: str, doc_path: Path, source_path: Path) -> None:
+def write_module_page(
+    module_name: str,
+    doc_path: Path,
+    source_path: Path,
+    generated_doc_paths: set[Path],
+) -> None:
     with mkdocs_gen_files.open(doc_path, "w") as fd:
         fd.write(f"# `{module_name}`\n\n")
         if source_path.name == "__init__.py":
@@ -40,7 +45,7 @@ def write_module_page(module_name: str, doc_path: Path, source_path: Path) -> No
             )
         fd.write(f"::: {module_name}\n")
         if source_path.name == "__init__.py":
-            exports = public_reexports(source_path)
+            exports = public_reexports(source_path, generated_doc_paths)
             if exports:
                 fd.write("\n## Exported API\n\n")
                 for export_name in exports:
@@ -49,7 +54,7 @@ def write_module_page(module_name: str, doc_path: Path, source_path: Path) -> No
     mkdocs_gen_files.set_edit_path(doc_path, source_path.relative_to(ROOT))
 
 
-def public_reexports(source_path: Path) -> list[str]:
+def public_reexports(source_path: Path, generated_doc_paths: set[Path]) -> list[str]:
     tree = ast.parse(source_path.read_text())
     exports: list[str] = []
     seen: set[str] = set()
@@ -60,6 +65,10 @@ def public_reexports(source_path: Path) -> list[str]:
             export_name = alias.asname or alias.name
             if export_name.startswith("_"):
                 continue
+            if has_generated_reference_page(
+                source_path, node, alias, generated_doc_paths
+            ):
+                continue
             if export_name in seen:
                 continue
             seen.add(export_name)
@@ -67,28 +76,61 @@ def public_reexports(source_path: Path) -> list[str]:
     return exports
 
 
+def has_generated_reference_page(
+    source_path: Path,
+    node: ast.ImportFrom,
+    alias: ast.alias,
+    generated_doc_paths: set[Path],
+) -> bool:
+    if node.level <= 0:
+        return False
+
+    package_parts = source_path.relative_to(ROOT / "src").with_suffix("").parts[:-1]
+    module_parts = tuple(node.module.split(".")) if node.module else ()
+    target_parts = (*package_parts, *module_parts, alias.name)
+
+    target_module_doc = REFERENCE_ROOT / Path(*target_parts).with_suffix(".md")
+    target_package_doc = REFERENCE_ROOT / Path(*target_parts, "index.md")
+    return (
+        target_module_doc in generated_doc_paths
+        or target_package_doc in generated_doc_paths
+    )
+
+
+def iter_reference_pages() -> list[tuple[tuple[str, ...], str, Path, Path]]:
+    pages: list[tuple[tuple[str, ...], str, Path, Path]] = []
+
+    for package_name, package_root in PACKAGES:
+        for source_path in sorted(package_root.rglob("*.py")):
+            module_parts = source_path.relative_to(package_root).with_suffix("").parts
+            if module_parts[-1] == "__main__":
+                continue
+            if module_parts[-1].startswith("_") and module_parts[-1] != "__init__":
+                continue
+
+            if module_parts[-1] == "__init__":
+                doc_rel_path = Path(package_name, *module_parts[:-1], "index.md")
+                nav_parts = (package_name, *module_parts[:-1])
+                module_name = ".".join((package_name, *module_parts[:-1]))
+            else:
+                doc_rel_path = Path(package_name, *module_parts).with_suffix(".md")
+                nav_parts = (package_name, *module_parts)
+                module_name = ".".join((package_name, *module_parts))
+
+            pages.append(
+                (nav_parts, module_name, REFERENCE_ROOT / doc_rel_path, source_path)
+            )
+
+    return pages
+
+
 nav = mkdocs_gen_files.Nav()
+reference_pages = iter_reference_pages()
+generated_doc_paths = {doc_path for _, _, doc_path, _ in reference_pages}
 
-for package_name, package_root in PACKAGES:
-    for source_path in sorted(package_root.rglob("*.py")):
-        module_parts = source_path.relative_to(package_root).with_suffix("").parts
-        if module_parts[-1] == "__main__":
-            continue
-        if module_parts[-1].startswith("_") and module_parts[-1] != "__init__":
-            continue
-
-        if module_parts[-1] == "__init__":
-            doc_rel_path = Path(package_name, *module_parts[:-1], "index.md")
-            nav_parts = (package_name, *module_parts[:-1])
-            module_name = ".".join((package_name, *module_parts[:-1]))
-        else:
-            doc_rel_path = Path(package_name, *module_parts).with_suffix(".md")
-            nav_parts = (package_name, *module_parts)
-            module_name = ".".join((package_name, *module_parts))
-
-        doc_path = REFERENCE_ROOT / doc_rel_path
-        write_module_page(module_name, doc_path, source_path)
-        nav[nav_parts] = Path("reference") / doc_rel_path
+for nav_parts, module_name, doc_path, source_path in reference_pages:
+    write_module_page(module_name, doc_path, source_path, generated_doc_paths)
+    nav[nav_parts] = Path("reference") / doc_path.relative_to(REFERENCE_ROOT)
 
 with mkdocs_gen_files.open(REFERENCE_ROOT / "index.md", "w") as fd:
     fd.write("# API Reference\n\n")
