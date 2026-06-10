@@ -13,6 +13,7 @@ from qten.linalg.tensors import (
     allclose,
     astype,
     cat,
+    eye,
     einsum,
     equal,
     imag as tensor_imag,
@@ -1003,6 +1004,16 @@ class TestTensorOperations:
         assert out.dims == dims
         assert out.data.shape == (2, 2)
         assert torch.equal(out.data, torch.ones(2, 2))
+
+    def test_eye_helper_preserves_full_dims(self, tensor_ops_ctx):
+        dims = (tensor_ops_ctx.space_a, tensor_ops_ctx.space_a, tensor_ops_ctx.space_a)
+        out = eye(dims)
+        expected = torch.eye(2).expand(2, 2, 2)
+
+        assert isinstance(out, Tensor)
+        assert out.dims == dims
+        assert out.data.shape == (2, 2, 2)
+        assert torch.equal(out.data, expected)
 
     def test_neg(self, tensor_ops_ctx):
         res = -tensor_ops_ctx.tensor
