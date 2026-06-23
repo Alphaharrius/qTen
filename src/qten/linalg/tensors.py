@@ -4768,11 +4768,11 @@ def mapping_matrix(
 
 def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
-    Create an identity matrix tensor from the last two symbolic dimensions.
+    Create an identity tensor on the requested symbolic dimensions.
 
-    This helper interprets `dims[-2:]` as the matrix axes and returns a rank-2
-    identity tensor on those spaces. Any leading dimensions in `dims` are
-    ignored; this function does not build a batched identity tensor.
+    This helper interprets `dims[-2:]` as the matrix axes. When leading
+    dimensions are present, it broadcasts the identity across those axes so the
+    returned tensor preserves the full `dims` tuple.
 
     Parameters
     ----------
@@ -4785,7 +4785,7 @@ def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Ten
     Returns
     -------
     Tensor
-        Rank-2 identity tensor with dims `(dims[-2], dims[-1])`.
+        Identity tensor with dims equal to `dims`.
 
     Raises
     ------
@@ -4796,11 +4796,16 @@ def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Ten
         raise ValueError(
             f"Identity tensor creation requires at least rank 2, got rank {len(dims)}!"
         )
-    matrix_dims = dims[-2:]
-    rows = matrix_dims[0].dim
-    cols = matrix_dims[1].dim
+    rows = dims[-2].dim
+    cols = dims[-1].dim
+    leading_shape = tuple(dim.dim for dim in dims[:-2])
     torch_device = device.torch_device() if device is not None else None
-    return Tensor(data=torch.eye(rows, cols, device=torch_device), dims=matrix_dims)
+    data = torch.eye(rows, cols, device=torch_device)
+    if leading_shape:
+        data = data.reshape((1,) * len(leading_shape) + (rows, cols)).expand(
+            leading_shape + (rows, cols)
+        )
+    return Tensor(data=data, dims=dims)
 
 
 def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
