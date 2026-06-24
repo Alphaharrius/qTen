@@ -18,7 +18,7 @@ class PointGroupBasis(Spatial):
     axes: tuple[sy.Symbol, ...]
     order: int
     rep: sy.ImmutableDenseMatrix
-    group: str = "point_group"
+    group: str = "generic"
     irrep: sy.Expr | str | tuple[sy.Expr, ...] = sy.Integer(1)
     irrep_dim: int = 1
     copy_index: int = 0
@@ -32,7 +32,7 @@ class PointGroupBasis(Spatial):
         axes: tuple[sy.Symbol, ...],
         order: int,
         *,
-        group: str = "point_group",
+        group: str = "generic",
         irrep: sy.Expr | str | tuple[sy.Expr, ...] = sy.Integer(1),
         irrep_dim: int = 1,
         copy_index: int = 0,
@@ -65,7 +65,7 @@ class PointGroupBasis(Spatial):
         else:
             expr = str(self.expr)
         if (
-            self.group == "point_group"
+            self.group == "generic"
             and isinstance(self.irrep, sy.Basic)
             and sy.simplify(self.irrep - 1) == 0
         ):

@@ -1,0 +1,73 @@
+import sympy as sy
+from dataclasses import dataclass
+from typing import TypeVar, overload
+from ..abstracts import HasBase as HasBase
+from ..geometries.spatials import (
+    AffineSpace as AffineSpace,
+    Momentum as Momentum,
+    Offset as Offset,
+)
+from ..symbolics import Multiple as Multiple
+from ..symbolics.hilbert_space import (
+    HilbertSpace as HilbertSpace,
+    Opr as Opr,
+    U1Basis as U1Basis,
+    U1Span as U1Span,
+)
+from ..utils.collections_ext import FrozenDict as FrozenDict
+from .basis import PointGroupBasis as PointGroupBasis
+
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class PointGroupElement(Opr):
+    irrep: sy.ImmutableDenseMatrix
+    axes: tuple[sy.Symbol, ...]
+
+    def _full_indices(self, order: int): ...
+    def _commute_indices(self, order: int): ...
+    def euclidean_basis(self, order: int) -> sy.ImmutableDenseMatrix: ...
+    def _raw_euclidean_repr(self, order: int) -> sy.ImmutableDenseMatrix: ...
+    def euclidean_repr(self, order: int) -> sy.ImmutableDenseMatrix: ...
+    def group_order(self, max_order: int = 128) -> int: ...
+    def inv(self) -> PointGroupElement: ...
+    def basis(self, order: int) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
+
+    @property
+    def basis_table(self) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
+
+    @overload
+    def invoke(self, obj: PointGroupElement, **kwargs) -> PointGroupElement: ...
+    @overload
+    def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
+    @overload
+    def invoke(self, obj: _T, **kwargs) -> _T | Multiple[_T]: ...  # type: ignore[override]
+
+
+@dataclass(frozen=True)
+class PointGroupOpr(Opr, HasBase[AffineSpace]):
+    g: PointGroupElement
+    offset: Offset
+
+    def __init__(self, g: PointGroupElement) -> None: ...
+    def base(self) -> AffineSpace: ...
+    def rebase(self, new_base: AffineSpace) -> PointGroupOpr: ...
+    def fixpoint_at(self, r: Offset, rebase: bool = False) -> PointGroupOpr: ...
+
+    @overload
+    def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
+    @overload
+    def invoke(self, obj: Offset, **kwargs) -> Offset: ...
+    @overload
+    def invoke(self, obj: Momentum, **kwargs) -> Momentum: ...
+    @overload
+    def invoke(self, obj: U1Basis, **kwargs) -> U1Basis: ...
+    @overload
+    def invoke(self, obj: U1Span, **kwargs) -> U1Span: ...
+    @overload
+    def invoke(self, obj: HilbertSpace, **kwargs) -> HilbertSpace: ...
+    @overload
+    def invoke(self, obj: Multiple[_T], **kwargs) -> Multiple[_T]: ...
+    @overload
+    def invoke(self, obj: _T, **kwargs) -> _T | Multiple[_T]: ...  # type: ignore[override]
