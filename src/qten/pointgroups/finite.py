@@ -57,7 +57,9 @@ class FinitePointGroup:
         symbol: str | None = None,
         irreps: dict[str, Any] | None = None,
     ) -> "FinitePointGroup":
-        generators = tuple(PointGroupElement(irrep=matrix, axes=axes) for matrix in matrices)
+        generators = tuple(
+            PointGroupElement(irrep=matrix, axes=axes) for matrix in matrices
+        )
         return cls(generators=generators, axes=axes, symbol=symbol, irreps=irreps)
 
     @lru_cache
@@ -65,7 +67,9 @@ class FinitePointGroup:
         """Generate all group elements by closure under the generators."""
 
         dim = len(self.axes)
-        identity = PointGroupElement(irrep=sy.ImmutableDenseMatrix.eye(dim), axes=self.axes)
+        identity = PointGroupElement(
+            irrep=sy.ImmutableDenseMatrix.eye(dim), axes=self.axes
+        )
         elements = [identity]
         seen = {_matrix_key(identity.irrep)}
         frontier = [identity]
@@ -101,9 +105,9 @@ class FinitePointGroup:
         zero = sy.zeros(len(self.axes), len(self.axes))
         for i, left in enumerate(elements):
             for right in elements[i + 1 :]:
-                if not sy.simplify(left.irrep @ right.irrep - right.irrep @ left.irrep).equals(
-                    zero
-                ):
+                if not sy.simplify(
+                    left.irrep @ right.irrep - right.irrep @ left.irrep
+                ).equals(zero):
                     return False
         return True
 
@@ -112,7 +116,9 @@ class FinitePointGroup:
         """Return conjugacy classes as element-index tuples."""
 
         elements = self.elements()
-        key_to_index = {_matrix_key(element.irrep): i for i, element in enumerate(elements)}
+        key_to_index = {
+            _matrix_key(element.irrep): i for i, element in enumerate(elements)
+        }
         unassigned = set(range(len(elements)))
         classes: list[tuple[int, ...]] = []
         while unassigned:
@@ -157,9 +163,7 @@ class FinitePointGroup:
             return candidates[0]
         return exact
 
-    def _mirror_label(
-        self, matrix: sy.ImmutableDenseMatrix, labels: set[str]
-    ) -> str:
+    def _mirror_label(self, matrix: sy.ImmutableDenseMatrix, labels: set[str]) -> str:
         """Choose a Bilbao mirror class label from available labels."""
 
         candidates = tuple(sorted(label for label in labels if label.startswith("m")))
@@ -184,9 +188,7 @@ class FinitePointGroup:
         if exact in labels:
             return exact
 
-        candidates = tuple(
-            sorted(label for label in labels if label.startswith("-"))
-        )
+        candidates = tuple(sorted(label for label in labels if label.startswith("-")))
         if len(candidates) == 1:
             return candidates[0]
         return exact

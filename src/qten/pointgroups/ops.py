@@ -166,7 +166,9 @@ def get_direct_transform(
 
 
 def _contains_point_group_basis(space: HilbertSpace) -> bool:
-    return any(type(rep) is PointGroupBasis for psi in space.elements() for rep in psi.base)
+    return any(
+        type(rep) is PointGroupBasis for psi in space.elements() for rep in psi.base
+    )
 
 
 def _point_group_basis_scale(

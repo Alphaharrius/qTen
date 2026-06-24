@@ -267,10 +267,7 @@ def test_joint_point_group_column_symmetrize_projects_diagonal_mirrors():
             atol=1e-10,
         )
     assert {
-        tuple(
-            sy.simplify(phase)
-            for phase in label.irrep_of(PointGroupBasis).irrep
-        )
+        tuple(sy.simplify(phase) for phase in label.irrep_of(PointGroupBasis).irrep)
         for label in labels
     } == {
         (sy.Integer(1), sy.Integer(1)),

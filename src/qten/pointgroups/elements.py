@@ -628,7 +628,9 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
         change = B_new.inv() @ B_old
         new_irrep = change @ irrep @ change.inv()
         return PointGroupOpr._from_parts(
-            g=PointGroupElement(irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes),
+            g=PointGroupElement(
+                irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes
+            ),
             offset=self.offset.rebase(new_base),
         )
 
@@ -765,7 +767,9 @@ def _abelian_momentum_action_matrix(
 @lru_cache(
     maxsize=None
 )  # The maximum number of Momentum is restricted by the current system.
-def _apply_point_group_opr_to_momentum_cached(t: PointGroupOpr, k: Momentum) -> Momentum:
+def _apply_point_group_opr_to_momentum_cached(
+    t: PointGroupOpr, k: Momentum
+) -> Momentum:
     real_space = k.base().dual
     action = _abelian_momentum_action_matrix(t, real_space)
 

@@ -76,7 +76,9 @@ def _split_named_query(query: str) -> tuple[str, str]:
         maybe_symbol, maybe_axes = cleaned.rsplit("-", 1)
         if maybe_symbol and set(maybe_axes).issubset(set(_STANDARD_AXIS_NAMES)):
             if len(set(maybe_axes)) != len(maybe_axes):
-                raise ValueError(f"Named point-group axes must be unique, got '{maybe_axes}'.")
+                raise ValueError(
+                    f"Named point-group axes must be unique, got '{maybe_axes}'."
+                )
             symbol = maybe_symbol
             axes = maybe_axes
 
