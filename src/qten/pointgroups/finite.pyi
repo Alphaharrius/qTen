@@ -1,23 +1,23 @@
 import sympy as sy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 from .basis import PointGroupBasis as PointGroupBasis
 from .elements import PointGroupElement as PointGroupElement
 
 @dataclass(frozen=True)
 class FinitePointGroup:
-    symbol: str
-    aliases: tuple[str, ...]
     generators: tuple[PointGroupElement, ...]
+    axes: tuple[sy.Symbol, ...]
+    symbol: str | None
     irreps: dict[str, Any] | None
 
     @classmethod
     def from_matrices(
         cls,
-        symbol: str,
-        aliases: tuple[str, ...],
-        generators: tuple[sy.ImmutableDenseMatrix, ...] | tuple[PointGroupElement, ...],
+        matrices: Iterable[sy.ImmutableDenseMatrix],
         axes: tuple[sy.Symbol, ...],
+        *,
+        symbol: str | None = None,
         irreps: dict[str, Any] | None = None,
     ) -> FinitePointGroup: ...
     def elements(self, max_order: int = 512) -> tuple[PointGroupElement, ...]: ...
