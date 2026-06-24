@@ -18,8 +18,8 @@ from qten.symbolics import IndexSpace, HilbertSpace, U1Basis
 from qten.geometries.spatials import Lattice, PeriodicBoundary, AffineSpace, Offset
 from qten.phys._ff_observables import FFObservable
 from qten.linalg.decompose import svd, eigh
-from qten.pointgroups.abelian import AbelianBasis, AbelianGroup, AbelianOpr
-from qten.pointgroups.ops import abelian_column_symmetrize
+from qten.pointgroups import PointGroupBasis, PointGroupElement, PointGroupOpr
+from qten.pointgroups.ops import point_group_column_symmetrize
 from qten.geometries.fourier import fourier_transform
 from qten.symbolics.ops import hilbert_opr_repr
 from qten.symbolics.hilbert_space import FuncOpr
@@ -140,8 +140,8 @@ def _opr_with_offset(
     irrep: ImmutableDenseMatrix,
     axes: tuple[sy.Symbol, ...],
     offset: Offset,
-) -> AbelianOpr:
-    opr = AbelianOpr(g=AbelianGroup(irrep=irrep, axes=axes))
+) -> PointGroupOpr:
+    opr = PointGroupOpr(g=PointGroupElement(irrep=irrep, axes=axes))
     object.__setattr__(opr, "offset", offset)
     return opr
 
@@ -156,8 +156,8 @@ def test_pointgroup_ops(device):
         offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
     )
 
-    fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
-    fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+    fx = PointGroupBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = PointGroupBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
 
     def _state(tag) -> U1Basis:
         return U1Basis(coef=sy.Integer(1), base=(tag,))
@@ -175,7 +175,7 @@ def test_pointgroup_ops(device):
     )
 
     # This invokes projected spaces which previously had hardcoded CPU allocations
-    w_sym = abelian_column_symmetrize(mirror, w)
+    w_sym = point_group_column_symmetrize(mirror, w)
 
     assert w_sym.device == device
 

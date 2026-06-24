@@ -140,7 +140,7 @@ ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 
 [tool.setuptools.package-data]
-qten = ["py.typed"]
+qten = ["py.typed", "pointgroups/data/*.json", "pointgroups/data/*.md"]
 "*" = ["*.pyi"]
 
 [tool.setuptools]

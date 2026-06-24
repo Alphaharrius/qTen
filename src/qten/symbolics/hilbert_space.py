@@ -1846,7 +1846,7 @@ class ComposedOpr(Opr):
     Examples
     --------
     If `fractional = FuncOpr(Offset, Offset.fractional)` and `t` is an
-    [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr], then:
+    [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr], then:
 
     `fractional @ t @ space`
 

@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from sympy import ImmutableDenseMatrix
 from typing import cast
 
-from qten.pointgroups import pointgroup
-from qten.pointgroups.abelian import (
-    AbelianBasis,
-    AbelianGroup,
-    AbelianOpr,
+from qten.pointgroups import (
+    PointGroupBasis,
+    PointGroupElement,
+    PointGroupOpr,
+    pointgroup,
 )
+from qten.pointgroups.ops import _hilbert_opr_repr
 from qten.bands import bandtransform, get_band_transform
 from qten.geometries.fourier import fourier_transform
 from qten.symbolics.state_space import MomentumSpace, brillouin_zone
@@ -50,12 +51,12 @@ def _affine(
     axes: tuple[sy.Symbol, ...],
     offset: Offset | None = None,
     basis_function_order: int | None = None,
-) -> AbelianOpr:
+) -> PointGroupOpr:
     _ = basis_function_order
-    g = AbelianGroup(irrep=irrep, axes=axes)
+    g = PointGroupElement(irrep=irrep, axes=axes)
     if offset is None:
-        return AbelianOpr(g=g)
-    return AbelianOpr._from_parts(g=g, offset=offset)
+        return PointGroupOpr(g=g)
+    return PointGroupOpr._from_parts(g=g, offset=offset)
 
 
 def _transformed(op, obj):
@@ -71,7 +72,7 @@ def _split_result(ret):
 
 def test_affine_function_dim_and_str():
     x = sy.symbols("x")
-    f = AbelianBasis(
+    f = PointGroupBasis(
         expr=x,
         axes=(x,),
         order=1,
@@ -82,9 +83,9 @@ def test_affine_function_dim_and_str():
     assert repr(f) == "x"
 
 
-def test_abelian_basis_from_rep_normalizes_magnitude_but_keeps_sign():
+def test_point_group_basis_from_rep_normalizes_magnitude_but_keeps_sign():
     x = sy.symbols("x")
-    basis = AbelianBasis.from_rep(
+    basis = PointGroupBasis.from_rep(
         rep=ImmutableDenseMatrix([-2]),
         euclidean_basis=ImmutableDenseMatrix([x]),
         axes=(x,),
@@ -218,41 +219,41 @@ def test_affine_group_rebase_conjugates_irrep_for_nontrivial_basis_change():
     assert new_t.g.irrep == ImmutableDenseMatrix(expected)
 
 
-def test_abelian_group_matmul_returns_composed_group():
+def test_point_group_group_matmul_returns_composed_group():
     x, y = sy.symbols("x y")
-    left = AbelianGroup(
+    left = PointGroupElement(
         irrep=ImmutableDenseMatrix([[0, -1], [1, 0]]),
         axes=(x, y),
     )
-    right = AbelianGroup(
+    right = PointGroupElement(
         irrep=ImmutableDenseMatrix([[1, 1], [0, 1]]),
         axes=(x, y),
     )
 
     composed = left @ right
 
-    assert isinstance(composed, AbelianGroup)
+    assert isinstance(composed, PointGroupElement)
     assert composed.axes == (x, y)
     assert composed.irrep == ImmutableDenseMatrix(left.irrep @ right.irrep)
 
 
-def test_abelian_group_inv_returns_exact_inverse_in_same_axes():
+def test_point_group_group_inv_returns_exact_inverse_in_same_axes():
     x, y = sy.symbols("x y")
-    g = AbelianGroup(
+    g = PointGroupElement(
         irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
         axes=(x, y),
     )
 
     g_inv = g.inv()
 
-    assert isinstance(g_inv, AbelianGroup)
+    assert isinstance(g_inv, PointGroupElement)
     assert g_inv.axes == (x, y)
     assert g_inv.irrep == ImmutableDenseMatrix([[1, -1], [-1, 2]])
 
 
-def test_abelian_group_inv_composes_to_identity():
+def test_point_group_group_inv_composes_to_identity():
     x, y = sy.symbols("x y")
-    g = AbelianGroup(
+    g = PointGroupElement(
         irrep=ImmutableDenseMatrix([[2, 1], [1, 1]]),
         axes=(x, y),
     )
@@ -264,13 +265,13 @@ def test_abelian_group_inv_composes_to_identity():
     assert (g.inv() @ g).irrep == ident
 
 
-def test_abelian_group_matmul_aligns_permuted_axes():
+def test_point_group_group_matmul_aligns_permuted_axes():
     x, y = sy.symbols("x y")
-    left = AbelianGroup(
+    left = PointGroupElement(
         irrep=ImmutableDenseMatrix([[2, 1], [3, 4]]),
         axes=(x, y),
     )
-    right = AbelianGroup(
+    right = PointGroupElement(
         irrep=ImmutableDenseMatrix([[5, 6], [7, 8]]),
         axes=(y, x),
     )
@@ -281,20 +282,20 @@ def test_abelian_group_matmul_aligns_permuted_axes():
     assert composed.axes == (x, y)
     assert composed.irrep == ImmutableDenseMatrix(left.irrep @ right_aligned)
 
-    fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
-    fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+    fx = PointGroupBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = PointGroupBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
 
     assert composed.euclidean_repr(1) @ fx.rep == ImmutableDenseMatrix([[22], [48]])
     assert composed.euclidean_repr(1) @ fy.rep == ImmutableDenseMatrix([[19], [41]])
 
 
-def test_abelian_group_matmul_extends_missing_axes_with_identity():
+def test_point_group_group_matmul_extends_missing_axes_with_identity():
     x, y, z = sy.symbols("x y z")
-    left = AbelianGroup(
+    left = PointGroupElement(
         irrep=ImmutableDenseMatrix([[2, 3], [5, 7]]),
         axes=(x, y),
     )
-    right = AbelianGroup(
+    right = PointGroupElement(
         irrep=ImmutableDenseMatrix([[11, 13], [17, 19]]),
         axes=(y, z),
     )
@@ -306,19 +307,19 @@ def test_abelian_group_matmul_extends_missing_axes_with_identity():
     assert composed.axes == (x, y, z)
     assert composed.irrep == ImmutableDenseMatrix(left_embedded @ right_embedded)
 
-    fx = AbelianBasis(
+    fx = PointGroupBasis(
         expr=x,
         axes=(x, y, z),
         order=1,
         rep=ImmutableDenseMatrix([1, 0, 0]),
     )
-    fy = AbelianBasis(
+    fy = PointGroupBasis(
         expr=y,
         axes=(x, y, z),
         order=1,
         rep=ImmutableDenseMatrix([0, 1, 0]),
     )
-    fz = AbelianBasis(
+    fz = PointGroupBasis(
         expr=z,
         axes=(x, y, z),
         order=1,
@@ -337,13 +338,13 @@ def test_abelian_group_matmul_extends_missing_axes_with_identity():
     assert expected_fz == ImmutableDenseMatrix([[39], [91], [19]])
 
 
-def test_abelian_group_matmul_rejects_duplicate_axes():
+def test_point_group_group_matmul_rejects_duplicate_axes():
     x, y = sy.symbols("x y")
-    left = AbelianGroup(
+    left = PointGroupElement(
         irrep=ImmutableDenseMatrix.eye(2),
         axes=(x, x),
     )
-    right = AbelianGroup(
+    right = PointGroupElement(
         irrep=ImmutableDenseMatrix.eye(2),
         axes=(x, y),
     )
@@ -361,26 +362,25 @@ def test_affine_group_basis_keys_match_eigenvalues():
     basis = t.g.basis(1)
     assert set(basis.keys()) == {1, -1}
     for val, func in basis.items():
-        assert isinstance(func, AbelianBasis)
+        assert isinstance(func, PointGroupBasis)
         assert func.axes == (x, y)
         assert func.order == 1
+        assert sy.simplify(func.irrep - val) == 0
         assert t.g.euclidean_repr(1) @ func.rep == val * func.rep
-        gauge, _ = _split_result(t(func))
-        assert gauge == val
 
 
-def test_affine_transform_eigenfunction_phase():
+def test_affine_transform_basis_label_directly():
     x = sy.symbols("x")
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[-1]])
     t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
-    f = AbelianBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
+    f = PointGroupBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
     gauge, out = _split_result(t(f))
-    assert gauge == -1
-    assert out == f
+    assert gauge == 1
+    assert out.expr == -x
 
 
-def test_affine_transform_abelian_basis_ignores_offset():
+def test_affine_transform_point_group_basis_ignores_offset():
     x = sy.symbols("x")
     space, _ = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[-1]])
@@ -396,31 +396,30 @@ def test_affine_transform_abelian_basis_ignores_offset():
         offset=Offset(rep=ImmutableDenseMatrix([7]), space=space),
         basis_function_order=1,
     )
-    f = AbelianBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
+    f = PointGroupBasis(expr=x, axes=(x,), order=1, rep=ImmutableDenseMatrix([1]))
 
     gauge0, out0 = _split_result(t0(f))
     gauge1, out1 = _split_result(t1(f))
 
-    assert gauge0 == gauge1 == -1
-    assert out0 == out1 == f
+    assert gauge0 == gauge1 == 1
+    assert out0 == out1
+    assert out0.expr == -x
 
 
-def test_affine_transform_non_eigenfunction_raises():
+def test_affine_transform_non_eigenfunction_rebuilds_label():
     x, y = sy.symbols("x y")
     _, offset = _space_and_offset(2)
     irrep = ImmutableDenseMatrix([[1, 0], [0, -1]])
     t = _affine(irrep=irrep, axes=(x, y), offset=offset, basis_function_order=1)
-    f = AbelianBasis(
+    f = PointGroupBasis(
         expr=x + y,
         axes=(x, y),
         order=1,
         rep=ImmutableDenseMatrix([1, 1]),
     )
-    try:
-        t(f)
-        assert False, "Expected ValueError for non-eigenfunction."
-    except ValueError:
-        pass
+    gauge, out = _split_result(t(f))
+    assert gauge == 1
+    assert sy.simplify(out.expr - (x - y)) == 0
 
 
 def test_affine_transform_axes_mismatch_raises():
@@ -428,7 +427,7 @@ def test_affine_transform_axes_mismatch_raises():
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[1]])
     t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
-    f = AbelianBasis(expr=y, axes=(y,), order=1, rep=ImmutableDenseMatrix([1]))
+    f = PointGroupBasis(expr=y, axes=(y,), order=1, rep=ImmutableDenseMatrix([1]))
     try:
         t(f)
         assert False, "Expected ValueError for axes mismatch."
@@ -441,7 +440,7 @@ def test_affine_transform_order_mismatch_rebuilds():
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[2]])
     t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
-    f = AbelianBasis(expr=x**2, axes=(x,), order=2, rep=ImmutableDenseMatrix([1]))
+    f = PointGroupBasis(expr=x**2, axes=(x,), order=2, rep=ImmutableDenseMatrix([1]))
     gauge, out = _split_result(t(f))
     assert gauge == 4
     assert out == f
@@ -452,7 +451,7 @@ def test_affine_transform_zero_basis_vector_raises():
     space, offset = _space_and_offset(1)
     irrep = ImmutableDenseMatrix([[1]])
     t = _affine(irrep=irrep, axes=(x,), offset=offset, basis_function_order=1)
-    f = AbelianBasis(expr=0, axes=(x,), order=1, rep=ImmutableDenseMatrix([0]))
+    f = PointGroupBasis(expr=0, axes=(x,), order=1, rep=ImmutableDenseMatrix([0]))
     try:
         t(f)
         assert False, "Expected ValueError for zero basis vector."
@@ -831,7 +830,7 @@ def test_affine_transform_hilbert_applies_nontrivial_u1state_gauge_phase():
         basis_function_order=1,
     )
 
-    gauge_basis = AbelianBasis(
+    gauge_basis = PointGroupBasis(
         expr=x,
         axes=(x,),
         order=1,
@@ -840,7 +839,7 @@ def test_affine_transform_hilbert_applies_nontrivial_u1state_gauge_phase():
     m = _state(gauge_basis)
     h = HilbertSpace.new([m])
 
-    tmat = h.cross_gram(t @ h)
+    tmat = _hilbert_opr_repr(t, h)
     expected = torch.tensor([[-1.0 + 0.0j]], dtype=tmat.data.dtype)
     assert torch.allclose(tmat.data, expected)
 
@@ -855,11 +854,11 @@ def test_affine_transform_hilbert_applies_matrix_gauge_block():
         basis_function_order=1,
     )
 
-    fx = AbelianBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
-    fy = AbelianBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+    fx = PointGroupBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = PointGroupBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
 
     h = HilbertSpace.new([_state(fx), _state(fy)])
-    tmat = h.cross_gram(t @ h)
+    tmat = _hilbert_opr_repr(t, h)
 
     expected = torch.diag(
         torch.tensor([-1.0 + 0.0j, 1.0 + 0.0j], dtype=tmat.data.dtype)
@@ -883,7 +882,7 @@ def test_bandtransform_both_preserves_c4_symmetric_momentum_tensor_up_to_alignme
     r0 = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice.affine)
     mode = _state(
         r0,
-        AbelianBasis(
+        PointGroupBasis(
             expr=x - sy.I * y,
             axes=(x, y),
             order=1,
@@ -1049,7 +1048,7 @@ def test_bandtransform_both_c4_fourfold_roundtrip_complex_tensor():
 
     r_x = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0]), space=lattice.affine)
     r_y = Offset(rep=ImmutableDenseMatrix([0, sy.Rational(1, 2)]), space=lattice.affine)
-    p_minus = AbelianBasis(
+    p_minus = PointGroupBasis(
         expr=x - sy.I * y,
         axes=(x, y),
         order=1,
@@ -1335,7 +1334,7 @@ def test_bandtransform_notebook_cb_c4_symmetry_reproducer():
     blocking = BasisTransform(sy.ImmutableMatrix([[4, 0], [0, 4]]))
     C_b = bandfold(blocking, C_gs)
 
-    C_rot = bandtransform(AbelianOpr(c4), C_b).align_all(C_b.dims)
+    C_rot = bandtransform(PointGroupOpr(c4), C_b).align_all(C_b.dims)
     assert C_b.allclose(C_rot)
 
 
@@ -1371,7 +1370,7 @@ def test_bandtransform_notebook_cb_c4_symmetry_about_block_center():
     C_b = bandfold(blocking, C_gs)
 
     cent = Q.center_of_region(C_b.dims[1].irrep_of(Offset))
-    centered_c4 = AbelianOpr(c4).fixpoint_at(cent)
+    centered_c4 = PointGroupOpr(c4).fixpoint_at(cent)
     C_rot = bandtransform(centered_c4, C_b).align_all(C_b.dims)
 
     assert C_b.allclose(C_rot)
@@ -1403,7 +1402,7 @@ def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
     )
 
     c6 = pointgroup("c6-xy:xy")
-    rotated = (AbelianOpr(g=c6) @ honeycomb.at("a")).fractional()
+    rotated = (PointGroupOpr(g=c6) @ honeycomb.at("a")).fractional()
 
     assert rotated.rep.applyfunc(sy.simplify) == honeycomb.unit_cell["b"].rep
 
