@@ -4,7 +4,6 @@ from typing import Any
 from .basis import PointGroupBasis as PointGroupBasis
 from .elements import PointGroupElement as PointGroupElement
 
-
 @dataclass(frozen=True)
 class FinitePointGroup:
     symbol: str
@@ -21,7 +20,6 @@ class FinitePointGroup:
         axes: tuple[sy.Symbol, ...],
         irreps: dict[str, Any] | None = None,
     ) -> FinitePointGroup: ...
-
     def elements(self, max_order: int = 512) -> tuple[PointGroupElement, ...]: ...
     def order(self) -> int: ...
     def is_abelian(self) -> bool: ...

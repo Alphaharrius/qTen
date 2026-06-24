@@ -19,7 +19,6 @@ from .basis import PointGroupBasis as PointGroupBasis
 
 _T = TypeVar("_T")
 
-
 @dataclass(frozen=True)
 class PointGroupElement(Opr):
     irrep: sy.ImmutableDenseMatrix
@@ -33,17 +32,14 @@ class PointGroupElement(Opr):
     def group_order(self, max_order: int = 128) -> int: ...
     def inv(self) -> PointGroupElement: ...
     def basis(self, order: int) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
-
     @property
     def basis_table(self) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
-
     @overload
     def invoke(self, obj: PointGroupElement, **kwargs) -> PointGroupElement: ...
     @overload
     def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
     @overload
     def invoke(self, obj: _T, **kwargs) -> _T | Multiple[_T]: ...  # type: ignore[override]
-
 
 @dataclass(frozen=True)
 class PointGroupOpr(Opr, HasBase[AffineSpace]):
@@ -54,7 +50,6 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
     def base(self) -> AffineSpace: ...
     def rebase(self, new_base: AffineSpace) -> PointGroupOpr: ...
     def fixpoint_at(self, r: Offset, rebase: bool = False) -> PointGroupOpr: ...
-
     @overload
     def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
     @overload

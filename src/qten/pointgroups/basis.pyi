@@ -2,7 +2,6 @@ import sympy as sy
 from dataclasses import dataclass
 from ..geometries.spatials import Spatial as Spatial
 
-
 @dataclass(frozen=True)
 class PointGroupBasis(Spatial):
     expr: sy.Expr
@@ -29,9 +28,7 @@ class PointGroupBasis(Spatial):
         copy_index: int = 0,
         component_index: int = 0,
     ) -> PointGroupBasis: ...
-
     @property
     def dim(self) -> int: ...
-
     def __lt__(self, other: PointGroupBasis) -> bool: ...
     def __gt__(self, other: PointGroupBasis) -> bool: ...
