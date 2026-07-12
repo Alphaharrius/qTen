@@ -153,17 +153,46 @@ class FinitePointGroup:
         return "m1-10"
 
     @staticmethod
+    def _label_sense_matches(label: str, matrix: sy.ImmutableDenseMatrix) -> bool:
+        """Match Bilbao's positive/negative rotation orientation suffix."""
+
+        if label.endswith("^+"):
+            expected_sign = 1
+        elif label.endswith("^-"):
+            expected_sign = -1
+        else:
+            return True
+
+        rotation = -matrix if label.startswith("-") else matrix
+        if rotation.rows < 2:
+            return True
+        sense = sy.simplify(rotation[1, 0] - rotation[0, 1])
+        if sense.is_positive:
+            return expected_sign == 1
+        if sense.is_negative:
+            return expected_sign == -1
+        return True
+
+    @staticmethod
     def _label_order(label: str) -> int | None:
         text = label.lstrip("-")
         for char in text:
             if char.isdigit():
-                return int(char)
+                order = int(char)
+                # A rotoinversion -n is inversion composed with an n-fold
+                # rotation. For odd n its matrix order is therefore 2n;
+                # for even n it remains n.
+                if label.startswith("-") and order % 2:
+                    return 2 * order
+                return order
         return None
 
     def _label_matches_class(
         self,
         *,
         label: str,
+        available_labels: tuple[str, ...],
+        matrix: sy.ImmutableDenseMatrix,
         order: int,
         det: sy.Expr,
         trace: sy.Expr,
@@ -179,16 +208,42 @@ class FinitePointGroup:
         if label == "-1":
             return order == 2 and det_int == -1 and trace_int == -dim
         if label.startswith("m"):
-            return order == 2 and det_int == -1 and trace_int == dim - 2
+            if not (order == 2 and det_int == -1 and trace_int == dim - 2):
+                return False
+            if label in {"m100", "m1-10"} and {"m100", "m1-10"}.issubset(
+                available_labels
+            ):
+                in_plane = matrix
+                if dim == 3:
+                    z_decoupled = all(
+                        sy.simplify(matrix[i, 2]) == 0
+                        and sy.simplify(matrix[2, i]) == 0
+                        for i in range(2)
+                    )
+                    if not z_decoupled or sy.simplify(matrix[2, 2] - 1) != 0:
+                        return True
+                    in_plane = sy.ImmutableDenseMatrix(matrix[:2, :2])
+                if in_plane.shape == (2, 2):
+                    return self._reflection_label_2d(in_plane) == label
+            return True
         if label.startswith("-"):
             label_order = self._label_order(label)
             if label_order is not None and order != label_order:
                 return False
-            return det_int == -1
+            if dim == 3:
+                degree = next(
+                    (int(char) for char in label.lstrip("-") if char.isdigit()),
+                    None,
+                )
+                if degree is not None:
+                    expected_trace = sy.simplify(-(1 + 2 * sy.cos(2 * sy.pi / degree)))
+                    if sy.simplify(trace - expected_trace) != 0:
+                        return False
+            return det_int == -1 and self._label_sense_matches(label, matrix)
         label_order = self._label_order(label)
         if label_order is not None and order != label_order:
             return False
-        return det_int == 1
+        return det_int == 1 and self._label_sense_matches(label, matrix)
 
     @lru_cache
     def _class_label_index_by_element(self) -> tuple[int, ...]:
@@ -214,6 +269,7 @@ class FinitePointGroup:
                 {
                     "class_index": class_index,
                     "size": len(members),
+                    "matrix": matrix,
                     "order": representative.group_order(),
                     "det": sy.simplify(matrix.det()),
                     "trace": sy.simplify(matrix.trace()),
@@ -239,6 +295,8 @@ class FinitePointGroup:
                 for i in size_matches
                 if self._label_matches_class(
                     label=labels[i],
+                    available_labels=labels,
+                    matrix=info["matrix"],
                     order=info["order"],
                     det=info["det"],
                     trace=info["trace"],

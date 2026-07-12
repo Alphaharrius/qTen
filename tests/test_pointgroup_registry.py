@@ -68,6 +68,19 @@ def test_packaged_data_uses_per_group_records():
     assert c4v["irreps"]["irreps"]["E"]["characters"] == [2, -2, 0, 0, 0]
 
 
+def test_all_packaged_character_tables_are_complete():
+    for record in _point_group_data()["point_groups"]:
+        table = record["irreps"]
+        irreps = table["irreps"]
+        group_order = sum(int(value) for value in table["multiplicities"])
+
+        assert sum(int(row["dim"]) ** 2 for row in irreps.values()) == group_order
+        assert any(
+            all(character == 1 for character in row["characters"])
+            for row in irreps.values()
+        )
+
+
 def test_bilbao_parser_splits_complex_conjugate_irrep_rows():
     data = _point_group_data()
     records = {record["symbol"]: record for record in data["point_groups"]}
@@ -77,6 +90,44 @@ def test_bilbao_parser_splits_complex_conjugate_irrep_rows():
     assert "^2E2" in c6_irreps
     assert c6_irreps["^1E2"]["dim"] == 1
     assert c6_irreps["^2E2"]["dim"] == 1
+
+
+def test_hexagonal_rotoinversion_classes_align_with_character_tables():
+    for symbol in ("6/m", "6/mmm"):
+        group = pointgroup(symbol)
+
+        assert isinstance(group, FinitePointGroup)
+        assert len(group.element_class_indices()) == group.order
+
+        projector_sum = sum(
+            (group.irrep_projector(1, irrep) for irrep in group.irreps["irreps"]),
+            sy.zeros(3, 3),
+        )
+        assert all(
+            abs(complex(sy.N(entry))) < 1e-10 for entry in projector_sum - sy.eye(3)
+        )
+
+
+def test_diagonal_c4v_generator_keeps_b1_b2_geometric_labels():
+    x, y = sy.symbols("x y")
+    registry_group = pointgroup("C4v-xy")
+
+    assert isinstance(registry_group, FinitePointGroup)
+    rotation = sy.ImmutableDenseMatrix([[0, -1], [1, 0]])
+    diagonal_mirror = sy.ImmutableDenseMatrix([[0, 1], [1, 0]])
+    diagonal_group = FinitePointGroup.from_matrices(
+        (rotation, diagonal_mirror),
+        axes=(x, y),
+        symbol="4mm",
+        irreps=registry_group.irreps,
+    )
+
+    assert {
+        sy.simplify(basis.expr) for basis in diagonal_group.irrep_basis(2, "B1")
+    } == {x**2 - y**2}
+    assert {
+        sy.simplify(basis.expr) for basis in diagonal_group.irrep_basis(2, "B2")
+    } == {x * y}
 
 
 def test_trivial_projector_returns_invariant_sector():

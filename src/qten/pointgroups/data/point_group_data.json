@@ -31,6 +31,15 @@
           "-1"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2,xy,xz,yz,Jx,Jy,Jz"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [
@@ -103,6 +112,19 @@
           "-3^-"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [
@@ -376,6 +398,17 @@
           "-4^-"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
           "B": {
             "bilbao_label": "\u03932",
             "characters": [
@@ -738,6 +771,19 @@
           "-6^+"
         ],
         "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
           "A^''": {
             "bilbao_label": "\u03934",
             "characters": [
@@ -1004,9 +1050,22 @@
         ]
       ],
       "irreps": {
-        "class_labels": [],
-        "irreps": {},
-        "multiplicities": [],
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1
+            ],
+            "dim": 1,
+            "functions": ""
+          }
+        },
+        "multiplicities": [
+          1
+        ],
         "source": "bilbao",
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=1&sg=1"
       },
@@ -1043,6 +1102,15 @@
           "2"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2,xy,Jz"
+          },
           "B": {
             "bilbao_label": "\u03932",
             "characters": [
@@ -1112,6 +1180,17 @@
           "m"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2,xy,Jz"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [
@@ -1208,6 +1287,17 @@
           "2x"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2"
+          },
           "B1": {
             "bilbao_label": "\u03933",
             "characters": [
@@ -1391,6 +1481,16 @@
           "3^-"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
           "^1E": {
             "bilbao_label": "\u03933",
             "characters": [
@@ -1635,6 +1735,17 @@
           "4^-"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
           "B": {
             "bilbao_label": "\u03932",
             "characters": [
@@ -1734,6 +1845,21 @@
           "-4^-"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [
@@ -2540,6 +2666,19 @@
           "6^-"
         ],
         "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
           "B": {
             "bilbao_label": "\u03934",
             "characters": [
@@ -2694,6 +2833,25 @@
           "-6^-"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [
@@ -3617,6 +3775,15 @@
           "m"
         ],
         "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,y,x^2,y^2,z^2,xy,Jz"
+          },
           "A^''": {
             "bilbao_label": "\u03932",
             "characters": [
@@ -4171,6 +4338,17 @@
           "mx"
         ],
         "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2"
+          },
           "A2": {
             "bilbao_label": "\u03933",
             "characters": [
@@ -4288,6 +4466,21 @@
           "mx"
         ],
         "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2"
+          },
           "Au": {
             "bilbao_label": "\u03931^-",
             "characters": [

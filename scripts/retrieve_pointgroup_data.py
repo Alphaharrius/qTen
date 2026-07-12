@@ -158,11 +158,19 @@ def _parse_bilbao_character_table(html: str) -> dict:
         raise ValueError("Bilbao character table did not contain enough rows.")
 
     header = parsed_rows[0]
-    class_labels = header[2:-1]
-    multiplicities = [_parse_number(value) for value in parsed_rows[1][2:-1]]
+    has_functions_column = header[-1].lower() == "functions"
+    class_labels = header[2:-1] if has_functions_column else header[2:]
+    first_data_row = 1
+    if parsed_rows[1][0].rstrip(".").lower() == "mult":
+        multiplicities = [_parse_number(value) for value in parsed_rows[1][2:-1]]
+        first_data_row = 2
+    else:
+        # Bilbao omits the multiplicity row for abelian groups because every
+        # conjugacy class contains one element.
+        multiplicities = [1] * len(class_labels)
 
     irreps = {}
-    for row in parsed_rows[2:]:
+    for row in parsed_rows[first_data_row:]:
         label = row[0]
         if len(row) < len(class_labels) + 2:
             continue
@@ -171,7 +179,9 @@ def _parse_bilbao_character_table(html: str) -> dict:
             "bilbao_label": row[1],
             "dim": characters[0],
             "characters": characters,
-            "functions": row[2 + len(class_labels)] if len(row) > 2 + len(class_labels) else "",
+            "functions": row[2 + len(class_labels)]
+            if len(row) > 2 + len(class_labels)
+            else "",
         }
 
     return {
