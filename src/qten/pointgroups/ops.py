@@ -130,7 +130,9 @@ def _svd_independent_columns(
         return []
 
     single_col = IndexSpace.linear(1)
-    return [Tensor(data=u[:, i : i + 1], dims=(row_dim, single_col)) for i in range(rank)]
+    return [
+        Tensor(data=u[:, i : i + 1], dims=(row_dim, single_col)) for i in range(rank)
+    ]
 
 
 @dataclass(frozen=True)
@@ -184,7 +186,9 @@ def _finite_point_group_column_symmetrize(
         element_opr = PointGroupOpr(element)
         if fixpoint is not None:
             element_opr = element_opr.fixpoint_at(fixpoint, rebase=rebase_fixpoint)
-        reps.append(_hilbert_opr_repr(element_opr, row_dim, device=w.device).to_device(w.device))
+        reps.append(
+            _hilbert_opr_repr(element_opr, row_dim, device=w.device).to_device(w.device)
+        )
     group_order = len(elements)
     irrep_table = group.irreps["irreps"]
 

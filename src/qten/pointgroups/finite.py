@@ -225,7 +225,9 @@ class FinitePointGroup:
         for info in class_info:
             size = info["size"]
             size_matches = [
-                i for i, multiplicity in enumerate(multiplicities) if multiplicity == size
+                i
+                for i, multiplicity in enumerate(multiplicities)
+                if multiplicity == size
             ]
             if not size_matches:
                 raise ValueError(
@@ -245,7 +247,9 @@ class FinitePointGroup:
             ]
             slot_candidates[info["class_index"]] = strong_matches or size_matches
 
-        ordered_classes = sorted(slot_candidates, key=lambda idx: len(slot_candidates[idx]))
+        ordered_classes = sorted(
+            slot_candidates, key=lambda idx: len(slot_candidates[idx])
+        )
         assignment: dict[int, int] = {}
         used_slots: set[int] = set()
 
@@ -325,7 +329,9 @@ class FinitePointGroup:
 
         labels = self.irreps["class_labels"]
         row = irrep_table[irrep]
-        characters = tuple(_character_expr(character) for character in row["characters"])
+        characters = tuple(
+            _character_expr(character) for character in row["characters"]
+        )
         if len(characters) != len(labels):
             raise ValueError(
                 f"Character row length for irrep '{irrep}' does not match class labels."
