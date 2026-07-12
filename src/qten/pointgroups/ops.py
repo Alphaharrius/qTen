@@ -1,19 +1,21 @@
 """
 Point-group operations on symbolic bases and tensors.
 
-This module contains functional helpers that combine abelian point-group
-representations with QTen Hilbert spaces and tensors. The functions compute
-joint abelian eigen-bases, project Hilbert spaces into symmetry sectors, and
-assemble representation tensors for point-group actions.
+This module combines point-group transforms with QTen Hilbert spaces and
+tensors. The helpers compute joint abelian eigen-bases, project columns into
+abelian phase sectors or finite-group irrep sectors, and assemble
+representation tensors for point-group actions.
 
 Repository usage
 ----------------
-Use [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis] and the
-related projection helpers when an existing
-[`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] or
-[`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] should act on symbolic
-Hilbert-space data. The group definitions themselves live in
-[`qten.pointgroups.elements`][qten.pointgroups.elements].
+Use [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis]
+and the related projection helpers when an existing
+[`PointGroupElement`][qten.pointgroups.elements.PointGroupElement],
+[`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr], or
+[`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] should act on
+symbolic Hilbert-space data. Group definitions live in
+[`qten.pointgroups.elements`][qten.pointgroups.elements] and
+[`qten.pointgroups.finite`][qten.pointgroups.finite].
 """
 
 from dataclasses import dataclass
@@ -325,7 +327,7 @@ def get_direct_transform(
     `space`. Instead it explicitly constructs the transformed output
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and returns a one-hot mapping matrix with dims `(space, out_space)`.
 
-    When a basis state contains an [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis] irrep, that irrep is transformed directly in the Euclidean polynomial basis.
+    When a basis state contains an [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] irrep, that irrep is transformed directly in the Euclidean polynomial basis.
     In particular, no eigen-phase is factored out. For example, a basis
     function `x` rotated by `C4` is mapped to `y` in the output space rather
     than left as `x` with a phase in the tensor data.
@@ -454,7 +456,7 @@ def joint_point_group_basis(
     Compute common Euclidean eigenfunctions for a commuting family of abelian operators.
 
     The returned table is keyed by one phase per input operator. Each value is
-    the tuple of normalized [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis]
+    the tuple of normalized [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
     functions spanning the simultaneous eigenspace for that joint phase sector.
 
     Parameters
@@ -559,7 +561,7 @@ def _joint_phase_basis(
     oprs: Sequence[PointGroupOpr],
 ) -> dict[tuple[sy.Expr, ...], PointGroupBasis]:
     """
-    Build a representative [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis] for each joint phase sector.
+    Build a representative [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for each joint phase sector.
     """
     phase_bases: dict[tuple[sy.Expr, ...], PointGroupBasis] = {}
     max_order = prod(opr.g.group_order() for opr in oprs)
@@ -602,7 +604,7 @@ def point_group_column_symmetrize(
     nonzero projected sector component is returned. When `full_sector` is
     `False`, only the dominant nonzero sector component of each input column is
     kept, so the output column count does not exceed the input count. Returned
-    columns carry the corresponding [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis].
+    columns carry the corresponding [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
 
     The output column count can differ from the input one only when
     `full_sector=True`, because symmetry projection may split one approximate
@@ -724,7 +726,7 @@ def joint_point_group_column_symmetrize(
     When `full_sector` is `True`, every nonzero joint-sector component is
     returned. When `False`, only the dominant nonzero joint-sector component of
     each input column is kept. Returned columns carry a representative common
-    [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis] for the corresponding joint phase sector.
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for the corresponding joint phase sector.
 
     Parameters
     ----------

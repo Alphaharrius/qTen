@@ -1,19 +1,22 @@
 """
 Symbolic point-group element representations.
 
-This module defines the core point-group objects used by QTen's symmetry
-machinery. [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] stores an
-abelian generator representation, derives Euclidean polynomial bases, and
-computes symbolic eigen-basis sectors. [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis]
-labels those sectors, while [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr]
-couples a group action with an affine offset for use as a symbolic operator.
+This module defines the core single-generator objects used by QTen's symmetry
+machinery. [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
+stores an exact linear representation, derives Euclidean polynomial bases, and
+computes symbolic eigen-basis sectors.
+[`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] couples that linear
+action with an affine offset. Polynomial sector labels live in
+[`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
 
 Repository usage
 ----------------
 Use this module for explicit point-group construction and algebra. Higher-level
 query-string construction is available through
-[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], and tensor/Hilbert
-space projection helpers live in [`qten.pointgroups.ops`][qten.pointgroups.ops].
+[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], multi-generator
+groups live in [`qten.pointgroups.finite`][qten.pointgroups.finite], and
+tensor/Hilbert-space projection helpers live in
+[`qten.pointgroups.ops`][qten.pointgroups.ops].
 """
 
 from dataclasses import dataclass
@@ -82,7 +85,7 @@ class PointGroupElement(Opr):
     [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] stores the linear part `g` of a symmetry/operator as an
     exact matrix `irrep` acting on the coordinate axes `axes`. It provides the
     order-dependent polynomial representations induced by that linear action
-    and the corresponding eigen-basis functions ([`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis]).
+    and the corresponding eigen-basis functions ([`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]).
 
     Mathematical meaning
     --------------------
@@ -129,7 +132,7 @@ class PointGroupElement(Opr):
     returns the symmetrized linear action on homogeneous commuting monomials of
     degree `order`. [`basis(order)`][qten.pointgroups.elements.PointGroupElement.basis]
     returns eigen-basis functions of that representation as
-    [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis] objects keyed by
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] objects keyed by
     eigenvalue. [`basis_table`][qten.pointgroups.elements.PointGroupElement.basis_table]
     collects representative eigen-basis functions across increasing polynomial
     orders until all characters of the finite represented element are found.
@@ -371,7 +374,7 @@ class PointGroupElement(Opr):
         Returns
         -------
         FrozenDict
-            Mapping from eigenvalue to normalized [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis] eigenfunction.
+            Mapping from eigenvalue to normalized [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] eigenfunction.
             Normalization is fixed by dividing by the first non-zero coefficient
             in each eigenvector.
         """
@@ -406,7 +409,7 @@ class PointGroupElement(Opr):
         -------
         FrozenDict
             Mapping from eigenvalue/character to a representative
-            [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis].
+            [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
 
         Raises
         ------
@@ -486,7 +489,7 @@ def _(g: PointGroupElement, f: PointGroupBasis) -> Multiple[PointGroupBasis]:
     """
     Apply a generated group element directly to a point-group basis label.
 
-    Unlike [`PointGroupBasis`][qten.pointgroups.elements.PointGroupBasis], a
+    Unlike an abelian eigenfunction, a
     [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] need not be a
     one-dimensional eigenfunction of a single element. For example, in the
     two-dimensional `E` sector of `C4v`, a 90-degree rotation maps `x` to `y`.

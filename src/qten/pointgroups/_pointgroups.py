@@ -1,17 +1,20 @@
 """
 Compact point-group constructors.
 
-This module provides the user-facing [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup]
-factory for constructing common [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
-instances from short query strings. The query language covers simple cyclic
-rotations and mirror reflections on Cartesian axes and returns the symbolic
-point-group representation used by the rest of QTen.
+This module provides the user-facing
+[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] factory. Compact
+affine queries such as `c4-xy:xy` return a single
+[`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]. Named
+crystallographic queries such as `C4v` or `4mm` return a
+[`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] built from
+packaged generator data.
 
 Repository usage
 ----------------
-Use [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] for convenient
-interactive construction. Use [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
-directly when a custom symbolic representation matrix is needed.
+Use [`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] for interactive
+construction. Use [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
+or [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] directly when
+a custom symbolic representation is needed.
 """
 
 import re
