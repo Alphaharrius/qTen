@@ -30,6 +30,13 @@ def _character_expr(value: Any) -> sy.Expr:
     return sy.sympify(value)
 
 
+def _as_int(value: sy.Expr) -> int | None:
+    simplified = sy.simplify(value)
+    if simplified.is_integer:
+        return int(simplified)
+    return None
+
+
 @dataclass(frozen=True)
 class FinitePointGroup:
     """Finite point group represented by exact generator matrices."""
@@ -145,78 +152,156 @@ class FinitePointGroup:
             return "m100"
         return "m1-10"
 
-    def _proper_rotation_label(self, order: int, labels: set[str]) -> str:
-        """Choose a Bilbao class label for a proper rotation from available labels."""
+    @staticmethod
+    def _label_order(label: str) -> int | None:
+        text = label.lstrip("-")
+        for char in text:
+            if char.isdigit():
+                return int(char)
+        return None
 
-        exact = str(order)
-        if exact in labels:
-            return exact
+    def _label_matches_class(
+        self,
+        *,
+        label: str,
+        order: int,
+        det: sy.Expr,
+        trace: sy.Expr,
+        dim: int,
+    ) -> bool:
+        """Return whether a class label is compatible with matrix invariants."""
 
-        candidates = tuple(
-            sorted(
-                label
-                for label in labels
-                if label.startswith(exact) and label[:1].isdigit()
+        det_int = _as_int(det)
+        trace_int = _as_int(trace)
+
+        if label == "1":
+            return order == 1
+        if label == "-1":
+            return order == 2 and det_int == -1 and trace_int == -dim
+        if label.startswith("m"):
+            return order == 2 and det_int == -1 and trace_int == dim - 2
+        if label.startswith("-"):
+            label_order = self._label_order(label)
+            if label_order is not None and order != label_order:
+                return False
+            return det_int == -1
+        label_order = self._label_order(label)
+        if label_order is not None and order != label_order:
+            return False
+        return det_int == 1
+
+    @lru_cache
+    def _class_label_index_by_element(self) -> tuple[int, ...]:
+        """Map each generated element index to irreps.class_labels index."""
+
+        if not self.irreps:
+            raise ValueError(f"No character-table data is available for {self.symbol}.")
+        labels = tuple(self.irreps["class_labels"])
+        multiplicities = tuple(int(m) for m in self.irreps["multiplicities"])
+        classes = self.conjugacy_classes()
+        elements = self.elements()
+        if len(classes) != len(labels):
+            raise ValueError(
+                "Character-table class count does not match generated conjugacy classes "
+                f"for point group {self.symbol}."
             )
+
+        class_info: list[dict[str, Any]] = []
+        for class_index, members in enumerate(classes):
+            representative = elements[members[0]]
+            matrix = sy.ImmutableDenseMatrix(sy.simplify(representative.irrep))
+            class_info.append(
+                {
+                    "class_index": class_index,
+                    "size": len(members),
+                    "order": representative.group_order(),
+                    "det": sy.simplify(matrix.det()),
+                    "trace": sy.simplify(matrix.trace()),
+                    "dim": matrix.rows,
+                }
+            )
+
+        slot_candidates: dict[int, list[int]] = {}
+        for info in class_info:
+            size = info["size"]
+            size_matches = [
+                i for i, multiplicity in enumerate(multiplicities) if multiplicity == size
+            ]
+            if not size_matches:
+                raise ValueError(
+                    "Could not align generated conjugacy class sizes to character-table "
+                    f"multiplicities for point group {self.symbol}."
+                )
+            strong_matches = [
+                i
+                for i in size_matches
+                if self._label_matches_class(
+                    label=labels[i],
+                    order=info["order"],
+                    det=info["det"],
+                    trace=info["trace"],
+                    dim=info["dim"],
+                )
+            ]
+            slot_candidates[info["class_index"]] = strong_matches or size_matches
+
+        ordered_classes = sorted(slot_candidates, key=lambda idx: len(slot_candidates[idx]))
+        assignment: dict[int, int] = {}
+        used_slots: set[int] = set()
+
+        def _search(pos: int) -> bool:
+            if pos == len(ordered_classes):
+                return True
+            class_index = ordered_classes[pos]
+            for slot_index in slot_candidates[class_index]:
+                if slot_index in used_slots:
+                    continue
+                assignment[class_index] = slot_index
+                used_slots.add(slot_index)
+                if _search(pos + 1):
+                    return True
+                used_slots.remove(slot_index)
+                del assignment[class_index]
+            return False
+
+        if not _search(0):
+            raise ValueError(
+                "Failed to align generated conjugacy classes with character-table labels "
+                f"for point group {self.symbol}."
+            )
+
+        class_by_element = [0] * len(elements)
+        for class_index, member_indices in enumerate(classes):
+            slot_index = assignment[class_index]
+            for element_index in member_indices:
+                class_by_element[element_index] = slot_index
+        return tuple(class_by_element)
+
+    def element_class_indices(self) -> tuple[int, ...]:
+        """Return the aligned character-table class index for each element index."""
+
+        return self._class_label_index_by_element()
+
+    def irrep_characters_by_element(self, irrep: str) -> tuple[sy.Expr, ...]:
+        """Return irrep characters ordered by generated group elements."""
+
+        if not self.irreps:
+            raise ValueError(f"No character-table data is available for {self.symbol}.")
+        irrep_table = self.irreps["irreps"]
+        if irrep not in irrep_table:
+            raise ValueError(f"Unknown irrep '{irrep}' for point group {self.symbol}.")
+
+        labels = self.irreps["class_labels"]
+        characters = tuple(
+            _character_expr(character) for character in irrep_table[irrep]["characters"]
         )
-        if len(candidates) == 1:
-            return candidates[0]
-        return exact
+        if len(characters) != len(labels):
+            raise ValueError(
+                f"Character row length for irrep '{irrep}' does not match class labels."
+            )
 
-    def _mirror_label(self, matrix: sy.ImmutableDenseMatrix, labels: set[str]) -> str:
-        """Choose a Bilbao mirror class label from available labels."""
-
-        candidates = tuple(sorted(label for label in labels if label.startswith("m")))
-        if not candidates:
-            return "m"
-
-        if matrix.rows == 2:
-            label = self._reflection_label_2d(matrix)
-            if label in labels:
-                return label
-
-        if "m" in labels:
-            return "m"
-        if len(candidates) == 1:
-            return candidates[0]
-        return "m"
-
-    def _improper_rotation_label(self, order: int, labels: set[str]) -> str:
-        """Choose a Bilbao class label for a roto-inversion/improper rotation."""
-
-        exact = f"-{order}"
-        if exact in labels:
-            return exact
-
-        candidates = tuple(sorted(label for label in labels if label.startswith("-")))
-        if len(candidates) == 1:
-            return candidates[0]
-        return exact
-
-    def _element_class_label(self, element: PointGroupElement) -> str:
-        """Map a generated matrix to the corresponding Bilbao class label."""
-
-        matrix = sy.ImmutableDenseMatrix(sy.simplify(element.irrep))
-        dim = matrix.rows
-        ident = sy.ImmutableDenseMatrix.eye(dim)
-        if matrix.equals(ident):
-            return "1"
-
-        det = sy.simplify(matrix.det())
-        order = element.group_order()
-        labels = set(self.irreps.get("class_labels", ())) if self.irreps else set()
-        if det == 1:
-            return self._proper_rotation_label(order, labels)
-        if order == 2:
-            fixed_dim = len((matrix - ident).nullspace())
-            if fixed_dim != dim - 1:
-                if "-1" in labels:
-                    return "-1"
-                return self._improper_rotation_label(order, labels)
-            if dim == 2:
-                return self._reflection_label_2d(matrix)
-            return self._mirror_label(matrix, labels)
-        return self._improper_rotation_label(order, labels)
+        class_by_element = self._class_label_index_by_element()
+        return tuple(characters[class_index] for class_index in class_by_element)
 
     @lru_cache
     def trivial_projector(self, order: int) -> sy.ImmutableDenseMatrix:
@@ -240,22 +325,19 @@ class FinitePointGroup:
 
         labels = self.irreps["class_labels"]
         row = irrep_table[irrep]
-        character_by_label = {
-            label: _character_expr(character)
-            for label, character in zip(labels, row["characters"])
-        }
+        characters = tuple(_character_expr(character) for character in row["characters"])
+        if len(characters) != len(labels):
+            raise ValueError(
+                f"Character row length for irrep '{irrep}' does not match class labels."
+            )
 
         elements = self.elements()
+        class_by_element = self._class_label_index_by_element()
         reps = [element.euclidean_repr(order) for element in elements]
         projector = sy.zeros(reps[0].rows, reps[0].cols)
-        for element, rep in zip(elements, reps):
-            label = self._element_class_label(element)
-            if label not in character_by_label:
-                raise ValueError(
-                    f"Could not map generated element with class label '{label}' "
-                    f"to the Bilbao classes for point group {self.symbol}."
-                )
-            projector += sy.conjugate(character_by_label[label]) * rep
+        for element_index, rep in enumerate(reps):
+            class_index = class_by_element[element_index]
+            projector += sy.conjugate(characters[class_index]) * rep
 
         dim = sy.Integer(row["dim"])
         return sy.ImmutableDenseMatrix(sy.simplify((dim / len(elements)) * projector))

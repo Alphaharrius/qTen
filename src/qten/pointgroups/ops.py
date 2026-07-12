@@ -16,6 +16,7 @@ Hilbert-space data. The group definitions themselves live in
 [`qten.pointgroups.elements`][qten.pointgroups.elements].
 """
 
+from dataclasses import dataclass
 from itertools import product
 from math import prod
 from typing import Any, Optional, Sequence, Tuple, cast
@@ -28,6 +29,8 @@ from .elements import (
     PointGroupElement,
     PointGroupOpr,
 )
+from .finite import FinitePointGroup
+from ..geometries import Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
 from ..symbolics import HilbertSpace, IndexSpace, Multiple, U1Basis, hilbert_opr_repr
 from ..utils.collections_ext import FrozenDict
@@ -60,12 +63,16 @@ def _phase_basis(opr: PointGroupOpr, phase: sy.Expr) -> PointGroupBasis:
 
 
 def _attach_basis_label(seed: U1Basis | None, basis: PointGroupBasis) -> U1Basis:
+    return _attach_sector_label(seed, basis)
+
+
+def _attach_sector_label(seed: U1Basis | None, label: Any) -> U1Basis:
     if seed is None:
-        return U1Basis.new(basis)
+        return U1Basis.new(label)
     try:
-        return seed.replace(basis)
+        return seed.replace(label)
     except ValueError:
-        return U1Basis(coef=seed.coef, base=seed.base + (basis,))
+        return U1Basis(coef=seed.coef, base=seed.base + (label,))
 
 
 def _attach_degeneracy_tag(seed: U1Basis, index: int) -> U1Basis:
@@ -74,6 +81,180 @@ def _attach_degeneracy_tag(seed: U1Basis, index: int) -> U1Basis:
         return seed.replace(tag)
     except ValueError:
         return U1Basis(coef=seed.coef, base=seed.base + (tag,))
+
+
+def _column_symmetrize_context(w: Tensor) -> tuple[HilbertSpace, list[U1Basis | None]]:
+    if w.rank() != 2:
+        raise ValueError("w must be a rank-2 tensor of ambient-space columns.")
+
+    row_dim = w.dims[0]
+    if not isinstance(row_dim, HilbertSpace):
+        raise ValueError("w.dims[0] must be a HilbertSpace.")
+    input_col_dim = w.dims[1]
+    if isinstance(input_col_dim, HilbertSpace):
+        return row_dim, list(input_col_dim.elements())
+    if isinstance(input_col_dim, IndexSpace):
+        return row_dim, [None] * input_col_dim.dim
+    raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
+
+
+def _labels_with_degeneracy(raw_labels: list[U1Basis]) -> list[U1Basis]:
+    totals: dict[U1Basis, int] = {}
+    for label in raw_labels:
+        totals[label] = totals.get(label, 0) + 1
+
+    seen: dict[U1Basis, int] = {}
+    labels: list[U1Basis] = []
+    for label in raw_labels:
+        idx = seen.get(label, 0)
+        seen[label] = idx + 1
+        if totals[label] > 1:
+            labels.append(_attach_degeneracy_tag(label, idx))
+        else:
+            labels.append(label)
+    return labels
+
+
+def _svd_independent_columns(
+    columns: Sequence[Tensor], row_dim: HilbertSpace, tol: float
+) -> list[Tensor]:
+    if not columns:
+        return []
+    if len(columns) == 1:
+        return [columns[0]]
+
+    stacked = cat(list(columns), dim=-1)
+    u, singular_vals, _ = torch.linalg.svd(stacked.data, full_matrices=False)
+    rank = int(torch.count_nonzero(singular_vals > tol).item())
+    if rank == 0:
+        return []
+
+    single_col = IndexSpace.linear(1)
+    return [Tensor(data=u[:, i : i + 1], dims=(row_dim, single_col)) for i in range(rank)]
+
+
+@dataclass(frozen=True)
+class FiniteIrrepSector:
+    """Label for a finite-group non-abelian symmetry sector."""
+
+    group: str
+    irrep: str
+    dim: int
+
+
+def _finite_point_group_column_symmetrize(
+    group: FinitePointGroup,
+    w: Tensor,
+    full_sector: bool = False,
+    *,
+    fixpoint: Offset | None = None,
+    rebase_fixpoint: bool = False,
+) -> Tensor:
+    r"""
+    Symmetrize columns of `w` into irreducible sectors of a finite non-abelian group.
+
+    This function uses the generated group elements and character-table sectors of
+    `group` to build projectors
+    \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\),
+    where `D(g)` is the Hilbert-space representation on `w.dims[0]`.
+
+    For each input column, all nonzero irrep projections are collected when
+    `full_sector=True`; otherwise only the largest nonzero projected irrep is
+    retained. Sector-wise SVD is then applied to remove linear dependence and
+    keep independent projected columns.
+    """
+    if not group.irreps:
+        raise ValueError(
+            f"No character-table data is available for finite point group {group.symbol}."
+        )
+
+    row_dim, seeds = _column_symmetrize_context(w)
+    tol = 1e-10
+    single_col = IndexSpace.linear(1)
+
+    elements = group.elements()
+    if not elements:
+        return Tensor(
+            data=w.data.new_empty((row_dim.dim, 0), dtype=w.data.dtype),
+            dims=(row_dim, IndexSpace.linear(0)),
+        )
+
+    reps: list[Tensor] = []
+    for element in elements:
+        element_opr = PointGroupOpr(element)
+        if fixpoint is not None:
+            element_opr = element_opr.fixpoint_at(fixpoint, rebase=rebase_fixpoint)
+        reps.append(_hilbert_opr_repr(element_opr, row_dim, device=w.device).to_device(w.device))
+    group_order = len(elements)
+    irrep_table = group.irreps["irreps"]
+
+    sector_projectors: list[tuple[FiniteIrrepSector, Tensor]] = []
+    for irrep_name, irrep_data in irrep_table.items():
+        dim = int(irrep_data["dim"])
+        characters = group.irrep_characters_by_element(irrep_name)
+        projector = 0 * reps[0]
+        for character, rep in zip(characters, reps):
+            projector = projector + complex(sy.N(sy.conjugate(character))) * rep
+        projector = (dim / group_order) * projector
+        sector_projectors.append(
+            (
+                FiniteIrrepSector(
+                    group=group.symbol or "<anonymous>",
+                    irrep=irrep_name,
+                    dim=dim,
+                ),
+                projector,
+            )
+        )
+
+    pooled_cols: dict[U1Basis, list[Tensor]] = {}
+    label_order: list[U1Basis] = []
+    for j, seed in enumerate(seeds):
+        col = w[:, j : j + 1].clone().replace_dim(1, single_col)
+        candidates: list[tuple[float, Tensor, U1Basis]] = []
+        for sector_label, projector in sector_projectors:
+            projected = projector @ col
+            projected_norm = projected.norm()
+            norm_value = abs(projected_norm.item())
+            if norm_value <= tol:
+                continue
+            candidates.append(
+                (
+                    norm_value,
+                    projected / norm_value,
+                    _attach_sector_label(seed, sector_label),
+                )
+            )
+
+        if full_sector:
+            selected = candidates
+        elif candidates:
+            selected = [max(candidates, key=lambda item: item[0])]
+        else:
+            selected = []
+        for _, projected, label in selected:
+            if label not in pooled_cols:
+                pooled_cols[label] = []
+                label_order.append(label)
+            pooled_cols[label].append(projected)
+
+    projected_cols: list[Tensor] = []
+    raw_labels: list[U1Basis] = []
+    for label in label_order:
+        independent = _svd_independent_columns(pooled_cols[label], row_dim, tol)
+        for col in independent:
+            projected_cols.append(col)
+            raw_labels.append(label)
+
+    if not projected_cols:
+        dtype = reps[0].data.dtype if reps else w.data.dtype
+        return Tensor(
+            data=w.data.new_empty((row_dim.dim, 0), dtype=dtype),
+            dims=(row_dim, IndexSpace.linear(0)),
+        )
+
+    out_dim = HilbertSpace.new(_labels_with_degeneracy(raw_labels))
+    return cat(projected_cols, dim=-1).replace_dim(-1, out_dim)
 
 
 def _transform_point_group_basis_direct(
@@ -388,20 +569,29 @@ def _joint_phase_basis(
 
 
 def point_group_column_symmetrize(
-    opr: PointGroupOpr, w: Tensor, full_sector: bool = False
+    opr: PointGroupOpr | FinitePointGroup,
+    w: Tensor,
+    full_sector: bool = False,
+    *,
+    fixpoint: Offset | None = None,
+    rebase_fixpoint: bool = False,
 ) -> Tensor:
     r"""
-    Symmetrize the columns of `w` by projecting each one onto every sector of `opr`.
+    Symmetrize the columns of `w` by projecting each one onto symmetry sectors.
 
-    For a finite-order abelian element `opr` of order \(n\), each exact
+    For a finite-order abelian operator `opr` of order \(n\), each exact
     symmetry sector is labeled by a phase \(\omega\) with \(\omega^n = 1\).
-    This function
-    builds the full operator representation `G` on the ambient Hilbert space
-    `w.dims[0]` and applies the projector
+    This function builds the full operator representation `G` on the ambient
+    Hilbert space `w.dims[0]` and applies the projector
     \(P_\omega = \frac{1}{n}\sum_{k=0}^{n-1}\omega^{-k}G^k\),
 
     which is the rendered form of the code-level convention
     `P_omega = (1/n) * sum_{k=0}^{n-1} omega^(-k) G^k`.
+
+    If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup], this
+    routine dispatches to the non-abelian character-projector path
+    \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\), using the
+    packaged irreducible-representation character table.
 
     The projector is applied to each input column separately. When
     `full_sector` is `True`, every
@@ -416,8 +606,9 @@ def point_group_column_symmetrize(
 
     Parameters
     ----------
-    opr : PointGroupOpr
-        Finite-order abelian operator used to build symmetry projectors.
+    opr : PointGroupOpr | FinitePointGroup
+        Symmetry descriptor. `PointGroupOpr` uses the abelian phase-sector path;
+        `FinitePointGroup` uses finite-group irrep projectors.
     w : Tensor
         Rank-2 tensor whose first dimension is a
         [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and whose
@@ -440,20 +631,19 @@ def point_group_column_symmetrize(
         If `w` is not rank 2, if `w.dims[0]` is not a `HilbertSpace`, or if
         `w.dims[1]` is neither an `IndexSpace` nor a `HilbertSpace`.
     """
-    if w.rank() != 2:
-        raise ValueError("w must be a rank-2 tensor of ambient-space columns.")
+    if isinstance(opr, FinitePointGroup):
+        return _finite_point_group_column_symmetrize(
+            opr,
+            w,
+            full_sector=full_sector,
+            fixpoint=fixpoint,
+            rebase_fixpoint=rebase_fixpoint,
+        )
 
-    row_dim = w.dims[0]
-    if not isinstance(row_dim, HilbertSpace):
-        raise ValueError("w.dims[0] must be a HilbertSpace.")
-    input_col_dim = w.dims[1]
-    seeds: list[U1Basis | None]
-    if isinstance(input_col_dim, HilbertSpace):
-        seeds = list(input_col_dim.elements())
-    elif isinstance(input_col_dim, IndexSpace):
-        seeds = [None] * input_col_dim.dim
-    else:
-        raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
+    if fixpoint is not None:
+        opr = opr.fixpoint_at(fixpoint, rebase=rebase_fixpoint)
+
+    row_dim, seeds = _column_symmetrize_context(w)
 
     g_full = _hilbert_opr_repr(opr, row_dim, device=w.device).to_device(w.device)
     order = opr.g.group_order()
@@ -512,21 +702,7 @@ def point_group_column_symmetrize(
             dims=(row_dim, IndexSpace.linear(0)),
         )
 
-    totals: dict[U1Basis, int] = {}
-    for label in raw_labels:
-        totals[label] = totals.get(label, 0) + 1
-
-    seen: dict[U1Basis, int] = {}
-    labels: list[U1Basis] = []
-    for label in raw_labels:
-        idx = seen.get(label, 0)
-        seen[label] = idx + 1
-        if totals[label] > 1:
-            labels.append(_attach_degeneracy_tag(label, idx))
-        else:
-            labels.append(label)
-
-    out_dim = HilbertSpace.new(labels)
+    out_dim = HilbertSpace.new(_labels_with_degeneracy(raw_labels))
     return cat(projected_cols, dim=-1).replace_dim(-1, out_dim)
 
 
@@ -578,20 +754,7 @@ def joint_point_group_column_symmetrize(
         raise ValueError("oprs must be non-empty.")
     if len(oprs) == 1:
         return point_group_column_symmetrize(oprs[0], w, full_sector=full_sector)
-    if w.rank() != 2:
-        raise ValueError("w must be a rank-2 tensor of ambient-space columns.")
-
-    row_dim = w.dims[0]
-    if not isinstance(row_dim, HilbertSpace):
-        raise ValueError("w.dims[0] must be a HilbertSpace.")
-    input_col_dim = w.dims[1]
-    seeds: list[U1Basis | None]
-    if isinstance(input_col_dim, HilbertSpace):
-        seeds = list(input_col_dim.elements())
-    elif isinstance(input_col_dim, IndexSpace):
-        seeds = [None] * input_col_dim.dim
-    else:
-        raise ValueError("w.dims[1] must be either an IndexSpace or a HilbertSpace.")
+    row_dim, seeds = _column_symmetrize_context(w)
 
     single_col = IndexSpace.linear(1)
     tol = 1e-10
@@ -664,19 +827,5 @@ def joint_point_group_column_symmetrize(
             dims=(row_dim, IndexSpace.linear(0)),
         )
 
-    totals: dict[U1Basis, int] = {}
-    for label in raw_labels:
-        totals[label] = totals.get(label, 0) + 1
-
-    seen: dict[U1Basis, int] = {}
-    labels: list[U1Basis] = []
-    for label in raw_labels:
-        idx = seen.get(label, 0)
-        seen[label] = idx + 1
-        if totals[label] > 1:
-            labels.append(_attach_degeneracy_tag(label, idx))
-        else:
-            labels.append(label)
-
-    out_dim = HilbertSpace.new(labels)
+    out_dim = HilbertSpace.new(_labels_with_degeneracy(raw_labels))
     return cat(projected_cols, dim=-1).replace_dim(-1, out_dim)
