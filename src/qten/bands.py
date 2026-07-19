@@ -89,6 +89,8 @@ from .symbolics import (
     rebase_opr,
     restructure,
 )
+from .pointgroups.elements import PointGroupOpr
+from .pointgroups.ops import _internal_transform_basis
 from .utils.devices import Device
 
 
@@ -491,7 +493,13 @@ def _get_band_transform_from_spaces(
         )
 
     fractional = FuncOpr(Offset, Offset.fractional)
-    raw_space = cast(HilbertSpace, t @ target_space)
+    if isinstance(t, PointGroupOpr):
+        raw_space = HilbertSpace.new(
+            _internal_transform_basis(t, psi, target_space)
+            for psi in target_space.elements()
+        )
+    else:
+        raw_space = cast(HilbertSpace, t @ target_space)
     new_space = cast(HilbertSpace, fractional @ raw_space)
     if not target_space.same_rays(new_space):
         raise ValueError(

@@ -1,10 +1,11 @@
 import sympy as sy
+from dataclasses import dataclass
+from typing import TypeVar, overload
 from ..abstracts import HasBase as HasBase
 from ..geometries.spatials import (
     AffineSpace as AffineSpace,
     Momentum as Momentum,
     Offset as Offset,
-    Spatial as Spatial,
 )
 from ..symbolics import Multiple as Multiple
 from ..symbolics.hilbert_space import (
@@ -14,60 +15,43 @@ from ..symbolics.hilbert_space import (
     U1Span as U1Span,
 )
 from ..utils.collections_ext import FrozenDict as FrozenDict
-from ..validations import need_validation as need_validation
-from ..validations.symbolics import (
-    check_invertibility as check_invertibility,
-    check_numerical as check_numerical,
-)
-from dataclasses import dataclass
-from typing import TypeVar, overload
+from .basis import PointGroupBasis as PointGroupBasis
 
 _T = TypeVar("_T")
 
 @dataclass(frozen=True)
-class AbelianBasis(Spatial):
-    expr: sy.Expr
-    axes: tuple[sy.Symbol, ...]
-    order: int
-    rep: sy.ImmutableDenseMatrix
-    @classmethod
-    def from_rep(
-        cls,
-        rep: sy.ImmutableDenseMatrix,
-        euclidean_basis: sy.ImmutableDenseMatrix,
-        axes: tuple[sy.Symbol, ...],
-        order: int,
-    ) -> AbelianBasis: ...
-    @property
-    def dim(self) -> int: ...
-    def __lt__(self, other: AbelianBasis) -> bool: ...
-    def __gt__(self, other: AbelianBasis) -> bool: ...
-
-@dataclass(frozen=True)
-class AbelianGroup(Opr):
+class PointGroupElement(Opr):
     irrep: sy.ImmutableDenseMatrix
     axes: tuple[sy.Symbol, ...]
-    def inv(self) -> AbelianGroup: ...
+
+    def _full_indices(self, order: int): ...
+    def _commute_indices(self, order: int): ...
     def euclidean_basis(self, order: int) -> sy.ImmutableDenseMatrix: ...
+    def _raw_euclidean_repr(self, order: int) -> sy.ImmutableDenseMatrix: ...
     def euclidean_repr(self, order: int) -> sy.ImmutableDenseMatrix: ...
     def group_order(self, max_order: int = 128) -> int: ...
-    def basis(self, order: int) -> FrozenDict[sy.Expr, AbelianBasis]: ...
+    def inv(self) -> PointGroupElement: ...
+    def basis(self, order: int) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
     @property
-    def basis_table(self) -> FrozenDict[sy.Expr, AbelianBasis]: ...
+    def basis_table(self) -> FrozenDict[sy.Expr, PointGroupBasis]: ...
+    @overload
+    def invoke(self, obj: PointGroupElement, **kwargs) -> PointGroupElement: ...
+    @overload
+    def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
+    @overload
+    def invoke(self, obj: _T, **kwargs) -> _T | Multiple[_T]: ...  # type: ignore[override]
 
 @dataclass(frozen=True)
-class AbelianOpr(Opr, HasBase[AffineSpace]):
-    g: AbelianGroup
+class PointGroupOpr(Opr, HasBase[AffineSpace]):
+    g: PointGroupElement
     offset: Offset
-    def __init__(
-        self,
-        g: AbelianGroup,
-    ) -> None: ...
+
+    def __init__(self, g: PointGroupElement) -> None: ...
     def base(self) -> AffineSpace: ...
-    def rebase(self, new_base: AffineSpace) -> AbelianOpr: ...
-    def fixpoint_at(self, r: Offset, rebase: bool = False) -> AbelianOpr: ...
+    def rebase(self, new_base: AffineSpace) -> PointGroupOpr: ...
+    def fixpoint_at(self, r: Offset, rebase: bool = False) -> PointGroupOpr: ...
     @overload
-    def invoke(self, obj: AbelianBasis, **kwargs) -> Multiple[AbelianBasis]: ...
+    def invoke(self, obj: PointGroupBasis, **kwargs) -> Multiple[PointGroupBasis]: ...
     @overload
     def invoke(self, obj: Offset, **kwargs) -> Offset: ...
     @overload

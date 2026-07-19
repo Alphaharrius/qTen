@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qten"
-version = "0.4.3"
+version = "0.5.0"
 description = "Torch-based tensors, lattices, symmetries, and band-structure tools for quantum lattice models."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -140,7 +140,7 @@ ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 
 [tool.setuptools.package-data]
-qten = ["py.typed"]
+qten = ["py.typed", "pointgroups/data/*.json", "pointgroups/data/*.md"]
 "*" = ["*.pyi"]
 
 [tool.setuptools]

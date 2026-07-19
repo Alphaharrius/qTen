@@ -3,8 +3,7 @@ from sympy import ImmutableDenseMatrix
 
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice, Offset, AffineSpace
-from qten.pointgroups import pointgroup
-from qten.pointgroups.abelian import AbelianGroup, AbelianOpr
+from qten.pointgroups import PointGroupElement, PointGroupOpr, pointgroup
 import sympy as sy
 from qten.geometries.basis_transform import BasisTransform
 
@@ -32,12 +31,12 @@ def _affine(
     axes: tuple[sy.Symbol, ...],
     offset: Offset | None = None,
     basis_function_order: int | None = None,
-) -> AbelianOpr:
+) -> PointGroupOpr:
     _ = basis_function_order
-    g = AbelianGroup(irrep=irrep, axes=axes)
+    g = PointGroupElement(irrep=irrep, axes=axes)
     if offset is None:
-        return AbelianOpr(g=g)
-    return AbelianOpr._from_parts(g=g, offset=offset)
+        return PointGroupOpr(g=g)
+    return PointGroupOpr._from_parts(g=g, offset=offset)
 
 
 def test_periodic_boundary_rejects_non_square_basis():

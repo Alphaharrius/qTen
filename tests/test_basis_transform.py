@@ -25,8 +25,7 @@ from qten.bands import (
 )
 from qten.linalg._mb_tensor import MomentumBlockTensor
 from qten.geometries.boundary import PeriodicBoundary
-from qten.pointgroups import pointgroup
-from qten.pointgroups.abelian import AbelianOpr
+from qten.pointgroups import PointGroupOpr, pointgroup
 
 
 @dataclass(frozen=True)
@@ -291,7 +290,7 @@ def test_bandtransform_one_sided_modes_return_momentum_block_tensors():
         data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1).to(torch.complex128),
         dims=(k_space, h_space, h_space),
     )
-    t = AbelianOpr(pointgroup("m-x:x"))
+    t = PointGroupOpr(pointgroup("m-x:x"))
 
     left_transform = get_band_transform(t, tensor_in, side="left")
     right_transform = get_band_transform(t, tensor_in, side="right")
@@ -328,7 +327,7 @@ def test_bandtransform_both_returns_plain_momentum_space_tensor():
         data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1).to(torch.complex128),
         dims=(k_space, h_space, h_space),
     )
-    t = AbelianOpr(pointgroup("m-x:x"))
+    t = PointGroupOpr(pointgroup("m-x:x"))
 
     transformed = bandtransform(t, tensor_in, opt="both")
     left_transform = get_band_transform(t, tensor_in, side="left")

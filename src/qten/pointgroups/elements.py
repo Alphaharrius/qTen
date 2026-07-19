@@ -1,19 +1,22 @@
 """
-Symbolic abelian point-group representations.
+Symbolic point-group element representations.
 
-This module defines the core point-group objects used by QTen's symmetry
-machinery. [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] stores an
-abelian generator representation, derives Euclidean polynomial bases, and
-computes symbolic eigen-basis sectors. [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis]
-labels those sectors, while [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]
-couples a group action with an affine offset for use as a symbolic operator.
+This module defines the core single-generator objects used by QTen's symmetry
+machinery. [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
+stores an exact linear representation, derives Euclidean polynomial bases, and
+computes symbolic eigen-basis sectors.
+[`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] couples that linear
+action with an affine offset. Polynomial sector labels live in
+[`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
 
 Repository usage
 ----------------
 Use this module for explicit point-group construction and algebra. Higher-level
 query-string construction is available through
-[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], and tensor/Hilbert
-space projection helpers live in [`qten.pointgroups.ops`][qten.pointgroups.ops].
+[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], multi-generator
+groups live in [`qten.pointgroups.finite`][qten.pointgroups.finite], and
+tensor/Hilbert-space projection helpers live in
+[`qten.pointgroups.ops`][qten.pointgroups.ops].
 """
 
 from dataclasses import dataclass
@@ -25,18 +28,18 @@ import sympy as sy
 
 from ..abstracts import HasBase, Operable
 from ..geometries import AffineSpace, Momentum, Offset
-from ..geometries.spatials import Spatial
 from ..symbolics import Opr
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
 from ..symbolics import Multiple
+from .basis import PointGroupBasis
 
 
 def _require_unique_axes(axes: Tuple[sy.Symbol, ...], *, role: str) -> None:
     if len(set(axes)) != len(axes):
         raise ValueError(
-            f"AbelianGroup {role} axes must be unique for composition, got {axes}."
+            f"PointGroupElement {role} axes must be unique for composition, got {axes}."
         )
 
 
@@ -73,154 +76,16 @@ def _embed_irrep_to_axes(
     return sy.ImmutableDenseMatrix(sy.simplify(data))
 
 
-@dataclass(frozen=True)
-class AbelianBasis(Spatial):
-    """
-    Symbolic abelian eigen-basis expressed in a polynomial basis over given axes.
-
-    Ordering
-    --------
-    [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] comparison (`<`, `>`) is defined by lexicographic string
-    ordering of `expr` (`str(expr)`).
-
-    Attributes
-    ----------
-    expr : sy.Expr
-        Symbolic expression in `axes` representing the affine function.
-    axes : Tuple[sy.Symbol, ...]
-        Ordered tuple of symbols defining the coordinate axes.
-    order : int
-        Polynomial order used to build the basis representation.
-    rep : sy.ImmutableDenseMatrix
-        Coefficient vector in the Euclidean monomial basis (column matrix).
-    """
-
-    expr: sy.Expr
-    """
-    Symbolic expression in `axes` representing the basis function in
-    coordinate form.
-    """
-    axes: Tuple[sy.Symbol, ...]
-    """
-    Ordered tuple of symbols defining the coordinate axes against which `expr`
-    and `rep` are interpreted.
-    """
-    order: int
-    """
-    Polynomial order used to build the basis representation, i.e. the total
-    degree of the commuting monomial space.
-    """
-    rep: sy.ImmutableDenseMatrix
-    """
-    Coefficient vector in the Euclidean monomial basis, stored as a column
-    matrix aligned with the order-specific monomial enumeration.
-    """
-
-    @classmethod
-    def from_rep(
-        cls,
-        rep: sy.ImmutableDenseMatrix,
-        euclidean_basis: sy.ImmutableDenseMatrix,
-        axes: Tuple[sy.Symbol, ...],
-        order: int,
-    ) -> "AbelianBasis":
-        """
-        Build an [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] from a Euclidean representation vector.
-
-        The input `rep` is first normalized to a canonical representative by
-        dividing through the magnitude of its first non-zero coefficient. This
-        preserves the overall sign/phase of that leading term while removing
-        pure magnitude. The normalized vector
-        is then converted into the symbolic polynomial expression in
-        [`euclidean_basis`][qten.pointgroups.abelian.AbelianGroup.euclidean_basis] and stored as both `expr` and canonical `rep` data
-        of the resulting [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis].
-
-        Parameters
-        ----------
-        rep : sy.ImmutableDenseMatrix
-            Euclidean representation vector in the commuting monomial basis.
-            The vector need not already be normalized, but it must be non-zero.
-        euclidean_basis : sy.ImmutableDenseMatrix
-            Row matrix of commuting monomials spanning the Euclidean polynomial
-            basis for the given `order`.
-        axes : Tuple[sy.Symbol, ...]
-            Ordered coordinate symbols associated with the Euclidean basis.
-        order : int
-            Polynomial order of the Euclidean representation.
-
-        Returns
-        -------
-        AbelianBasis
-            Canonicalized abelian basis function whose stored `rep` is the
-            magnitude-normalized version of the input vector and whose `expr`
-            is the corresponding symbolic polynomial.
-
-        Raises
-        ------
-        StopIteration
-            If `rep` is the zero vector, so there is no first non-zero
-            coefficient available for normalization.
-        """
-        principle_term = next(x for x in rep if x != 0)
-        normalized = sy.ImmutableDenseMatrix(sy.simplify(rep / sy.Abs(principle_term)))
-        expr = sy.simplify(normalized.dot(euclidean_basis))
-        return cls(expr=expr, axes=axes, order=order, rep=normalized)
-
-    @property
-    def dim(self):
-        """Number of axes (spatial dimension) for this affine function."""
-        return len(self.axes)
-
-    def __str__(self):
-        """
-        Return the compact symbolic label for this basis function.
-
-        Returns
-        -------
-        str
-            `"e"` for the constant identity basis function, otherwise the
-            string form of `expr`.
-        """
-        if sy.simplify(self.expr - 1) == 0:
-            return "e"
-        return str(self.expr)
-
-    def __repr__(self):
-        """
-        Return the developer representation of this basis function.
-
-        The representation intentionally matches
-        [`__str__`][qten.pointgroups.abelian.AbelianBasis.__str__] so basis
-        labels render compactly inside tuples, containers, and logs.
-
-        Returns
-        -------
-        str
-            Same value as `str(self)`.
-        """
-        return self.__str__()
-
-
-@Operable.__lt__.register
-def _(a: AbelianBasis, b: AbelianBasis) -> bool:
-    return str(a.expr) < str(b.expr)
-
-
-@Operable.__gt__.register
-def _(a: AbelianBasis, b: AbelianBasis) -> bool:
-    return str(a.expr) > str(b.expr)
-
-
 @need_validation(check_invertibility("irrep"), check_numerical("irrep"))
 @dataclass(frozen=True)
-class AbelianGroup(Opr):
+class PointGroupElement(Opr):
     r"""
     Abelian linear operator represented on Cartesian coordinate functions.
 
-    [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] stores the linear part `g` of a symmetry/operator as an
+    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] stores the linear part `g` of a symmetry/operator as an
     exact matrix `irrep` acting on the coordinate axes `axes`. It provides the
     order-dependent polynomial representations induced by that linear action
-    and the corresponding eigen-basis functions ([`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis]).
+    and the corresponding eigen-basis functions ([`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]).
 
     Mathematical meaning
     --------------------
@@ -240,7 +105,7 @@ class AbelianGroup(Opr):
 
     Because coordinate symbols commute, the raw tensor-product representation is
     symmetrized onto the commuting monomial basis. The resulting matrix is
-    returned by [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr].
+    returned by [`euclidean_repr(order)`][qten.pointgroups.elements.PointGroupElement.euclidean_repr].
 
     For a homogeneous monomial basis \(\phi_m(x)\), the derived representation
     acts by rewriting \(\phi_m(Gx)\) back in the commuting monomial basis.
@@ -263,31 +128,31 @@ class AbelianGroup(Opr):
 
     Main API
     --------
-    [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr]
+    [`euclidean_repr(order)`][qten.pointgroups.elements.PointGroupElement.euclidean_repr]
     returns the symmetrized linear action on homogeneous commuting monomials of
-    degree `order`. [`basis(order)`][qten.pointgroups.abelian.AbelianGroup.basis]
+    degree `order`. [`basis(order)`][qten.pointgroups.elements.PointGroupElement.basis]
     returns eigen-basis functions of that representation as
-    [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] objects keyed by
-    eigenvalue. [`basis_table`][qten.pointgroups.abelian.AbelianGroup.basis_table]
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] objects keyed by
+    eigenvalue. [`basis_table`][qten.pointgroups.elements.PointGroupElement.basis_table]
     collects representative eigen-basis functions across increasing polynomial
     orders until all characters of the finite represented element are found.
-    [`group_order(max_order=128)`][qten.pointgroups.abelian.AbelianGroup.group_order]
+    [`group_order(max_order=128)`][qten.pointgroups.elements.PointGroupElement.group_order]
     returns the smallest positive integer `n` such that `irrep**n = I`.
 
     Notes
     -----
-    [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] is the linear object. To obtain an affine operator of the
-    form \(x \mapsto gx + t\), wrap it in [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]. In that sense, [`AbelianOpr`][qten.pointgroups.abelian.AbelianOpr]
-    is the affine extension of [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup].
+    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] is the linear object. To obtain an affine operator of the
+    form \(x \mapsto gx + t\), wrap it in [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr]. In that sense, [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr]
+    is the affine extension of [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement].
 
-    `AbelianGroup @ AbelianGroup` composes linear maps in the same algebraic
+    `PointGroupElement @ PointGroupElement` composes linear maps in the same algebraic
     order as every other [`Opr`][qten.symbolics.hilbert_space.Opr]: `(a @ b) @ x == a(b(x))`. When the two groups
     use different but compatible ordered axis tuples, composition first embeds
     both matrices into a common axis basis. The merged basis preserves the full
     left-axis order and appends only unseen right axes. Missing axes act by the
     identity, while shared axes are aligned by symbol and reordered as needed.
 
-    The [`group_order()`][qten.pointgroups.abelian.AbelianGroup.group_order] and [`basis_table`][qten.pointgroups.abelian.AbelianGroup.basis_table] utilities assume the represented
+    The [`group_order()`][qten.pointgroups.elements.PointGroupElement.group_order] and [`basis_table`][qten.pointgroups.elements.PointGroupElement.basis_table] utilities assume the represented
     element has finite order. They are appropriate for finite abelian point
     symmetries, but may fail or be incomplete for infinite-order linear maps.
     """
@@ -332,7 +197,7 @@ class AbelianGroup(Opr):
             only by factor ordering are collapsed to a single representative.
         """
         indices = self._full_indices(order)
-        _, select_rules = AbelianGroup._get_contract_select_rules(indices)
+        _, select_rules = PointGroupElement._get_contract_select_rules(indices)
         sorted_rules = sorted(select_rules, key=lambda x: x[1])
         return tuple(indices[n] for n, _ in sorted_rules)
 
@@ -482,7 +347,7 @@ class AbelianGroup(Opr):
         )
 
     @lru_cache
-    def inv(self) -> "AbelianGroup":
+    def inv(self) -> "PointGroupElement":
         """
         Return the inverse linear operator in the same ordered axis basis.
 
@@ -490,7 +355,7 @@ class AbelianGroup(Opr):
         `axes`, so `self @ self.inv()` and `self.inv() @ self` both represent
         the identity map on that coordinate system.
         """
-        return AbelianGroup(
+        return PointGroupElement(
             irrep=sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
             axes=self.axes,
         )
@@ -498,7 +363,7 @@ class AbelianGroup(Opr):
     @lru_cache
     def basis(self, order: int) -> FrozenDict:
         """
-        Compute abelian eigen-basis functions from [`euclidean_repr(order)`][qten.pointgroups.abelian.AbelianGroup.euclidean_repr] eigenvectors.
+        Compute abelian eigen-basis functions from [`euclidean_repr(order)`][qten.pointgroups.elements.PointGroupElement.euclidean_repr] eigenvectors.
 
         Parameters
         ----------
@@ -509,7 +374,7 @@ class AbelianGroup(Opr):
         Returns
         -------
         FrozenDict
-            Mapping from eigenvalue to normalized [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis] eigenfunction.
+            Mapping from eigenvalue to normalized [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] eigenfunction.
             Normalization is fixed by dividing by the first non-zero coefficient
             in each eigenvector.
         """
@@ -519,11 +384,12 @@ class AbelianGroup(Opr):
         tbl = {}
         for v, _, vec_group in eig:
             vec = vec_group[0]
-            tbl[v] = AbelianBasis.from_rep(
+            tbl[v] = PointGroupBasis.from_rep(
                 rep=sy.ImmutableDenseMatrix(vec),
                 euclidean_basis=self.euclidean_basis(order),
                 axes=self.axes,
                 order=order,
+                irrep=sy.simplify(v),
             )
 
         return FrozenDict(tbl)
@@ -537,13 +403,13 @@ class AbelianGroup(Opr):
         The table is accumulated by increasing homogeneous order, starting from
         `0`, until enough eigen-basis functions have been found to cover the
         full finite group order returned by
-        [`group_order`][qten.pointgroups.abelian.AbelianGroup.group_order].
+        [`group_order`][qten.pointgroups.elements.PointGroupElement.group_order].
 
         Returns
         -------
         FrozenDict
             Mapping from eigenvalue/character to a representative
-            [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis].
+            [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
 
         Raises
         ------
@@ -551,7 +417,7 @@ class AbelianGroup(Opr):
             If no complete table is found up to order `group_order() - 1`.
         """
         g_order = self.group_order()
-        tbl: Dict[sy.Expr, AbelianBasis] = {}
+        tbl: Dict[sy.Expr, PointGroupBasis] = {}
         for order in range(g_order):
             tbl = {**self.basis(order), **tbl}
             if len(tbl) == g_order:
@@ -562,7 +428,7 @@ class AbelianGroup(Opr):
 
 
 @Operable.__matmul__.register
-def _(left: AbelianGroup, right: AbelianGroup) -> AbelianGroup:
+def _(left: PointGroupElement, right: PointGroupElement) -> PointGroupElement:
     """
     Compose two abelian linear operators in algebraic `@` order.
 
@@ -591,14 +457,14 @@ def _(left: AbelianGroup, right: AbelianGroup) -> AbelianGroup:
 
     Parameters
     ----------
-    left : AbelianGroup
+    left : PointGroupElement
         Operator applied after `right`.
-    right : AbelianGroup
+    right : PointGroupElement
         Operator applied before `left`.
 
     Returns
     -------
-    AbelianGroup
+    PointGroupElement
         Composed linear operator expressed on the merged ordered axis basis.
 
     Raises
@@ -612,82 +478,62 @@ def _(left: AbelianGroup, right: AbelianGroup) -> AbelianGroup:
     merged = _merged_axes(left.axes, right.axes)
     left_irrep = _embed_irrep_to_axes(left.irrep, left.axes, merged)
     right_irrep = _embed_irrep_to_axes(right.irrep, right.axes, merged)
-    return AbelianGroup(
+    return PointGroupElement(
         irrep=sy.ImmutableDenseMatrix(sy.simplify(left_irrep @ right_irrep)),
         axes=merged,
     )
 
 
-@AbelianGroup.register(AbelianBasis)
-def _(g: AbelianGroup, f: AbelianBasis) -> Multiple[AbelianBasis]:
+@PointGroupElement.register(PointGroupBasis)
+def _(g: PointGroupElement, f: PointGroupBasis) -> Multiple[PointGroupBasis]:
     """
-    Apply an abelian-group element to an abelian eigen-basis function.
+    Apply a generated group element directly to a point-group basis label.
 
-    The action is computed in the Euclidean monomial basis of degree
-    `f.order`. If `f` is an eigenfunction of the represented group element,
-    then `g.euclidean_repr(f.order) @ f.rep` must be a scalar multiple of
-    `f.rep`. That scalar is returned as the phase/character factor while the
-    basis function itself remains unchanged.
-
-    Parameters
-    ----------
-    g : AbelianGroup
-        Group element represented by a Euclidean matrix.
-    f : AbelianBasis
-        Basis function to transform.
-
-    Returns
-    -------
-    Multiple[AbelianBasis]
-        Multiple(phase, f) where `phase` is the scalar eigenvalue of `f`
-        under the action of `g`.
-
-    Raises
-    ------
-    ValueError
-        If `g.axes` and `f.axes` do not match, if `f` is not an eigenfunction
-        of `g`, or if `f.rep` is the zero vector.
+    Unlike an abelian eigenfunction, a
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] need not be a
+    one-dimensional eigenfunction of a single element. For example, in the
+    two-dimensional `E` sector of `C4v`, a 90-degree rotation maps `x` to `y`.
+    This implementation therefore transforms the stored polynomial
+    representation and returns the transformed basis label rather than forcing
+    a scalar phase.
     """
     if set(g.axes) != set(f.axes):
         raise ValueError(
-            f"Axes of AbelianGroup and AbelianBasis must match: {g.axes} != {f.axes}"
+            f"Axes of PointGroupElement and PointGroupBasis must match: {g.axes} != {f.axes}"
         )
 
-    g_irrep = g.euclidean_repr(f.order)
-    basis_rep = f.rep
-    transformed_rep = g_irrep @ basis_rep
-
-    phase = None
-    for n in range(transformed_rep.rows):
-        basis_term = basis_rep[n]
-        transformed_term = transformed_rep[n]
-        if basis_term != 0:
-            if phase is None:
-                phase = sy.simplify(transformed_term / basis_term)
-            elif sy.simplify(transformed_term - phase * basis_term) != 0:
-                raise ValueError(f"{f} is not a basis function for {g}!")
-        elif sy.simplify(transformed_term) != 0:
-            raise ValueError(f"{f} is not a basis function for {g}!")
-
-    if phase is None:
-        raise ValueError(f"{f} is a trivial basis function: zero")
-
-    return Multiple(phase, f)
+    transformed_rep = sy.ImmutableDenseMatrix(g.euclidean_repr(f.order) @ f.rep)
+    try:
+        scale = next(entry for entry in transformed_rep if entry != 0)
+    except StopIteration as exc:
+        raise ValueError(f"{f} is a trivial basis function: zero") from exc
+    transformed_basis = PointGroupBasis.from_rep(
+        rep=transformed_rep,
+        euclidean_basis=g.euclidean_basis(f.order),
+        axes=g.axes,
+        order=f.order,
+        group=f.group,
+        irrep=f.irrep,
+        irrep_dim=f.irrep_dim,
+        copy_index=f.copy_index,
+        component_index=f.component_index,
+    )
+    return Multiple(sy.Abs(scale), transformed_basis)
 
 
 @dataclass(frozen=True, init=False)
-class AbelianOpr(Opr, HasBase[AffineSpace]):
+class PointGroupOpr(Opr, HasBase[AffineSpace]):
     r"""
     Abelian operator acting on polynomial coordinate functions.
 
     This class combines an abelian linear representation with a translation:
     \(x \mapsto gx + t\), where `g` is carried by
-    [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup] and \(t\) by
+    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] and \(t\) by
     `offset`.
 
     Parameters
     ----------
-    g : AbelianGroup
+    g : PointGroupElement
         Linear part of the affine transformation.
     offset : Offset
         Translation part of the affine transformation, stored in the same
@@ -695,7 +541,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
     Attributes
     ----------
-    g : AbelianGroup
+    g : PointGroupElement
         Linear part of the affine transformation.
     offset : Offset
         Translation part of the affine transformation, stored in the same
@@ -705,10 +551,10 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
     -----
     The operator is initialized at the canonical origin of the identity affine
     basis. To center it at a specific point, construct it first and then call
-    [`fixpoint_at(...)`][qten.pointgroups.abelian.AbelianOpr.fixpoint_at].
+    [`fixpoint_at(...)`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at].
     """
 
-    g: AbelianGroup
+    g: PointGroupElement
     """
     Linear part of the affine transformation, represented exactly on the
     ordered coordinate axes of the operator's ambient affine space.
@@ -721,7 +567,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
     """
 
     @classmethod
-    def _from_parts(cls, g: AbelianGroup, offset: Offset) -> "AbelianOpr":
+    def _from_parts(cls, g: PointGroupElement, offset: Offset) -> "PointGroupOpr":
         obj = object.__new__(cls)
         object.__setattr__(obj, "g", g)
         object.__setattr__(obj, "offset", offset)
@@ -729,13 +575,13 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
     def __init__(
         self,
-        g: AbelianGroup,
+        g: PointGroupElement,
         offset: Offset | None = None,
     ):
         if offset is not None:
             raise TypeError(
-                "AbelianOpr does not accept offset=... directly. "
-                "Construct AbelianOpr(g) and use fixpoint_at(...) to set its center."
+                "PointGroupOpr does not accept offset=... directly. "
+                "Construct PointGroupOpr(g) and use fixpoint_at(...) to set its center."
             )
         dim = g.irrep.rows
         base = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(dim))
@@ -755,7 +601,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
         return self.offset.space
 
     @lru_cache(maxsize=None)
-    def rebase(self, new_base: AffineSpace) -> "AbelianOpr":
+    def rebase(self, new_base: AffineSpace) -> "PointGroupOpr":
         """
         Re-express this transform in a different affine space basis.
 
@@ -766,7 +612,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
         Returns
         -------
-        AbelianOpr
+        PointGroupOpr
             New element with both linear and translation parts expressed in
             new_base coordinates.
         """
@@ -784,12 +630,14 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
         change = B_new.inv() @ B_old
         new_irrep = change @ irrep @ change.inv()
-        return AbelianOpr._from_parts(
-            g=AbelianGroup(irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes),
+        return PointGroupOpr._from_parts(
+            g=PointGroupElement(
+                irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes
+            ),
             offset=self.offset.rebase(new_base),
         )
 
-    def fixpoint_at(self, r: Offset, rebase: bool = False) -> "AbelianOpr":
+    def fixpoint_at(self, r: Offset, rebase: bool = False) -> "PointGroupOpr":
         r"""
         Return a transform with the same linear part whose invariant fixed point is `r`.
 
@@ -809,7 +657,7 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
 
         Returns
         -------
-        AbelianOpr
+        PointGroupOpr
             A new affine operator with the same linear part and with `r` as an
             invariant point.
         """
@@ -832,46 +680,23 @@ class AbelianOpr(Opr, HasBase[AffineSpace]):
             rep=sy.ImmutableDenseMatrix((ident - irrep) @ r_rep),
             space=t.offset.space,
         )
-        return AbelianOpr._from_parts(
-            g=AbelianGroup(irrep=irrep, axes=t.g.axes),
+        return PointGroupOpr._from_parts(
+            g=PointGroupElement(irrep=irrep, axes=t.g.axes),
             offset=fixed_offset,
         )
 
 
-@AbelianOpr.register(AbelianBasis)
-def _(t: AbelianOpr, f: AbelianBasis) -> Multiple[AbelianBasis]:
-    """
-    Apply an affine operator to an abelian basis function.
+@PointGroupOpr.register(PointGroupBasis)
+def _(t: PointGroupOpr, f: PointGroupBasis) -> Multiple[PointGroupBasis]:
+    """Apply an affine wrapper to a point-group basis through its linear part."""
 
-    For [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis], the affine translation is intentionally ignored, so
-    this action is exactly the same as applying the underlying linear
-    [`AbelianGroup`][qten.pointgroups.abelian.AbelianGroup].
-
-    Parameters
-    ----------
-    t : AbelianOpr
-        The affine operator to apply.
-    f : AbelianBasis
-        The basis function to be transformed.
-
-    Returns
-    -------
-    Multiple[AbelianBasis]
-        Symbolic phase factor paired with the original
-        [`AbelianBasis`][qten.pointgroups.abelian.AbelianBasis].
-
-    Raises
-    ------
-    ValueError
-        Propagated from `t.g @ f`.
-    """
-    return cast(Multiple[AbelianBasis], t.g @ f)
+    return cast(Multiple[PointGroupBasis], t.g @ f)
 
 
 @lru_cache(
     maxsize=None
 )  # The maximum number of Offset is restricted by the current system.
-def _apply_abelian_opr_to_offset_cached(t: AbelianOpr, offset: Offset) -> Offset:
+def _apply_point_group_opr_to_offset_cached(t: PointGroupOpr, offset: Offset) -> Offset:
     if offset.space != t.offset.space:
         t = t.rebase(offset.space)
 
@@ -896,8 +721,8 @@ def _apply_abelian_opr_to_offset_cached(t: AbelianOpr, offset: Offset) -> Offset
     return Offset(rep=sy.ImmutableDenseMatrix(new_rep), space=offset.space)
 
 
-@AbelianOpr.register(Offset)
-def _(t: AbelianOpr, offset: Offset) -> Offset:
+@PointGroupOpr.register(Offset)
+def _(t: PointGroupOpr, offset: Offset) -> Offset:
     """
     Apply an affine operator to an [`Offset`][qten.geometries.spatials.Offset].
 
@@ -906,7 +731,7 @@ def _(t: AbelianOpr, offset: Offset) -> Offset:
 
     Parameters
     ----------
-    t : AbelianOpr
+    t : PointGroupOpr
         The affine operator to apply. If its internal `offset.space` does
         not match `offset.space`, the transform is rebased to the Offset's space.
     offset : Offset
@@ -921,16 +746,16 @@ def _(t: AbelianOpr, offset: Offset) -> Offset:
 
     Notes
     -----
-    After `AbelianOpr.rebase`, the transform's linear part and `offset.rep` are
+    After `PointGroupOpr.rebase`, the transform's linear part and `offset.rep` are
     all expressed in the same coordinate system, so the homogeneous affine
     action is valid directly.
     """
-    return _apply_abelian_opr_to_offset_cached(t, offset)
+    return _apply_point_group_opr_to_offset_cached(t, offset)
 
 
 @lru_cache(maxsize=None)
 def _abelian_momentum_action_matrix(
-    t: AbelianOpr, real_space: AffineSpace
+    t: PointGroupOpr, real_space: AffineSpace
 ) -> sy.ImmutableDenseMatrix:
     if t.base() != real_space:
         t = t.rebase(real_space)
@@ -945,7 +770,9 @@ def _abelian_momentum_action_matrix(
 @lru_cache(
     maxsize=None
 )  # The maximum number of Momentum is restricted by the current system.
-def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentum:
+def _apply_point_group_opr_to_momentum_cached(
+    t: PointGroupOpr, k: Momentum
+) -> Momentum:
     real_space = k.base().dual
     action = _abelian_momentum_action_matrix(t, real_space)
 
@@ -956,8 +783,8 @@ def _apply_abelian_opr_to_momentum_cached(t: AbelianOpr, k: Momentum) -> Momentu
     return Momentum(rep=sy.ImmutableDenseMatrix(new_rep), space=k.base())
 
 
-@AbelianOpr.register(Momentum)
-def _(t: AbelianOpr, k: Momentum) -> Momentum:
+@PointGroupOpr.register(Momentum)
+def _(t: PointGroupOpr, k: Momentum) -> Momentum:
     r"""
     Apply an affine operator to a Momentum in fractional reciprocal coordinates.
 
@@ -974,7 +801,7 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
 
     Parameters
     ----------
-    t : AbelianOpr
+    t : PointGroupOpr
         The affine operator to apply. If its base affine space does not
         match the real-space dual of `k`, it is rebased accordingly.
     k : Momentum
@@ -986,4 +813,4 @@ def _(t: AbelianOpr, k: Momentum) -> Momentum:
     Momentum
         Transformed momentum in the same reciprocal lattice space as `k`.
     """
-    return _apply_abelian_opr_to_momentum_cached(t, k)
+    return _apply_point_group_opr_to_momentum_cached(t, k)

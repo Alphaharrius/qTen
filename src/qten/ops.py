@@ -33,9 +33,9 @@ Symbolic operations
 
 Point-group operations
 ----------------------
-- [`joint_abelian_basis()`][qten.pointgroups.ops.joint_abelian_basis]
-- [`abelian_column_symmetrize()`][qten.pointgroups.ops.abelian_column_symmetrize]
-- [`joint_abelian_column_symmetrize()`][qten.pointgroups.ops.joint_abelian_column_symmetrize]
+- [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis]
+- [`point_group_column_symmetrize()`][qten.pointgroups.ops.point_group_column_symmetrize]
+- [`joint_point_group_column_symmetrize()`][qten.pointgroups.ops.joint_point_group_column_symmetrize]
 - [`get_direct_transform()`][qten.pointgroups.ops.get_direct_transform]
 
 Notes
@@ -69,8 +69,8 @@ from .bands import (
     svd_projection as svd_projection,
 )
 from .pointgroups.ops import (
-    abelian_column_symmetrize as abelian_column_symmetrize,
+    point_group_column_symmetrize as point_group_column_symmetrize,
     get_direct_transform as get_direct_transform,
-    joint_abelian_basis as joint_abelian_basis,
-    joint_abelian_column_symmetrize as joint_abelian_column_symmetrize,
+    joint_point_group_basis as joint_point_group_basis,
+    joint_point_group_column_symmetrize as joint_point_group_column_symmetrize,
 )
