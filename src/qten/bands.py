@@ -1399,6 +1399,163 @@ def bandcounts(tensor: Tensor) -> Tensor:
     return Tensor(data=counts, dims=(kspace,))
 
 
+def _validate_band_matrix_tensor(
+    tensor: Tensor, func_name: str
+) -> tuple[MomentumSpace, HilbertSpace]:
+    if tensor.rank() != 3:
+        raise ValueError(
+            f"{func_name} requires a rank-3 tensor with dims "
+            f"(MomentumSpace, HilbertSpace, HilbertSpace), got rank {tensor.rank()}."
+        )
+    if not isinstance(tensor.dims[0], MomentumSpace):
+        raise TypeError(
+            f"{func_name} requires the first dimension to be a MomentumSpace."
+        )
+    if not isinstance(tensor.dims[1], HilbertSpace):
+        raise TypeError(
+            f"{func_name} requires the second dimension to be a HilbertSpace."
+        )
+    if not isinstance(tensor.dims[2], HilbertSpace):
+        raise TypeError(
+            f"{func_name} requires the third dimension to be a HilbertSpace."
+        )
+
+    return cast(MomentumSpace, tensor.dims[0]), cast(HilbertSpace, tensor.dims[1])
+
+
+def _binary_entropy(probabilities: torch.Tensor) -> torch.Tensor:
+    clipped = probabilities.clamp(0.0, 1.0)
+    zeros = torch.zeros((), dtype=clipped.dtype, device=clipped.device)
+    p_log_p = torch.where(clipped > 0, clipped * torch.log(clipped), zeros)
+    q = (1 - clipped).clamp(0.0, 1.0)
+    q_log_q = torch.where(q > 0, q * torch.log(q), zeros)
+    return -(p_log_p + q_log_q)
+
+
+def von_neumann(
+    tensor: Tensor, mode: Literal["sum", "mean", "per-k"] = "mean"
+) -> Union[Tensor, float]:
+    r"""
+    Compute the free-fermion von Neumann entropy of a momentum-resolved band tensor.
+
+    The input is interpreted as a family of single-particle correlation
+    matrices `C(k)` with dimensions `(MomentumSpace, HilbertSpace,
+    HilbertSpace)`. For each momentum sector, the spectrum
+    `lambda_n(k)` is used to evaluate the binary entropy
+
+    \(S(k) = -\sum_n [\lambda_n \log(\lambda_n) + (1-\lambda_n)\log(1-\lambda_n)]\).
+
+    This vanishes exactly when every eigenvalue is `0` or `1`, which is the
+    projector criterion for a pure Slater state.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Rank-3 tensor with dimensions `(MomentumSpace, HilbertSpace,
+        HilbertSpace)`.
+    mode : Literal["sum", "mean", "per-k"], default="mean"
+        Reduction mode for the momentum-resolved entropy:
+        - `"sum"` returns the total entropy over all momentum sectors.
+        - `"mean"` returns the mean entropy over all momentum sectors.
+        - `"per-k"` returns a rank-1 tensor with dims `(MomentumSpace,)`
+          containing one entropy value per momentum.
+
+    Returns
+    -------
+    Tensor | float
+        Momentum-resolved entropy tensor if `mode="per-k"`, else the reduced
+        entropy as a Python float.
+
+    Raises
+    ------
+    ValueError
+        If `mode` is not one of `"sum"`, `"mean"`, or `"per-k"`.
+    """
+    kspace, _ = _validate_band_matrix_tensor(tensor, "von_neumann")
+    eigvals, _ = eigh(tensor)
+    entropy = _binary_entropy(eigvals.data).sum(dim=1)
+    per_k = Tensor(data=entropy, dims=(kspace,))
+    if mode == "per-k":
+        return per_k
+    if mode == "mean":
+        return float(per_k.data.mean().item())
+    if mode == "sum":
+        return float(per_k.data.sum().item())
+    raise ValueError("von_neumann mode must be one of 'sum', 'mean', or 'per-k'.")
+
+
+def assert_pure(
+    tensor: Tensor, threshold: float = 1e-10, report_limit: int = 8
+) -> None:
+    r"""
+    Assert that a momentum-resolved correlation tensor is pure at every momentum.
+
+    Purity is checked through [`von_neumann()`][qten.bands.von_neumann]. A
+    tensor is considered pure when every momentum-sector entropy is zero up to
+    floating-point tolerance.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Rank-3 tensor with dimensions `(MomentumSpace, HilbertSpace,
+        HilbertSpace)`.
+    threshold : float, default=1e-10
+        Maximum allowed von Neumann entropy per momentum sector. Momentum
+        sectors with entropy larger than this threshold are reported as impure.
+    report_limit : int, default=8
+        Maximum number of violating momentum sectors to include in the error
+        message.
+
+    Raises
+    ------
+    ValueError
+        If `threshold` is negative or `report_limit` is not a positive integer.
+    AssertionError
+        If one or more momentum sectors have nonzero entropy.
+    """
+    kspace, _ = _validate_band_matrix_tensor(tensor, "assert_pure")
+    entropy = cast(Tensor, von_neumann(tensor, mode="per-k"))
+    if threshold < 0:
+        raise ValueError("assert_pure requires a non-negative threshold.")
+    if isinstance(report_limit, bool) or not isinstance(report_limit, int):
+        raise TypeError("assert_pure requires report_limit to be an integer.")
+    if report_limit <= 0:
+        raise ValueError("assert_pure requires a positive report_limit.")
+
+    tol = float(threshold)
+    violations = entropy.data > tol
+    if not torch.any(violations):
+        return
+
+    bad_indices = torch.nonzero(violations, as_tuple=False).flatten()
+    bad_count = int(bad_indices.numel())
+    entropy_values = entropy.data[bad_indices]
+    order = torch.argsort(entropy_values, descending=True)
+    ranked = bad_indices[order]
+
+    lines = [
+        "Band tensor is not pure:",
+        f"{bad_count} / {kspace.dim} momentum sectors have von Neumann entropy > {tol:.3e}.",
+    ]
+
+    if bad_count <= report_limit:
+        lines.append("Violating momentum sectors:")
+        for idx in ranked.tolist():
+            k = tuple(kspace.structure.keys())[idx]
+            value = float(entropy.data[idx].item())
+            lines.append(f"  k[{idx}] = {k}: S = {value:.6e}")
+    else:
+        lines.append(
+            f"Largest {min(report_limit, bad_count)} violating momentum sectors:"
+        )
+        for idx in ranked[:report_limit].tolist():
+            k = tuple(kspace.structure.keys())[idx]
+            value = float(entropy.data[idx].item())
+            lines.append(f"  k[{idx}] = {k}: S = {value:.6e}")
+
+    raise AssertionError("\n".join(lines))
+
+
 def bandfillings(tensor: Tensor, frac: float) -> Tensor:
     r"""
     Return eigenvectors for occupied bands up to a filling fraction.
