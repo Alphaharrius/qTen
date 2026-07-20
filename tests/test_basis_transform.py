@@ -698,3 +698,52 @@ def test_downsampling_same_lattice_subset():
     assert torch.allclose(
         sampled.data, torch.tensor([[[0.0]], [[2.0]]], dtype=torch.float64)
     )
+
+
+def test_downsampling_gap_preimage_keeps_both_honeycomb_valleys():
+    """First-preimage drops K'; gap policy recovers both Dirac touchings."""
+    triangular = sy.ImmutableMatrix(
+        [
+            [sy.sqrt(3) / 2, 0],
+            [-sy.Rational(1, 2), 1],
+        ]
+    )
+    lattice = Lattice(
+        basis=triangular,
+        unit_cell={
+            "a": sy.ImmutableMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
+            "b": sy.ImmutableMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
+        },
+        shape=(12, 12),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    a = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]), space=lattice)
+    b = Offset(rep=ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]), space=lattice)
+    h_space = HilbertSpace.new([_mode(a, "a"), _mode(b, "b")])
+
+    # Synthetic Dirac cones at K and K': gapless only there.
+    data = torch.zeros(k_space.dim, 2, 2, dtype=torch.complex128)
+    for i, k in enumerate(k_space.elements()):
+        kx = float(k.rep[0, 0])
+        ky = float(k.rep[1, 0])
+        near_K = abs(kx - 1 / 3) < 1e-8 and abs(ky - 1 / 3) < 1e-8
+        near_Kp = abs(kx - 2 / 3) < 1e-8 and abs(ky - 2 / 3) < 1e-8
+        gap = 0.0 if (near_K or near_Kp) else 1.0
+        data[i, 0, 0] = gap
+        data[i, 1, 1] = -gap
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+
+    folded = bandfold(BasisTransform(sy.ImmutableMatrix.eye(2) * 2), tensor_in)
+    first = downsampling(tensor_in, folded.dims[0], preimage="first")
+    gap = downsampling(tensor_in, folded.dims[0], preimage="gap")
+
+    def _touching_count(sampled: Tensor) -> int:
+        count = 0
+        for block in sampled.data:
+            evals = torch.linalg.eigvalsh(0.5 * (block + block.mH))
+            if float((evals[1:] - evals[:-1]).min()) < 1e-10:
+                count += 1
+        return count
+
+    assert _touching_count(first) == 1
+    assert _touching_count(gap) == 2

@@ -37,11 +37,12 @@ symbolic state spaces label tensor axes, and linear algebra routines diagonalize
 the momentum-sector matrices when filling or selecting bands.
 """
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import (
     Any,
     Callable,
     Dict,
+    List,
     Literal,
     Optional,
     Sequence,
@@ -2580,33 +2581,22 @@ def proj_wannierization(
     )
 
 
-def _momentum_preimage_indices(
+def _momentum_all_preimages(
     src: MomentumSpace,
     dest: MomentumSpace,
     transform: Union[np.ndarray, Callable[[Momentum], Momentum]],
-    *,
-    device: Optional[Device] = None,
-) -> Tensor[torch.LongTensor]:
+) -> List[List[int]]:
     r"""
-    For each destination momentum, return one source index that maps onto it.
+    For each destination momentum, return all source indices that map onto it.
 
-    This is the dest-centric counterpart of
-    [`_momentum_match_indices`][qten.bands._momentum_match_indices]. Source
-    momenta are mapped into the destination fractional frame; the first source
-    (in `src` order) that lands on each destination sector is retained. Every
-    destination sector must have at least one preimage.
+    Source momenta are mapped into the destination fractional frame. Every
+    destination sector must have at least one preimage. Within each destination
+    bucket, source indices appear in `src` order.
     """
     src_elements = src.elements()
     dest_elements = dest.elements()
-    torch_device = device.torch_device() if device is not None else None
     if not dest_elements:
-        return Tensor(
-            data=cast(
-                torch.LongTensor,
-                torch.tensor([], dtype=torch.long, device=torch_device),
-            ),
-            dims=(dest,),
-        )
+        return []
     if not src_elements:
         raise ValueError(
             "Source MomentumSpace is empty; cannot cover destination momenta."
@@ -2647,21 +2637,58 @@ def _momentum_preimage_indices(
         dtype=np.int64,
     )
 
-    first_src_for_coord: Dict[Tuple[int, ...], int] = {}
+    src_for_coord: Dict[Tuple[int, ...], List[int]] = defaultdict(list)
     for src_i, coord in enumerate(mapped_scaled):
         key = tuple(int(x) for x in coord)
-        if key not in first_src_for_coord:
-            first_src_for_coord[key] = src_i
+        src_for_coord[key].append(src_i)
 
-    indices = np.empty(len(dest_elements), dtype=np.int64)
+    all_preimages: List[List[int]] = []
     for dest_i, coord in enumerate(dest_coords):
         key = tuple(int(x) for x in coord)
-        if key not in first_src_for_coord:
+        bucket = src_for_coord.get(key)
+        if not bucket:
             raise ValueError(
                 f"Destination momentum at index {dest_i} with scaled coord "
                 f"{key} (D={D}) has no preimage in the source MomentumSpace."
             )
-        indices[dest_i] = first_src_for_coord[key]
+        all_preimages.append(bucket)
+    return all_preimages
+
+
+def _momentum_preimage_indices(
+    src: MomentumSpace,
+    dest: MomentumSpace,
+    transform: Union[np.ndarray, Callable[[Momentum], Momentum]],
+    *,
+    device: Optional[Device] = None,
+    choose: Optional[Callable[[int, Sequence[int]], int]] = None,
+) -> Tensor[torch.LongTensor]:
+    r"""
+    For each destination momentum, return one source index that maps onto it.
+
+    This is the dest-centric counterpart of
+    [`_momentum_match_indices`][qten.bands._momentum_match_indices]. By default
+    the first source (in `src` order) is retained. Pass `choose(dest_i,
+    src_indices)` to select among coset partners.
+    """
+    torch_device = device.torch_device() if device is not None else None
+    dest_elements = dest.elements()
+    if not dest_elements:
+        return Tensor(
+            data=cast(
+                torch.LongTensor,
+                torch.tensor([], dtype=torch.long, device=torch_device),
+            ),
+            dims=(dest,),
+        )
+
+    all_preimages = _momentum_all_preimages(src, dest, transform)
+    if choose is None:
+        indices = np.array([bucket[0] for bucket in all_preimages], dtype=np.int64)
+    else:
+        indices = np.empty(len(all_preimages), dtype=np.int64)
+        for dest_i, bucket in enumerate(all_preimages):
+            indices[dest_i] = int(choose(dest_i, bucket))
 
     return Tensor(
         data=cast(
@@ -2672,11 +2699,40 @@ def _momentum_preimage_indices(
     )
 
 
+def _spectral_touching_score(block: torch.Tensor) -> float:
+    """Return the smallest adjacent eigenvalue gap of a Hermitian block."""
+    herm = 0.5 * (block + block.mH)
+    evals = torch.linalg.eigvalsh(herm)
+    if evals.numel() == 0:
+        return float("inf")
+    if evals.numel() == 1:
+        return float(evals.abs().item())
+    return float((evals[1:] - evals[:-1]).min().item())
+
+
+def _choose_gap_preimage(
+    data: torch.Tensor,
+    dest_i: int,
+    src_indices: Sequence[int],
+) -> int:
+    """Pick the coset partner whose matrix block is closest to a band touching."""
+    del dest_i
+    best_src = int(src_indices[0])
+    best_score = float("inf")
+    for src_i in src_indices:
+        score = _spectral_touching_score(data[int(src_i)])
+        if score < best_score:
+            best_score = score
+            best_src = int(src_i)
+    return best_src
+
+
 def _downsample_gather_indices(
     k_src: MomentumSpace,
     k_target: MomentumSpace,
     *,
     device: Optional[Device] = None,
+    choose: Optional[Callable[[int, Sequence[int]], int]] = None,
 ) -> Tensor[torch.LongTensor]:
     """Return source indices that cover each target momentum once."""
     if k_src == k_target:
@@ -2690,6 +2746,7 @@ def _downsample_gather_indices(
         )
 
     if k_src.same_rays(k_target) or (k_target in k_src):
+        # Unique embedding / permutation: coset selection does not apply.
         if k_src.same_rays(k_target):
             indices = permutation_order(k_src, k_target)
         else:
@@ -2727,12 +2784,16 @@ def _downsample_gather_indices(
     src_basis_np = np.array(src_reciprocal.basis.evalf(), dtype=precision.np_float)
     tgt_basis_np = np.array(tgt_reciprocal.basis.evalf(), dtype=precision.np_float)
     M_rebase = np.linalg.solve(tgt_basis_np, src_basis_np)
-    return _momentum_preimage_indices(k_src, k_target, M_rebase, device=device)
+    return _momentum_preimage_indices(
+        k_src, k_target, M_rebase, device=device, choose=choose
+    )
 
 
 def downsampling(
     T: Tensor,
     k_target: MomentumSpace,
+    *,
+    preimage: Literal["first", "gap"] = "first",
 ) -> Tensor:
     r"""
     Restrict a momentum-resolved tensor onto a target Brillouin-zone grid.
@@ -2753,9 +2814,18 @@ def downsampling(
     Otherwise the source and target reciprocal lattices are related by the
     Cartesian rebase
     \(\kappa_{\mathrm{target}} = M\kappa_{\mathrm{source}}\pmod{1}\),
-    with \(M = B_{\mathrm{target}}^{-1} B_{\mathrm{source}}\). For each target
-    momentum, the first source sector (in source order) that maps onto it is
-    gathered. Coset partners that fold to the same target sector are discarded.
+    with \(M = B_{\mathrm{target}}^{-1} B_{\mathrm{source}}\). Several source
+    momenta (coset partners / umklapp images) can map to the same target
+    sector; `preimage` chooses which one is kept.
+
+    This choice is what goes wrong for honeycomb Dirac cones under naive
+    downsampling: \(K\) and \(K'\) fold to *different* reduced-zone points, but
+    each of those points also has mundane coset partners. Keeping only the
+    first partner in source order typically preserves one valley and replaces
+    the other by a gapped preimage — one cone "flies away". That routing is a
+    **k-space coset choice**, not a Hilbert-space Clifford / Fourier
+    \(\gamma\)-matrix. Orbital phase matrices from
+    [`get_band_fold`][qten.bands.get_band_fold] do not move eigenvalues.
 
     Parameters
     ----------
@@ -2765,6 +2835,15 @@ def downsampling(
     k_target : MomentumSpace
         Target momentum grid. A common choice is `folded.dims[0]` after
         [`bandfold`][qten.bands.bandfold].
+    preimage : {"first", "gap"}, default="first"
+        Coset-selection policy when lattices differ:
+
+        - `"first"`: keep the first source sector in source order (legacy).
+        - `"gap"`: among partners of each target \(k'\), keep the block whose
+          Hermitian spectrum is closest to a band touching (smallest adjacent
+          eigenvalue gap). This is lattice-agnostic and recovers both honeycomb
+          valleys without special-casing \(K/K'\`. Requires a rank-3 tensor with
+          square matrix legs.
 
     Returns
     -------
@@ -2775,8 +2854,9 @@ def downsampling(
     ------
     ValueError
         If `T` has no axes, if either momentum space is empty or mixes
-        reciprocal lattices, or if some target momentum has no preimage in
-        `T.dims[0]`.
+        reciprocal lattices, if some target momentum has no preimage in
+        `T.dims[0]`, or if `preimage="gap"` is used with an incompatible tensor
+        shape.
     TypeError
         If `T.dims[0]` or `k_target` is not a
         [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace], or if a
@@ -2793,6 +2873,12 @@ def downsampling(
     assert sampled.dims[0] == folded.dims[0]
     ```
 
+    Keep Dirac touchings under honeycomb \(2\times 2\) blocking:
+
+    ```python
+    sampled = downsampling(bloch, folded.dims[0], preimage="gap")
+    ```
+
     See Also
     --------
     [`bandfold`][qten.bands.bandfold]
@@ -2807,6 +2893,10 @@ def downsampling(
         )
     if not isinstance(k_target, MomentumSpace):
         raise TypeError(f"k_target must be a MomentumSpace, but got {type(k_target)}")
+    if preimage not in ("first", "gap"):
+        raise ValueError(
+            f"preimage must be 'first' or 'gap', got {preimage!r}."
+        )
 
     k_src = cast(MomentumSpace, T.dims[0])
     if not k_src.elements():
@@ -2814,13 +2904,25 @@ def downsampling(
     if not k_target.elements():
         raise ValueError("Target MomentumSpace is empty")
 
-    gather = _downsample_gather_indices(k_src, k_target, device=T.device)
+    choose_fn: Optional[Callable[[int, Sequence[int]], int]] = None
+    if preimage == "gap":
+        if T.rank() != 3 or T.data.shape[-1] != T.data.shape[-2]:
+            raise ValueError(
+                "preimage='gap' requires a rank-3 tensor with square matrix legs."
+            )
+
+        def choose_fn(dest_i: int, src_indices: Sequence[int]) -> int:
+            return _choose_gap_preimage(T.data, dest_i, src_indices)
+
+    gather = _downsample_gather_indices(
+        k_src, k_target, device=T.device, choose=choose_fn
+    )
 
     if k_src == k_target:
         return T
 
     # Same symbolic momentum labels: reuse StateSpace-aware indexing.
-    if k_src.same_rays(k_target) or (k_target in k_src):
+    if choose_fn is None and (k_src.same_rays(k_target) or (k_target in k_src)):
         index = (k_target,) + (slice(None),) * (T.rank() - 1)
         return cast(Tensor, T[index])
 
