@@ -3577,9 +3577,7 @@ def diagonal(tensor: TensorType) -> Union[TensorType, Tensor]:
         sizes.
     """
     if tensor.rank() < 2:
-        raise ValueError(
-            f"diagonal requires at least rank 2, got rank {tensor.rank()}"
-        )
+        raise ValueError(f"diagonal requires at least rank 2, got rank {tensor.rank()}")
     row_dim, col_dim = tensor.dims[-2], tensor.dims[-1]
     if row_dim.dim != col_dim.dim:
         raise ValueError(
