@@ -20,6 +20,7 @@ from qten.bands import (
     bandfold,
     bandtransform,
     bandunfold,
+    downsampling,
     get_band_fold,
     get_band_transform,
 )
@@ -647,3 +648,54 @@ def test_momentum_transform():
     # Formula: new_rep = M^T @ old_rep = [2] @ [0.5] = [1]
     assert new_k.rep == ImmutableDenseMatrix([1])
     assert new_k.space.basis == ImmutableDenseMatrix([[sy.pi]])
+
+
+def test_downsampling_matches_bandfold_momentum_space():
+    basis = ImmutableDenseMatrix([[1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    h_space = HilbertSpace.new(
+        [_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))]
+    )
+    data = torch.arange(4, dtype=torch.float64).reshape(4, 1, 1)
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+
+    transform = BasisTransform(ImmutableDenseMatrix([[2]]))
+    folded = bandfold(transform, tensor_in)
+    sampled = downsampling(tensor_in, folded.dims[0])
+
+    assert sampled.dims[0] == folded.dims[0]
+    assert sampled.dims[1] == h_space
+    assert sampled.dims[2] == h_space
+    # First preimages: k=0 -> fold 0 (value 0), k=1/4 -> fold 1/2 (value 1)
+    assert torch.allclose(
+        sampled.data, torch.tensor([[[0.0]], [[1.0]]], dtype=torch.float64)
+    )
+
+
+def test_downsampling_same_lattice_subset():
+    basis = ImmutableDenseMatrix([[1]])
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+        unit_cell={"r": ImmutableDenseMatrix([0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    h_space = HilbertSpace.new(
+        [_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))]
+    )
+    data = torch.arange(4, dtype=torch.float64).reshape(4, 1, 1)
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+
+    k_subset = k_space[::2]
+    sampled = downsampling(tensor_in, k_subset)
+
+    assert sampled.dims[0] == k_subset
+    assert torch.allclose(
+        sampled.data, torch.tensor([[[0.0]], [[2.0]]], dtype=torch.float64)
+    )
+
