@@ -698,4 +698,3 @@ def test_downsampling_same_lattice_subset():
     assert torch.allclose(
         sampled.data, torch.tensor([[[0.0]], [[2.0]]], dtype=torch.float64)
     )
-

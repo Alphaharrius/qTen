@@ -2806,9 +2806,7 @@ def downsampling(
             f"but is of type {type(T.dims[0])}"
         )
     if not isinstance(k_target, MomentumSpace):
-        raise TypeError(
-            f"k_target must be a MomentumSpace, but got {type(k_target)}"
-        )
+        raise TypeError(f"k_target must be a MomentumSpace, but got {type(k_target)}")
 
     k_src = cast(MomentumSpace, T.dims[0])
     if not k_src.elements():
