@@ -32,7 +32,7 @@ from .elements import (
     PointGroupOpr,
 )
 from .finite import FinitePointGroup
-from ..geometries import Offset
+from ..geometries import Lattice, Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
 from ..phys.spin import Spin, contains_spin, expand_spin, su2_numeric
 from ..symbolics import (
@@ -48,6 +48,12 @@ from ..utils.devices import Device
 from ..precision import get_precision_config
 
 
+def _relative_tolerance(dtype: torch.dtype, size: int = 1) -> float:
+    """Precision- and dimension-aware relative numerical tolerance."""
+    real_dtype = torch.empty((), dtype=dtype).real.dtype
+    return torch.finfo(real_dtype).eps * max(100, size)
+
+
 def _same_phase(a: sy.Expr, b: sy.Expr) -> bool:
     diff = sy.simplify(a - b)
     if diff == 0:
@@ -59,6 +65,23 @@ def _same_phase(a: sy.Expr, b: sy.Expr) -> bool:
 
     equals = diff.equals(0)
     return bool(equals)
+
+
+def _is_unit_modulus(value: sy.Expr) -> bool:
+    """Return whether a coefficient is a numerically evaluable U(1) phase."""
+    if value.free_symbols:
+        return False
+    modulus_sq = sy.simplify(sy.conjugate(value) * value)
+    if _same_phase(modulus_sq, sy.Integer(1)):
+        try:
+            complex(sy.N(value))
+            return True
+        except (TypeError, ValueError):
+            return False
+    try:
+        return abs(abs(complex(sy.N(value))) - 1.0) <= 1e-10
+    except (TypeError, ValueError):
+        return False
 
 
 def _phase_basis(opr: PointGroupOpr, phase: sy.Expr) -> PointGroupBasis:
@@ -86,7 +109,7 @@ def _attach_sector_label(seed: U1Basis | None, label: Any) -> U1Basis:
 
 
 def _attach_degeneracy_tag(seed: U1Basis, index: int) -> U1Basis:
-    tag = index
+    tag = SymmetryDegeneracy(index)
     try:
         return seed.replace(tag)
     except ValueError:
@@ -126,7 +149,7 @@ def _labels_with_degeneracy(raw_labels: list[U1Basis]) -> list[U1Basis]:
 
 
 def _svd_independent_columns(
-    columns: Sequence[Tensor], row_dim: HilbertSpace, tol: float
+    columns: Sequence[Tensor], row_dim: HilbertSpace
 ) -> list[Tensor]:
     if not columns:
         return []
@@ -135,7 +158,13 @@ def _svd_independent_columns(
 
     stacked = cat(list(columns), dim=-1)
     u, singular_vals, _ = torch.linalg.svd(stacked.data, full_matrices=False)
-    rank = int(torch.count_nonzero(singular_vals > tol).item())
+    if singular_vals.numel() == 0:
+        return []
+    largest = float(singular_vals[0].item())
+    rank_cutoff = (
+        _relative_tolerance(stacked.data.dtype, max(stacked.data.shape)) * largest
+    )
+    rank = int(torch.count_nonzero(singular_vals > rank_cutoff).item())
     if rank == 0:
         return []
 
@@ -152,6 +181,87 @@ class FiniteIrrepSector:
     group: str
     irrep: str
     dim: int
+
+
+@dataclass(frozen=True)
+class SpinfulPhaseSector:
+    r"""Label for an abelian spinorial sector with phase \(\omega^{2n}=1\)."""
+
+    phase: sy.Expr
+    spatial_order: int
+
+
+@dataclass(frozen=True)
+class SymmetryDegeneracy:
+    """Typed copy index for repeated symmetry-sector labels."""
+
+    index: int
+
+
+def point_group_operator_symmetrize(
+    group: FinitePointGroup,
+    operator: Tensor,
+    *,
+    fixpoint: Offset | None = None,
+    rebase_fixpoint: bool = False,
+) -> Tensor:
+    r"""
+    Average an operator over a finite point group by unitary conjugation.
+
+    This computes
+    \(A_G = |G|^{-1}\sum_g D(g) A D(g)^\dagger\). Unlike character
+    projection of state vectors, conjugation averaging is valid for spin-1/2
+    without double-group character tables: the sign ambiguity of each SU(2)
+    lift cancels between \(D(g)\) and \(D(g)^\dagger\).
+
+    The two matrix dimensions of `operator` must describe the same
+    [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]. That space
+    must be closed under every point-group operation; otherwise representation
+    assembly raises `ValueError`.
+    """
+    if operator.rank() != 2:
+        raise ValueError("operator must be a rank-2 Hilbert-space tensor.")
+    row_dim, col_dim = operator.dims
+    if not isinstance(row_dim, HilbertSpace) or not isinstance(col_dim, HilbertSpace):
+        raise ValueError("operator dimensions must both be HilbertSpace objects.")
+    if row_dim != col_dim:
+        raise ValueError(
+            "operator dimensions must use the same ordered Hilbert-space basis, "
+            "including identical U(1) gauges."
+        )
+
+    elements = group.elements()
+    if not elements:
+        raise ValueError("Finite point group contains no elements.")
+
+    averaged: Tensor | None = None
+    for element in elements:
+        element_opr = PointGroupOpr(element)
+        if fixpoint is not None:
+            element_opr = element_opr.fixpoint_at(fixpoint, rebase=rebase_fixpoint)
+        representation = _hilbert_opr_repr(
+            element_opr, row_dim, device=operator.device
+        ).to_device(operator.device)
+        identity = torch.eye(
+            representation.data.shape[0],
+            dtype=representation.data.dtype,
+            device=representation.data.device,
+        )
+        tolerance = _relative_tolerance(
+            representation.data.dtype, representation.data.shape[0]
+        )
+        gram = representation.data.conj().T @ representation.data
+        if not torch.allclose(gram, identity, rtol=tolerance, atol=tolerance):
+            max_error = float(torch.max(torch.abs(gram - identity)).item())
+            raise ValueError(
+                "Point-group operator averaging requires a unitary Hilbert-space "
+                f"representation; max |D†D-I|={max_error:.3e} for {element}."
+            )
+        transformed = representation @ operator @ representation.h(-2, -1)
+        averaged = transformed if averaged is None else averaged + transformed
+
+    assert averaged is not None
+    return averaged / len(elements)
 
 
 def _finite_point_group_column_symmetrize(
@@ -181,7 +291,11 @@ def _finite_point_group_column_symmetrize(
         )
 
     row_dim, seeds = _column_symmetrize_context(w)
-    tol = 1e-10
+    if contains_spin(row_dim):
+        raise NotImplementedError(
+            "Spinful finite-group projection requires double-group character "
+            "tables; ordinary point-group irreps are not valid for spin-1/2."
+        )
     single_col = IndexSpace.linear(1)
 
     elements = group.elements()
@@ -199,6 +313,8 @@ def _finite_point_group_column_symmetrize(
         reps.append(
             _hilbert_opr_repr(element_opr, row_dim, device=w.device).to_device(w.device)
         )
+    working_dtype = reps[0].data.dtype
+    tol = _relative_tolerance(working_dtype, row_dim.dim)
     group_order = len(elements)
     irrep_table = group.irreps["irreps"]
 
@@ -224,13 +340,15 @@ def _finite_point_group_column_symmetrize(
     pooled_cols: dict[U1Basis, list[Tensor]] = {}
     label_order: list[U1Basis] = []
     for j, seed in enumerate(seeds):
-        col = w[:, j : j + 1].clone().replace_dim(1, single_col)
+        col = w[:, j : j + 1].clone().replace_dim(1, single_col).astype(working_dtype)
+        input_norm = abs(col.norm().item())
+        projection_cutoff = tol * input_norm
         candidates: list[tuple[float, Tensor, U1Basis]] = []
         for sector_label, projector in sector_projectors:
             projected = projector @ col
             projected_norm = projected.norm()
             norm_value = abs(projected_norm.item())
-            if norm_value <= tol:
+            if norm_value <= projection_cutoff:
                 continue
             candidates.append(
                 (
@@ -255,7 +373,7 @@ def _finite_point_group_column_symmetrize(
     projected_cols: list[Tensor] = []
     raw_labels: list[U1Basis] = []
     for label in label_order:
-        independent = _svd_independent_columns(pooled_cols[label], row_dim, tol)
+        independent = _svd_independent_columns(pooled_cols[label], row_dim)
         for col in independent:
             projected_cols.append(col)
             raw_labels.append(label)
@@ -312,6 +430,40 @@ def _split_spin_basis(psi: U1Basis) -> tuple[tuple[Any, ...], Spin, sy.Expr]:
     return nons, spin_reps[0], psi.coef
 
 
+def _validate_hilbert_basis(space: HilbertSpace) -> None:
+    """Require unique physical rays with numerical unit-modulus gauges."""
+    seen_rays: dict[U1Basis, U1Basis] = {}
+    for psi in space.elements():
+        ray = psi.rays()
+        if ray in seen_rays:
+            raise ValueError(
+                "Hilbert-space basis states must represent unique physical rays; "
+                f"{seen_rays[ray]} and {psi} differ only by a gauge coefficient."
+            )
+        seen_rays[ray] = psi
+        if not _is_unit_modulus(psi.coef):
+            raise ValueError(
+                "Hilbert-space basis coefficients must be numerically evaluable "
+                f"unit modulus U(1) phases; got coef={psi.coef} in {psi}"
+            )
+
+
+def _validate_spinful_space(space: HilbertSpace) -> None:
+    """Require one spin-1/2 label and a normalized phase on every basis state."""
+    _validate_hilbert_basis(space)
+    invalid = [
+        (psi, sum(type(rep) is Spin for rep in psi.base))
+        for psi in space.elements()
+        if sum(type(rep) is Spin for rep in psi.base) != 1
+    ]
+    if invalid:
+        psi, count = invalid[0]
+        raise ValueError(
+            "A spinful Hilbert space must carry exactly one Spin label on every "
+            f"basis state; found {count} in {psi}"
+        )
+
+
 def _transform_nons_spin_irreps(
     opr: PointGroupOpr, nons: tuple[Any, ...]
 ) -> tuple[sy.Expr, tuple[Any, ...]]:
@@ -337,26 +489,24 @@ def _transform_nons_spin_irreps(
 
 def _fold_offset_irreps(nons: tuple[Any, ...]) -> tuple[Any, ...]:
     """Replace exact-type Offset irreps by their intra-cell fractional form."""
-    return tuple(
-        rep.fractional() if type(rep) is Offset else rep for rep in nons
-    )
+    return tuple(rep.fractional() if type(rep) is Offset else rep for rep in nons)
 
 
 def _space_uses_fractional_offsets(space: HilbertSpace) -> bool:
     """
-    True if every Offset label in `space` is already intra-cell fractional.
+    True if every Offset is lattice-backed and already intra-cell fractional.
 
-    Bloch / region_hilbert orbital spaces typically store fractional lattice
-    offsets. PointGroupOpr images can leave the unit cell; D(g) must fold them
-    back before lookup. Open real-space patches (integer sites outside [0,1))
-    keep exact matching so fractional folding does not falsely close the space.
+    Unit-cell Hilbert spaces store fractional lattice offsets. PointGroupOpr
+    images can leave the unit cell, so D(g) folds them back before lookup.
+    Generic AffineSpace offsets are never folded: coordinate range alone does
+    not imply periodic boundary conditions.
     """
     saw_offset = False
     for psi in space.elements():
         for rep in psi.base:
             if type(rep) is Offset:
                 saw_offset = True
-                if rep != rep.fractional():
+                if not isinstance(rep.space, Lattice) or rep != rep.fractional():
                     return False
     return saw_offset
 
@@ -372,8 +522,9 @@ def spinful_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Span:
     """
     nons, spin, psi_coef = _split_spin_basis(psi)
     spatial_coef, new_nons = _transform_nons_spin_irreps(opr, nons)
-    # Standalone transform keeps the raw geometric image; callers that need
-    # periodic/Bloch matching should use spinful_hilbert_opr_repr.
+    # Standalone transform keeps the raw geometric image. The Hilbert-space
+    # representation can fold unit-cell labels for local/Γ-point matching;
+    # nonzero-momentum Bloch translation phases are not represented.
 
     terms: list[U1Basis] = []
     for amp, spin_out in expand_spin(opr, spin):
@@ -411,10 +562,13 @@ def spinful_hilbert_opr_repr(
     prototype and is suitable for full finite-group symmetrization.
 
     When every [`Offset`][qten.geometries.spatials.Offset] label in `space` is
-    already intra-cell fractional (typical for Bloch / `region_hilbert`
-    spaces), orbital images are folded with `Offset.fractional()` before
-    lookup so periodic lattice translations match the stored basis.
+    lattice-backed and already intra-cell fractional, orbital images are
+    folded with `Offset.fractional()` before lookup so primitive-lattice
+    translations match the stored unit-cell basis. This is a local/Γ-point
+    representation; nonzero-momentum Bloch phases require an explicit
+    momentum-dependent representation and are not inserted here.
     """
+    _validate_spinful_space(space)
     precision = get_precision_config()
     torch_device = device.torch_device() if device is not None else None
     n = space.dim
@@ -435,14 +589,15 @@ def spinful_hilbert_opr_repr(
 
     elements = list(space.elements())
     fold_offsets = _space_uses_fractional_offsets(space)
-    # Lookup: (non-spin irrep tuple, Spin) -> basis index
-    index_of: dict[tuple[tuple[Any, ...], Spin], int] = {}
+    # Lookup: (non-spin irrep tuple, Spin) -> (basis index, basis coefficient)
+    index_of: dict[tuple[tuple[Any, ...], Spin], tuple[int, complex]] = {}
     parsed: list[tuple[tuple[Any, ...], Spin, complex, int]] = []
     for psi in elements:
         nons, spin, coef = _split_spin_basis(psi)
         j = space.structure[psi]
-        index_of[(nons, spin)] = j
-        parsed.append((nons, spin, complex(sy.N(coef)), j))
+        numeric_coef = complex(sy.N(coef))
+        index_of[(nons, spin)] = (j, numeric_coef)
+        parsed.append((nons, spin, numeric_coef, j))
 
     # Cache orbital images of unique non-spin labels
     nons_image: dict[tuple[Any, ...], tuple[complex, tuple[Any, ...]]] = {}
@@ -459,7 +614,7 @@ def spinful_hilbert_opr_repr(
         s_in = spin_index[spin_in]
         for s_out, spin_out in enumerate(spin_list):
             amp = u[s_out, s_in]
-            if amp.abs() < 1e-15:
+            if amp.abs().item() == 0.0:
                 continue
             key = (new_nons, spin_out)
             if key not in index_of:
@@ -467,8 +622,8 @@ def spinful_hilbert_opr_repr(
                     f"Spinful image ({new_nons}, {spin_out}) is not in space "
                     f"{space}. Space is not closed under {opr}."
                 )
-            i = index_of[key]
-            data[i, j] += (spatial_coef * psi_coef) * amp
+            i, target_coef = index_of[key]
+            data[i, j] += (target_coef.conjugate() * spatial_coef * psi_coef) * amp
 
     return Tensor(data=data, dims=(space, space))
 
@@ -615,6 +770,7 @@ def _internal_transform_basis(
 def _hilbert_opr_repr(
     opr: PointGroupOpr, space: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
+    _validate_hilbert_basis(space)
     if contains_spin(space):
         if _contains_point_group_basis(space):
             raise NotImplementedError(
@@ -642,7 +798,8 @@ def _hilbert_opr_repr(
 
         i = space.structure[target]
         j = space.structure[source]
-        data[i, j] += complex(sy.N(transformed.coef))
+        matrix_element = sy.simplify(sy.conjugate(target.coef) * transformed.coef)
+        data[i, j] += complex(sy.N(matrix_element))
 
     return Tensor(data=data, dims=(space, space))
 
@@ -784,18 +941,27 @@ def point_group_column_symmetrize(
     Symmetrize the columns of `w` by projecting each one onto symmetry sectors.
 
     For a finite-order abelian operator `opr` of order \(n\), each exact
-    symmetry sector is labeled by a phase \(\omega\) with \(\omega^n = 1\).
+    spinless symmetry sector is labeled by a phase \(\omega^n = 1\). For a
+    spin-1/2 representation, this routine uses the safe common period
+    \(N=2n\), because a \(2\pi\) proper spin rotation is \(-I\), and labels it by
+    [`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector].
     This function builds the full operator representation `G` on the ambient
     Hilbert space `w.dims[0]` and applies the projector
-    \(P_\omega = \frac{1}{n}\sum_{k=0}^{n-1}\omega^{-k}G^k\),
+    \(P_\omega = \frac{1}{N}\sum_{k=0}^{N-1}\omega^{-k}G^k\),
 
     which is the rendered form of the code-level convention
-    `P_omega = (1/n) * sum_{k=0}^{n-1} omega^(-k) G^k`.
+    `P_omega = (1/N) * sum_{k=0}^{N-1} omega^(-k) G^k`.
+    Here \(N=n\) for spinless spaces and \(N=2n\) for spinful spaces; \(2n\)
+    need not be the minimal order for operations whose proper spin factor is
+    identity.
 
     If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup], this
-    routine dispatches to the non-abelian character-projector path
+    routine dispatches to the non-abelian character-projector path for
+    spinless spaces
     \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\), using the
-    packaged irreducible-representation character table.
+    packaged irreducible-representation character table. Spinful finite-group
+    projection raises `NotImplementedError` until double-group character data
+    is available.
 
     The projector is applied to each input column separately. When
     `full_sector` is `True`, every
@@ -850,44 +1016,63 @@ def point_group_column_symmetrize(
     row_dim, seeds = _column_symmetrize_context(w)
 
     g_full = _hilbert_opr_repr(opr, row_dim, device=w.device).to_device(w.device)
-    order = opr.g.group_order()
+    spatial_order = opr.g.group_order()
+    spinful = contains_spin(row_dim)
+    order = 2 * spatial_order if spinful else spatial_order
     ident = eye((row_dim, row_dim)).astype(g_full.data.dtype).to_device(g_full.device)
     single_col = IndexSpace.linear(1)
-    tol = 1e-10
+    tol = _relative_tolerance(g_full.data.dtype, row_dim.dim)
 
     g_powers: list[Tensor] = [ident]
     for _ in range(1, order):
         g_powers.append(g_powers[-1] @ g_full)
 
-    sector_projectors: list[tuple[PointGroupBasis, Tensor]] = []
+    closure = g_powers[-1] @ g_full
+    if not torch.allclose(closure.data, ident.data, rtol=0.0, atol=tol):
+        raise ValueError(
+            f"Operator representation does not close at expected order {order}"
+        )
+
+    sector_projectors: list[tuple[Any, Tensor]] = []
     for m in range(order):
         phase_exact = sy.simplify(sy.exp(2 * sy.pi * sy.I * m / order))
-        sector_basis = _phase_basis(opr, phase_exact)
+        sector_label: Any
+        if spinful:
+            sector_label = SpinfulPhaseSector(
+                phase=phase_exact,
+                spatial_order=spatial_order,
+            )
+        else:
+            sector_label = _phase_basis(opr, phase_exact)
         phase_scalar = complex(sy.N(phase_exact))
 
         projector = 0 * ident
         for k, g_power in enumerate(g_powers):
             projector = projector + (phase_scalar ** (-k)) * g_power
-        sector_projectors.append((sector_basis, projector / order))
+        sector_projectors.append((sector_label, projector / order))
 
     projected_cols: list[Tensor] = []
     raw_labels: list[U1Basis] = []
     for j, seed in enumerate(seeds):
-        col = w[:, j : j + 1].clone().replace_dim(1, single_col)
+        col = (
+            w[:, j : j + 1].clone().replace_dim(1, single_col).astype(g_full.data.dtype)
+        )
+        input_norm = abs(col.norm().item())
+        projection_cutoff = tol * input_norm
         candidates: list[tuple[float, Tensor, U1Basis]] = []
-        for sector_basis, projector in sector_projectors:
+        for sector_label, projector in sector_projectors:
             projected = projector @ col
 
             projected_norm = projected.norm()
             norm_value = abs(projected_norm.item())
-            if norm_value <= tol:
+            if norm_value <= projection_cutoff:
                 continue
 
             candidates.append(
                 (
                     norm_value,
                     projected / norm_value,
-                    _attach_basis_label(seed, sector_basis),
+                    _attach_sector_label(seed, sector_label),
                 )
             )
 
@@ -959,24 +1144,48 @@ def joint_point_group_column_symmetrize(
     if len(oprs) == 1:
         return point_group_column_symmetrize(oprs[0], w, full_sector=full_sector)
     row_dim, seeds = _column_symmetrize_context(w)
+    if contains_spin(row_dim):
+        raise NotImplementedError(
+            "Joint spinful projection requires double-group compatibility; "
+            "spatially commuting operations can have anticommuting spin lifts."
+        )
 
     single_col = IndexSpace.linear(1)
-    tol = 1e-10
-
     joint_sector_bases = _joint_phase_basis(oprs)
     all_sector_projectors: list[list[tuple[sy.Expr, Tensor]]] = []
+    representations: list[Tensor] = []
     dtype = w.data.dtype
     device = w.device
     for opr in oprs:
         g_full = _hilbert_opr_repr(opr, row_dim, device=w.device).to_device(w.device)
         dtype = g_full.data.dtype
         device = g_full.device
+        tolerance = _relative_tolerance(dtype, row_dim.dim)
+        for previous in representations:
+            commutator = g_full.data @ previous.data - previous.data @ g_full.data
+            if not torch.allclose(
+                commutator,
+                torch.zeros_like(commutator),
+                rtol=0.0,
+                atol=tolerance,
+            ):
+                max_error = float(torch.max(torch.abs(commutator)).item())
+                raise ValueError(
+                    "Joint point-group projection requires commuting Hilbert-space "
+                    f"representations; max |[D_i,D_j]|={max_error:.3e}."
+                )
+        representations.append(g_full)
         order = opr.g.group_order()
         ident = eye((row_dim, row_dim)).astype(dtype).to_device(device)
 
         g_powers: list[Tensor] = [ident]
         for _ in range(1, order):
             g_powers.append(g_powers[-1] @ g_full)
+        closure = g_powers[-1] @ g_full
+        if not torch.allclose(closure.data, ident.data, rtol=0.0, atol=tolerance):
+            raise ValueError(
+                f"Operator representation does not close at expected order {order}"
+            )
 
         sector_projectors: list[tuple[sy.Expr, Tensor]] = []
         for m in range(order):
@@ -992,7 +1201,9 @@ def joint_point_group_column_symmetrize(
     projected_cols: list[Tensor] = []
     raw_labels: list[U1Basis] = []
     for j, seed in enumerate(seeds):
-        col = w[:, j : j + 1].clone().replace_dim(1, single_col)
+        col = w[:, j : j + 1].clone().replace_dim(1, single_col).astype(dtype)
+        input_norm = abs(col.norm().item())
+        projection_cutoff = _relative_tolerance(dtype, row_dim.dim) * input_norm
         candidates: list[tuple[float, Tensor, U1Basis]] = []
         for sector_product in product(*all_sector_projectors):
             phases = tuple(sy.simplify(phase) for phase, _ in sector_product)
@@ -1005,7 +1216,7 @@ def joint_point_group_column_symmetrize(
 
             projected_norm = projected.norm()
             norm_value = abs(projected_norm.item())
-            if norm_value <= tol:
+            if norm_value <= projection_cutoff:
                 continue
 
             candidates.append(

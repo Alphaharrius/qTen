@@ -1,3 +1,5 @@
+import math
+
 import sympy as sy
 import torch
 import pytest
@@ -5,14 +7,21 @@ from sympy import ImmutableDenseMatrix
 
 from qten.phys import Spin, expand_spin, su2_from_so3, su2_of_point_group
 from qten.phys.spin import proper_rotation_matrix
-from qten.pointgroups import PointGroupElement, PointGroupOpr, pointgroup
+from qten.pointgroups import (
+    PointGroupElement,
+    PointGroupOpr,
+    SpinfulPhaseSector,
+    pointgroup,
+)
 from qten.pointgroups.ops import (
     _hilbert_opr_repr,
+    joint_point_group_column_symmetrize,
     spinful_hilbert_opr_repr,
     spinful_transform_basis,
 )
 import qten
 import qten.ops as Q
+from qten.precision import get_precision_config
 from qten.symbolics import HilbertSpace, IndexSpace, U1Basis
 from qten.geometries.spatials import AffineSpace, Lattice, Offset
 
@@ -47,8 +56,8 @@ def test_spin_labels_and_ordering():
 
 
 def test_su2_identity_and_unitarity():
-    I = ImmutableDenseMatrix.eye(3)
-    u = su2_from_so3(I)
+    identity = ImmutableDenseMatrix.eye(3)
+    u = su2_from_so3(identity)
     assert u == ImmutableDenseMatrix.eye(2)
 
     R = ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]])  # C4z
@@ -58,11 +67,136 @@ def test_su2_identity_and_unitarity():
     assert sy.simplify(u.det()) == 1
 
 
+def test_su2_rejects_non_so3_inputs_and_noncanonical_axes():
+    with pytest.raises(ValueError, match="3x3"):
+        su2_from_so3(ImmutableDenseMatrix.eye(2))
+    with pytest.raises(ValueError, match="orthogonal"):
+        su2_from_so3(ImmutableDenseMatrix([[1, 1, 0], [0, 1, 0], [0, 0, 1]]))
+    with pytest.raises(ValueError, match="canonical Cartesian axes"):
+        su2_of_point_group(pointgroup("c4-xy:xy"))
+
+
 def test_su2_c2z_is_minus_i_sigma_z():
     R = ImmutableDenseMatrix([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     u = su2_from_so3(R)
     expected = ImmutableDenseMatrix([[-sy.I, 0], [0, sy.I]])
     assert sy.simplify(u - expected) == ImmutableDenseMatrix.zeros(2)
+
+
+@pytest.mark.parametrize("angle_sign", [1, -1])
+def test_su2_near_pi_uses_stable_oriented_axis(angle_sign):
+    delta = sy.Float("1e-11", 30)
+    angle = angle_sign * (sy.pi - delta)
+    rotation = ImmutableDenseMatrix(
+        [
+            [sy.cos(angle), -sy.sin(angle), 0],
+            [sy.sin(angle), sy.cos(angle), 0],
+            [0, 0, 1],
+        ]
+    )
+    u = su2_from_so3(rotation)
+    sigma_z = ImmutableDenseMatrix([[1, 0], [0, -1]])
+    expected = sy.cos(angle / 2) * sy.eye(2) - sy.I * sy.sin(angle / 2) * sigma_z
+    max_error = max(abs(complex(sy.N(entry))) for entry in u - expected)
+    assert max_error < 1e-9
+
+
+def test_su2_inexact_arbitrary_axis_is_stable_near_pi():
+    axis = [component / math.sqrt(14) for component in (1, 2, 3)]
+    angle = math.pi - 1.1e-10
+    x, y, z = axis
+    cosine = math.cos(angle)
+    sine = math.sin(angle)
+    rotation = ImmutableDenseMatrix(
+        [
+            [
+                cosine + x * x * (1 - cosine),
+                x * y * (1 - cosine) - z * sine,
+                x * z * (1 - cosine) + y * sine,
+            ],
+            [
+                y * x * (1 - cosine) + z * sine,
+                cosine + y * y * (1 - cosine),
+                y * z * (1 - cosine) - x * sine,
+            ],
+            [
+                z * x * (1 - cosine) - y * sine,
+                z * y * (1 - cosine) + x * sine,
+                cosine + z * z * (1 - cosine),
+            ],
+        ]
+    )
+    u = su2_from_so3(rotation)
+    sigma_x = ImmutableDenseMatrix([[0, 1], [1, 0]])
+    sigma_y = ImmutableDenseMatrix([[0, -sy.I], [sy.I, 0]])
+    sigma_z = ImmutableDenseMatrix([[1, 0], [0, -1]])
+    expected = math.cos(angle / 2) * sy.eye(2) - sy.I * math.sin(angle / 2) * (
+        x * sigma_x + y * sigma_y + z * sigma_z
+    )
+    max_error = max(abs(complex(sy.N(entry))) for entry in u - expected)
+    assert max_error < 1e-12
+
+
+def test_su2_inexact_small_rotation_does_not_collapse_to_identity():
+    angle = 1.5e-8
+    rotation = ImmutableDenseMatrix(
+        [
+            [math.cos(angle), -math.sin(angle), 0],
+            [math.sin(angle), math.cos(angle), 0],
+            [0, 0, 1],
+        ]
+    )
+    u = su2_from_so3(rotation)
+    assert u != ImmutableDenseMatrix.eye(2)
+    expected = ImmutableDenseMatrix(
+        [
+            [math.cos(angle / 2) - sy.I * math.sin(angle / 2), 0],
+            [0, math.cos(angle / 2) + sy.I * math.sin(angle / 2)],
+        ]
+    )
+    assert max(abs(complex(sy.N(entry))) for entry in u - expected) < 1e-15
+
+
+def test_su2_rejects_parameterized_symbolic_rotation_until_substituted():
+    angle = sy.symbols("angle", real=True)
+    rotation = ImmutableDenseMatrix(
+        [
+            [sy.cos(angle), -sy.sin(angle), 0],
+            [sy.sin(angle), sy.cos(angle), 0],
+            [0, 0, 1],
+        ]
+    )
+    with pytest.raises(ValueError, match="substitute"):
+        su2_from_so3(rotation)
+
+
+def test_su2_c3_matches_axis_angle_and_has_double_order():
+    rotation = ImmutableDenseMatrix([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
+    u = su2_from_so3(rotation)
+    expected = ImmutableDenseMatrix(
+        [
+            [(1 - sy.I) / 2, (-1 - sy.I) / 2],
+            [(1 - sy.I) / 2, (1 + sy.I) / 2],
+        ]
+    )
+    assert sy.simplify(u - expected) == ImmutableDenseMatrix.zeros(2)
+    assert sy.simplify(u**3) == -ImmutableDenseMatrix.eye(2)
+    assert sy.simplify(u**6) == ImmutableDenseMatrix.eye(2)
+
+
+def test_su2_point_group_lift_is_invariant_under_nonorthogonal_rebase():
+    x, y, z = sy.symbols("x y z")
+    rotation = ImmutableDenseMatrix([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
+    opr = PointGroupOpr(PointGroupElement(irrep=rotation, axes=(x, y, z)))
+    nonorthogonal = AffineSpace(
+        basis=ImmutableDenseMatrix([[1, sy.Rational(1, 2), 0], [0, 1, 0], [0, 0, 2]])
+    )
+    center = Offset(rep=ImmutableDenseMatrix.zeros(3, 1), space=nonorthogonal)
+    rebased = opr.fixpoint_at(center, rebase=True)
+    assert rebased.g.irrep != rotation
+    assert sy.simplify(su2_of_point_group(rebased) - su2_of_point_group(opr)) == (
+        ImmutableDenseMatrix.zeros(2)
+    )
 
 
 def test_improper_uses_proper_factor():
@@ -92,15 +226,15 @@ def test_spinful_transform_basis_moves_site_and_spin():
     spins = {term.irrep_of(Spin) for term in image.span}
     assert sites == {ImmutableDenseMatrix([0, 1, 0])}
     assert spins == {Spin.up}
+    assert len(image.span) == 1
+    assert sy.simplify(image.span[0].coef - (1 - sy.I) / sy.sqrt(2)) == 0
 
 
 def test_spinful_hilbert_repr_is_unitary_and_mixes_for_c3():
     # C3 about [111]
     x, y, z = sy.symbols("x y z")
     R = ImmutableDenseMatrix([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
-    opr = PointGroupOpr(PointGroupElement(irrep=R, axes=(x, y, z))).fixpoint_at(
-        _site()
-    )
+    opr = PointGroupOpr(PointGroupElement(irrep=R, axes=(x, y, z))).fixpoint_at(_site())
     space = HilbertSpace.new(
         [
             U1Basis.new(_site(), Spin.up),
@@ -111,9 +245,15 @@ def test_spinful_hilbert_repr_is_unitary_and_mixes_for_c3():
     assert D.data.shape == (2, 2)
     # unitarity
     eye = torch.eye(2, dtype=D.data.dtype)
-    assert torch.allclose(D.data.conj().T @ D.data, eye, atol=1e-10)
-    # C3 about [111] mixes up/down in the usual spin frame
-    assert float(torch.abs(D.data[0, 1])) > 1e-8 or float(torch.abs(D.data[1, 0])) > 1e-8
+    assert torch.allclose(D.data.conj().T @ D.data, eye, rtol=0, atol=1e-12)
+    expected = torch.tensor(
+        [
+            [(1 - 1j) / 2, (-1 - 1j) / 2],
+            [(1 - 1j) / 2, (1 + 1j) / 2],
+        ],
+        dtype=D.data.dtype,
+    )
+    assert torch.allclose(D.data, expected, rtol=0, atol=1e-12)
 
 
 def test_hilbert_opr_repr_dispatches_to_spinful():
@@ -126,8 +266,78 @@ def test_hilbert_opr_repr_dispatches_to_spinful():
     assert torch.allclose(
         D.data,
         torch.tensor([[-1j, 0], [0, 1j]], dtype=D.data.dtype),
-        atol=1e-10,
+        rtol=0,
+        atol=1e-12,
     )
+
+
+def test_spinful_hilbert_repr_respects_basis_gauge_phases():
+    site = _site()
+    x, y, z = sy.symbols("x y z")
+    rotation = ImmutableDenseMatrix([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
+    opr = PointGroupOpr(PointGroupElement(irrep=rotation, axes=(x, y, z))).fixpoint_at(
+        site
+    )
+    canonical_space = HilbertSpace.new(
+        [U1Basis.new(site, Spin.up), U1Basis.new(site, Spin.down)]
+    )
+    space = HilbertSpace.new(
+        [
+            U1Basis(sy.I, (site, Spin.up)),
+            U1Basis(-sy.I, (site, Spin.down)),
+        ]
+    )
+    canonical = spinful_hilbert_opr_repr(opr, canonical_space)
+    D = spinful_hilbert_opr_repr(opr, space)
+    gauge = torch.diag(torch.tensor([1j, -1j], dtype=D.data.dtype))
+    expected = gauge.conj().T @ canonical.data @ gauge
+    assert torch.allclose(D.data, expected, rtol=0, atol=1e-12)
+
+
+def test_spinful_hilbert_repr_rejects_nonunit_basis_coefficients():
+    site = _site()
+    space = HilbertSpace.new(
+        [
+            U1Basis(sy.Integer(2), (site, Spin.up)),
+            U1Basis(sy.Integer(2), (site, Spin.down)),
+        ]
+    )
+    with pytest.raises(ValueError, match="unit modulus"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), space)
+
+
+def test_spinful_hilbert_repr_rejects_duplicate_physical_rays():
+    site = _site()
+    space = HilbertSpace.new(
+        [
+            U1Basis(sy.Integer(1), (site, Spin.up)),
+            U1Basis(sy.Integer(-1), (site, Spin.up)),
+            U1Basis(sy.Integer(1), (site, Spin.down)),
+            U1Basis(sy.Integer(-1), (site, Spin.down)),
+        ]
+    )
+    with pytest.raises(ValueError, match="unique physical rays"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), space)
+
+
+def test_spinful_hilbert_repr_rejects_symbolic_gauge_phase():
+    site = _site()
+    phase = sy.symbols("phase", real=True)
+    space = HilbertSpace.new(
+        [
+            U1Basis(sy.exp(sy.I * phase), (site, Spin.up)),
+            U1Basis.new(site, Spin.down),
+        ]
+    )
+    with pytest.raises(ValueError, match="numerically evaluable"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), space)
+
+
+def test_spinful_hilbert_repr_rejects_mixed_spin_space():
+    site = _site()
+    space = HilbertSpace.new([U1Basis.new(site, Spin.up), U1Basis.new(_site(1, 0, 0))])
+    with pytest.raises(ValueError, match="exactly one Spin label"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), space)
 
 
 def test_point_group_column_symmetrize_spinful_c2():
@@ -141,9 +351,32 @@ def test_point_group_column_symmetrize_spinful_c2():
         / torch.sqrt(torch.tensor(2.0)),
         dims=(space, IndexSpace.linear(1)),
     )
-    # Use abelian symmetrize on C2
+    D = spinful_hilbert_opr_repr(opr, space)
+    identity = torch.eye(2, dtype=D.data.dtype)
+    powers = [identity]
+    for _ in range(3):
+        powers.append(powers[-1] @ D.data)
+    projectors = []
+    for m in range(4):
+        phase = torch.exp(torch.tensor(2j * torch.pi * m / 4, dtype=D.data.dtype))
+        projector = sum((phase ** (-k)) * power for k, power in enumerate(powers)) / 4
+        projectors.append(projector)
+        assert torch.allclose(projector @ projector, projector, rtol=0, atol=1e-12)
+    assert torch.allclose(sum(projectors), identity, rtol=0, atol=1e-12)
+
     out = Q.point_group_column_symmetrize(opr, w, full_sector=True)
-    assert out.data.shape[1] >= 1
+    assert out.data.shape == (2, 2)
+    assert isinstance(out.dims[1], HilbertSpace)
+    for j, label in enumerate(out.dims[1].elements()):
+        sector = label.irrep_of(SpinfulPhaseSector)
+        phase = complex(sy.N(sector.phase))
+        assert sector.spatial_order == 2
+        assert torch.allclose(
+            D.data @ out.data[:, j],
+            phase * out.data[:, j],
+            rtol=0,
+            atol=1e-12,
+        )
 
 
 def test_su2_of_td_element_unitarity():
@@ -155,39 +388,95 @@ def test_su2_of_td_element_unitarity():
         assert sy.simplify(u.det()) == 1
 
 
-def test_full_td_spinful_symmetrize_is_fast_and_unitary_reps():
-    """Full Td (24) spinful D(g) on a moderate local space should be practical."""
-    import time
-
+def test_full_td_spinful_symmetrize_requires_double_group_data():
     td = pointgroup("-43m")
     center = _site()
-    # 5x5x5 cube of sites around origin (125 sites x 2 spin = 250 dim)
-    bases = []
-    for x in range(-2, 3):
-        for y in range(-2, 3):
-            for z in range(-2, 3):
-                r = _site(x, y, z)
-                bases.append(U1Basis.new(r, Spin.up))
-                bases.append(U1Basis.new(r, Spin.down))
-    space = HilbertSpace.new(bases)
-    assert space.dim == 250
-
-    q, _ = torch.linalg.qr(torch.randn(space.dim, 8, dtype=torch.complex128))
-    w = qten.Tensor(data=q[:, :8], dims=(space, IndexSpace.linear(8)))
-
-    t0 = time.perf_counter()
-    out = Q.point_group_column_symmetrize(
-        td, w, fixpoint=center, rebase_fixpoint=True, full_sector=False
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
     )
-    elapsed = time.perf_counter() - t0
-    assert out.data.shape[0] == space.dim
-    assert out.data.shape[1] >= 1
-    assert elapsed < 30.0, f"full Td spinful symmetrize too slow: {elapsed:.2f}s"
+    w = qten.Tensor(
+        data=torch.eye(2, 1, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(1)),
+    )
+    with pytest.raises(NotImplementedError, match="double-group character"):
+        Q.point_group_column_symmetrize(td, w, fixpoint=center)
+
+
+def test_spinful_td_operator_average_needs_no_double_group_table():
+    td = pointgroup("-43m")
+    center = _site()
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    operator = qten.Tensor(
+        data=torch.tensor([[3, 1 + 2j], [1 - 2j, 1]], dtype=torch.complex128),
+        dims=(space, space),
+    )
+
+    averaged = Q.point_group_operator_symmetrize(td, operator, fixpoint=center)
+    expected = 2 * torch.eye(2, dtype=torch.complex128)
+    assert torch.allclose(averaged.data, expected, rtol=0, atol=1e-12)
+
+    averaged_twice = Q.point_group_operator_symmetrize(td, averaged, fixpoint=center)
+    assert torch.allclose(averaged_twice.data, averaged.data, rtol=0, atol=1e-12)
+
+    for element in td.elements():
+        representation = spinful_hilbert_opr_repr(
+            PointGroupOpr(element).fixpoint_at(center), space
+        )
+        transformed = representation.data @ averaged.data @ representation.data.conj().T
+        assert torch.allclose(transformed, averaged.data, rtol=0, atol=1e-12)
+
+
+def test_operator_average_rejects_different_leg_gauges_clearly():
+    td = pointgroup("-43m")
+    center = _site()
+    row_space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    col_space = HilbertSpace.new(
+        [
+            U1Basis(sy.I, (center, Spin.up)),
+            U1Basis(-sy.I, (center, Spin.down)),
+        ]
+    )
+    operator = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(row_space, col_space),
+    )
+    with pytest.raises(ValueError, match="same ordered Hilbert-space basis"):
+        Q.point_group_operator_symmetrize(td, operator, fixpoint=center)
+
+
+def test_joint_spinful_symmetrize_rejects_projectively_noncommuting_lifts():
+    x, y, z = sy.symbols("x y z")
+    center = _site()
+    c2x = PointGroupOpr(
+        PointGroupElement(
+            irrep=ImmutableDenseMatrix([[1, 0, 0], [0, -1, 0], [0, 0, -1]]),
+            axes=(x, y, z),
+        )
+    ).fixpoint_at(center)
+    c2y = PointGroupOpr(
+        PointGroupElement(
+            irrep=ImmutableDenseMatrix([[-1, 0, 0], [0, 1, 0], [0, 0, -1]]),
+            axes=(x, y, z),
+        )
+    ).fixpoint_at(center)
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    w = qten.Tensor(
+        data=torch.eye(2, 1, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(1)),
+    )
+    with pytest.raises(NotImplementedError, match="anticommuting spin lifts"):
+        joint_point_group_column_symmetrize((c2x, c2y), w)
 
 
 def test_spinful_hilbert_opr_repr_folds_fractional_lattice_offsets():
     """
-    Bloch-like spaces store Offset.fractional() labels; D(g) must fold images.
+    Unit-cell spaces store Offset.fractional() labels; D(g) must fold images.
 
     C2z sends B=(1/2,1/2,1/2) -> (-1/2,-1/2,1/2), which equals B only after
     fractional fold. Without folding, lookup raises even though the unit cell
@@ -223,4 +512,33 @@ def test_spinful_hilbert_opr_repr_folds_fractional_lattice_offsets():
     D = spinful_hilbert_opr_repr(opr, space)
     assert D.data.shape == (4, 4)
     eye = torch.eye(4, dtype=D.data.dtype)
-    assert torch.allclose(D.data.conj().T @ D.data, eye, atol=1e-10)
+    assert torch.allclose(D.data.conj().T @ D.data, eye, rtol=0, atol=1e-12)
+
+
+def test_spinful_hilbert_repr_does_not_fold_open_affine_offsets():
+    site = _site(sy.Rational(1, 2), 0, 0)
+    space = HilbertSpace.new([U1Basis.new(site, Spin.up), U1Basis.new(site, Spin.down)])
+    with pytest.raises(ValueError, match="not in space"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(_site()), space)
+
+
+def test_spinful_projection_uses_active_precision():
+    previous_precision = get_precision_config()
+    previous_torch_default = torch.get_default_dtype()
+    qten.set_precision(32)
+    try:
+        site = _site()
+        opr = _c2z().fixpoint_at(site)
+        space = HilbertSpace.new(
+            [U1Basis.new(site, Spin.up), U1Basis.new(site, Spin.down)]
+        )
+        w = qten.Tensor(
+            data=1e-6 * torch.tensor([[1.0], [1.0]], dtype=torch.complex64),
+            dims=(space, IndexSpace.linear(1)),
+        )
+        out = Q.point_group_column_symmetrize(opr, w, full_sector=True)
+        assert out.data.dtype == torch.complex64
+        assert out.data.shape == (2, 2)
+    finally:
+        qten.set_precision(previous_precision.torch_float, set_torch_default=False)
+        torch.set_default_dtype(previous_torch_default)

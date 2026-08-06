@@ -10,6 +10,7 @@ from qten.pointgroups import (
     pointgroup,
 )
 from qten.pointgroups._registry import _point_group_data, known_point_group_symbols
+from qten.phys import su2_of_point_group
 
 
 def test_existing_affine_pointgroup_queries_return_point_group_element():
@@ -106,6 +107,31 @@ def test_hexagonal_rotoinversion_classes_align_with_character_tables():
         assert all(
             abs(complex(sy.N(entry))) < 1e-10 for entry in projector_sum - sy.eye(3)
         )
+
+
+def test_trigonal_and_hexagonal_generators_are_cartesian_spin_rotations():
+    symbols = (
+        "3",
+        "-3",
+        "32",
+        "3m",
+        "-3m",
+        "6",
+        "-6",
+        "6/m",
+        "622",
+        "6mm",
+        "-6m2",
+        "6/mmm",
+    )
+    for symbol in symbols:
+        group = pointgroup(symbol)
+        for generator in group.generators:
+            rotation = generator.irrep
+            assert sy.simplify(rotation.T @ rotation) == sy.eye(3)
+            lift = su2_of_point_group(generator)
+            assert sy.simplify(lift.H @ lift) == sy.eye(2)
+            assert sy.simplify(lift.det()) == 1
 
 
 def test_diagonal_c4v_generator_keeps_b1_b2_geometric_labels():

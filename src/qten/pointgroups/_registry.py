@@ -20,6 +20,13 @@ from .finite import FinitePointGroup
 
 
 _STANDARD_AXIS_NAMES = ("x", "y", "z")
+_HEXAGONAL_CARTESIAN_BASIS = sy.ImmutableDenseMatrix(
+    [
+        [1, -sy.Rational(1, 2), 0],
+        [0, sy.sqrt(3) / 2, 0],
+        [0, 0, 1],
+    ]
+)
 
 
 @lru_cache
@@ -120,6 +127,16 @@ def _project_generator(
     )
 
 
+def _cartesianize_generator(
+    matrix: sy.ImmutableDenseMatrix, crystal_system: str
+) -> sy.ImmutableDenseMatrix:
+    """Convert packaged crystallographic coordinates to Cartesian x/y/z."""
+    if crystal_system not in {"trigonal", "hexagonal"}:
+        return matrix
+    basis = _HEXAGONAL_CARTESIAN_BASIS
+    return sy.ImmutableDenseMatrix(sy.simplify(basis @ matrix @ basis.inv()))
+
+
 def named_pointgroup(query: str) -> FinitePointGroup:
     """
     Build a finite point group from packaged generator data.
@@ -153,7 +170,9 @@ def named_pointgroup(query: str) -> FinitePointGroup:
 
     matrices = tuple(
         _project_generator(
-            sy.ImmutableDenseMatrix(generator),
+            _cartesianize_generator(
+                sy.ImmutableDenseMatrix(generator), record["crystal_system"]
+            ),
             axis_names,
         )
         for generator in record["generators"]
