@@ -8,8 +8,10 @@ from sympy import ImmutableDenseMatrix
 from qten.phys import Spin, expand_spin, su2_from_so3, su2_of_point_group
 from qten.phys.spin import proper_rotation_matrix
 from qten.pointgroups import (
+    FinitePointGroup,
     PointGroupElement,
     PointGroupOpr,
+    SpinorIrrepSector,
     SpinfulPhaseSector,
     pointgroup,
 )
@@ -19,6 +21,7 @@ from qten.pointgroups.ops import (
     spinful_hilbert_opr_repr,
     spinful_transform_basis,
 )
+from qten.pointgroups._registry import known_point_group_symbols
 import qten
 import qten.ops as Q
 from qten.precision import get_precision_config
@@ -388,18 +391,134 @@ def test_su2_of_td_element_unitarity():
         assert sy.simplify(u.det()) == 1
 
 
-def test_full_td_spinful_symmetrize_requires_double_group_data():
+def test_full_td_spinful_symmetrize_uses_spinor_character_table():
     td = pointgroup("-43m")
     center = _site()
     space = HilbertSpace.new(
         [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
     )
+    elements = td.elements()
+    representations = [
+        spinful_hilbert_opr_repr(PointGroupOpr(element).fixpoint_at(center), space).data
+        for element in elements
+    ]
+    projectors: dict[str, torch.Tensor] = {}
+    for irrep_name, irrep_data in td.spinor_irreps["irreps"].items():
+        characters = td.spinor_irrep_characters_by_element(irrep_name)
+        projector = sum(
+            (
+                character.conjugate() * representation
+                for character, representation in zip(characters, representations)
+            ),
+            torch.zeros_like(representations[0]),
+        )
+        projector *= int(irrep_data["dim"]) / td.order
+        projectors[irrep_name] = projector
+        assert torch.allclose(projector, projector.conj().T, rtol=0, atol=1e-12)
+        assert torch.allclose(projector @ projector, projector, rtol=0, atol=1e-12)
+
+        signs = [1 if index % 2 == 0 else -1 for index in range(td.order)]
+        resectioned = sum(
+            (
+                (sign * character).conjugate() * (sign * representation)
+                for sign, character, representation in zip(
+                    signs, characters, representations
+                )
+            ),
+            torch.zeros_like(projector),
+        )
+        resectioned *= int(irrep_data["dim"]) / td.order
+        assert torch.allclose(resectioned, projector, rtol=0, atol=1e-12)
+
+        full_double_group = sum(
+            (
+                character.conjugate() * representation
+                + (-character).conjugate() * (-representation)
+                for character, representation in zip(characters, representations)
+            ),
+            torch.zeros_like(projector),
+        )
+        full_double_group *= int(irrep_data["dim"]) / (2 * td.order)
+        assert torch.allclose(full_double_group, projector, rtol=0, atol=1e-12)
+
+    identity = torch.eye(space.dim, dtype=torch.complex128)
+    assert torch.allclose(sum(projectors.values()), identity, rtol=0, atol=1e-12)
+    projector_values = list(projectors.values())
+    for i, left in enumerate(projector_values):
+        for right in projector_values[i + 1 :]:
+            assert torch.allclose(
+                left @ right, torch.zeros_like(left), rtol=0, atol=1e-12
+            )
+
     w = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(2)),
+    )
+    projected = Q.point_group_column_symmetrize(
+        td, w, full_sector=True, fixpoint=center
+    )
+    assert projected.data.shape == (2, 2)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        identity,
+        rtol=0,
+        atol=1e-12,
+    )
+    sectors = [
+        label.irrep_of(SpinorIrrepSector) for label in projected.dims[1].elements()
+    ]
+    assert len({sector.irrep for sector in sectors}) == 1
+    assert all(sector.dim == 2 and sector.source == "spgrep" for sector in sectors)
+
+
+def test_custom_spinful_finite_group_without_table_is_rejected():
+    x, y, z = sy.symbols("x y z")
+    custom = FinitePointGroup.from_matrices(
+        (ImmutableDenseMatrix([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]),),
+        axes=(x, y, z),
+        symbol="custom-c2",
+    )
+    center = _site()
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    seed = qten.Tensor(
         data=torch.eye(2, 1, dtype=torch.complex128),
         dims=(space, IndexSpace.linear(1)),
     )
-    with pytest.raises(NotImplementedError, match="double-group character"):
-        Q.point_group_column_symmetrize(td, w, fixpoint=center)
+    with pytest.raises(ValueError, match="No spinor character-table data"):
+        Q.point_group_column_symmetrize(custom, seed, fixpoint=center)
+
+
+def test_all_packaged_spinor_tables_resolve_bare_spin_space():
+    center = _site()
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    seed = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(2)),
+    )
+    identity = torch.eye(2, dtype=torch.complex128)
+
+    for symbol in known_point_group_symbols():
+        projected = Q.point_group_column_symmetrize(
+            pointgroup(symbol),
+            seed,
+            full_sector=True,
+            fixpoint=center,
+        )
+        assert projected.data.shape == (2, 2), symbol
+        assert torch.allclose(
+            projected.data.conj().T @ projected.data,
+            identity,
+            rtol=0,
+            atol=1e-11,
+        ), symbol
+        assert all(
+            isinstance(label.irrep_of(SpinorIrrepSector), SpinorIrrepSector)
+            for label in projected.dims[1].elements()
+        )
 
 
 def test_spinful_td_operator_average_needs_no_double_group_table():

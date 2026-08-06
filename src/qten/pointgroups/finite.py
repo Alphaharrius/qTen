@@ -92,6 +92,9 @@ class FinitePointGroup:
         Optional packaged character-table payload with `class_labels`,
         `multiplicities`, and per-irrep character rows. Compared and hashed as
         identity metadata only.
+    spinor_irreps : dict[str, Any] | None
+        Optional packaged operation-wise projective spinor character data.
+        Compared and hashed as identity metadata only.
 
     Notes
     -----
@@ -105,6 +108,9 @@ class FinitePointGroup:
     axes: tuple[sy.Symbol, ...]
     symbol: str | None = None
     irreps: dict[str, Any] | None = field(default=None, compare=False, hash=False)
+    spinor_irreps: dict[str, Any] | None = field(
+        default=None, compare=False, hash=False
+    )
 
     def __post_init__(self) -> None:
         if not self.generators:
@@ -123,6 +129,7 @@ class FinitePointGroup:
         *,
         symbol: str | None = None,
         irreps: dict[str, Any] | None = None,
+        spinor_irreps: dict[str, Any] | None = None,
     ) -> "FinitePointGroup":
         """
         Build a finite point group from exact generator matrices.
@@ -137,6 +144,8 @@ class FinitePointGroup:
             Optional Hermann-Mauguin symbol for display and sector labels.
         irreps : dict[str, Any] | None, optional
             Optional packaged character-table payload.
+        spinor_irreps : dict[str, Any] | None, optional
+            Optional packaged operation-wise projective spinor character data.
 
         Returns
         -------
@@ -149,7 +158,13 @@ class FinitePointGroup:
         generators = tuple(
             PointGroupElement(irrep=matrix, axes=axes) for matrix in matrices
         )
-        return cls(generators=generators, axes=axes, symbol=symbol, irreps=irreps)
+        return cls(
+            generators=generators,
+            axes=axes,
+            symbol=symbol,
+            irreps=irreps,
+            spinor_irreps=spinor_irreps,
+        )
 
     @lru_cache
     def elements(self, max_order: int = 512) -> tuple[PointGroupElement, ...]:
@@ -503,6 +518,55 @@ class FinitePointGroup:
 
         class_by_element = self._class_label_index_by_element()
         return tuple(characters[class_index] for class_index in class_by_element)
+
+    def spinor_irrep_characters_by_element(self, irrep: str) -> tuple[complex, ...]:
+        """Return projective spinor characters in generated-element order."""
+        if not self.spinor_irreps:
+            raise ValueError(
+                f"No spinor character-table data is available for {self.symbol}."
+            )
+        irrep_table = self.spinor_irreps["irreps"]
+        if irrep not in irrep_table:
+            raise ValueError(
+                f"Unknown spinor irrep '{irrep}' for point group {self.symbol}."
+            )
+
+        operation_matrices = tuple(
+            sy.ImmutableDenseMatrix(operation)
+            for operation in self.spinor_irreps["operations"]
+        )
+        operation_index = {
+            _matrix_key(matrix): index
+            for index, matrix in enumerate(operation_matrices)
+        }
+        if len(operation_index) != len(operation_matrices):
+            raise ValueError(
+                f"Spinor table contains duplicate operations for {self.symbol}."
+            )
+
+        encoded_characters = irrep_table[irrep]["characters"]
+        if len(encoded_characters) != len(operation_matrices):
+            raise ValueError(
+                f"Spinor character row length for '{irrep}' does not match operations."
+            )
+        characters = tuple(
+            complex(float(value[0]), float(value[1])) for value in encoded_characters
+        )
+
+        ordered: list[complex] = []
+        for element in self.elements():
+            key = _matrix_key(element.irrep)
+            if key not in operation_index:
+                raise ValueError(
+                    "Spinor table operations do not match generated point-group "
+                    f"elements for {self.symbol}."
+                )
+            ordered.append(characters[operation_index[key]])
+        if len(ordered) != len(operation_matrices):
+            raise ValueError(
+                f"Spinor table order does not match point group {self.symbol}."
+            )
+        return tuple(ordered)
 
     @lru_cache
     def trivial_projector(self, order: int) -> sy.ImmutableDenseMatrix:

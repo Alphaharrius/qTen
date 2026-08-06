@@ -5,11 +5,13 @@ from sympy import ImmutableDenseMatrix
 
 from qten.geometries.spatials import AffineSpace, Lattice, Offset
 from qten.linalg.tensors import Tensor
+from qten.phys import Spin
 from qten.pointgroups import (
     FinitePointGroup,
     PointGroupBasis,
     PointGroupElement,
     PointGroupOpr,
+    SpinorIrrepSector,
     SymmetryDegeneracy,
     pointgroup,
 )
@@ -292,6 +294,52 @@ def test_finite_point_group_projection_promotes_integer_seed_data():
         torch.linalg.vector_norm(projected.data, dim=0),
         torch.ones(1, dtype=projected.data.real.dtype),
     )
+
+
+def test_finite_spinful_projection_resolves_tetrahedral_orbital_multiplets():
+    td = pointgroup("-43m")
+    affine = AffineSpace(basis=ImmutableDenseMatrix.eye(3))
+    center = Offset(ImmutableDenseMatrix.zeros(3, 1), affine)
+    vertices = (
+        Offset(ImmutableDenseMatrix([1, 1, 1]), affine),
+        Offset(ImmutableDenseMatrix([1, -1, -1]), affine),
+        Offset(ImmutableDenseMatrix([-1, 1, -1]), affine),
+        Offset(ImmutableDenseMatrix([-1, -1, 1]), affine),
+    )
+    space = HilbertSpace.new(
+        U1Basis.new(vertex, spin)
+        for vertex in vertices
+        for spin in (Spin.up, Spin.down)
+    )
+    seed = Tensor(
+        data=torch.eye(space.dim, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(space.dim)),
+    )
+
+    projected = point_group_column_symmetrize(
+        td,
+        seed,
+        full_sector=True,
+        fixpoint=center,
+    )
+
+    assert projected.data.shape == (space.dim, space.dim)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        torch.eye(space.dim, dtype=torch.complex128),
+        rtol=0,
+        atol=1e-12,
+    )
+    sectors = [
+        label.irrep_of(SpinorIrrepSector) for label in projected.dims[1].elements()
+    ]
+    assert {sector.source for sector in sectors} == {"spgrep"}
+    counts: dict[str, int] = {}
+    dimensions: dict[str, int] = {}
+    for sector in sectors:
+        counts[sector.irrep] = counts.get(sector.irrep, 0) + 1
+        dimensions[sector.irrep] = sector.dim
+    assert all(count % dimensions[irrep] == 0 for irrep, count in counts.items())
 
 
 def test_joint_point_group_column_symmetrize_projects_diagonal_mirrors():

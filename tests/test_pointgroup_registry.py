@@ -1,3 +1,4 @@
+import numpy as np
 import sympy as sy
 
 from qten.geometries.boundary import PeriodicBoundary
@@ -9,7 +10,11 @@ from qten.pointgroups import (
     PointGroupBasis,
     pointgroup,
 )
-from qten.pointgroups._registry import _point_group_data, known_point_group_symbols
+from qten.pointgroups._registry import (
+    _double_point_group_data,
+    _point_group_data,
+    known_point_group_symbols,
+)
 from qten.phys import su2_of_point_group
 
 
@@ -80,6 +85,47 @@ def test_all_packaged_character_tables_are_complete():
             all(character == 1 for character in row["characters"])
             for row in irreps.values()
         )
+
+
+def test_all_packaged_spinor_tables_are_complete_and_orthonormal():
+    data = _double_point_group_data()
+    records = {record["symbol"]: record for record in data["point_groups"]}
+
+    assert data["schema_version"] == 1
+    assert data["source"]["name"] == "spgrep"
+    assert data["section_convention"] == "qten-su2-principal-v1"
+    assert set(records) == set(known_point_group_symbols())
+
+    for symbol, record in records.items():
+        group = pointgroup(symbol)
+        assert group.spinor_irreps is not None
+        assert record["order"] == group.order
+        assert len(record["operations"]) == group.order
+        assert len(record["factor_system"]) == group.order
+        assert all(len(row) == group.order for row in record["factor_system"])
+        assert {int(value) for row in record["factor_system"] for value in row} <= {
+            -1,
+            1,
+        }
+
+        irreps = record["irreps"]
+        assert sum(int(irrep["dim"]) ** 2 for irrep in irreps.values()) == group.order
+        characters = np.asarray(
+            [
+                [complex(*value) for value in irrep["characters"]]
+                for irrep in irreps.values()
+            ]
+        )
+        assert np.allclose(
+            characters.conj() @ characters.T / group.order,
+            np.eye(len(irreps)),
+            rtol=0,
+            atol=1e-12,
+        )
+        for irrep_name in irreps:
+            assert len(group.spinor_irrep_characters_by_element(irrep_name)) == (
+                group.order
+            )
 
 
 def test_bilbao_parser_splits_complex_conjugate_irrep_rows():

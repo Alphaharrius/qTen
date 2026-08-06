@@ -19,6 +19,8 @@ closed under one or more packaged generators and optional character-table data.
 basis functions in a representation sector.
 [`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector] labels
 double-valued abelian phases for spin-1/2 representations.
+[`SpinorIrrepSector`][qten.pointgroups.ops.SpinorIrrepSector] labels finite
+double-valued sectors obtained from packaged spgrep character data.
 [`SymmetryDegeneracy`][qten.pointgroups.ops.SymmetryDegeneracy] is a typed copy
 index used when a projected sector occurs more than once.
 [`point_group_operator_symmetrize`][qten.pointgroups.ops.point_group_operator_symmetrize]
@@ -39,6 +41,7 @@ from .elements import (
 from .basis import PointGroupBasis as PointGroupBasis
 from .finite import FinitePointGroup as FinitePointGroup
 from .ops import (
+    SpinorIrrepSector as SpinorIrrepSector,
     SpinfulPhaseSector as SpinfulPhaseSector,
     SymmetryDegeneracy as SymmetryDegeneracy,
     get_direct_transform as get_direct_transform,

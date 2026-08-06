@@ -10,12 +10,14 @@ Hermann-Mauguin symbols or Schoenflies aliases.
 from __future__ import annotations
 
 import json
+import hashlib
 from functools import lru_cache
 from importlib import resources
 from typing import Any
 
 import sympy as sy
 
+from ..phys.spin import SU2_SECTION_CONVENTION
 from .finite import FinitePointGroup
 
 
@@ -38,8 +40,27 @@ def _point_group_data() -> dict[str, Any]:
 
 
 @lru_cache
+def _double_point_group_data() -> dict[str, Any]:
+    data_path = resources.files("qten.pointgroups.data").joinpath(
+        "double_point_group_data.json"
+    )
+    data = json.loads(data_path.read_text(encoding="utf-8"))
+    if data.get("schema_version") != 1:
+        raise ValueError("Unsupported double-point-group data schema.")
+    if data.get("section_convention") != SU2_SECTION_CONVENTION:
+        raise ValueError("Double-point-group data uses an incompatible SU(2) section.")
+    return data
+
+
+@lru_cache
 def _records_by_symbol() -> dict[str, dict[str, Any]]:
     data = _point_group_data()
+    return {record["symbol"]: record for record in data["point_groups"]}
+
+
+@lru_cache
+def _double_records_by_symbol() -> dict[str, dict[str, Any]]:
+    data = _double_point_group_data()
     return {record["symbol"]: record for record in data["point_groups"]}
 
 
@@ -137,6 +158,33 @@ def _cartesianize_generator(
     return sy.ImmutableDenseMatrix(sy.simplify(basis @ matrix @ basis.inv()))
 
 
+def _spinor_table(record: dict[str, Any], axis_names: str) -> dict[str, Any] | None:
+    """Return a verified spinor table in QTen's Cartesian matrix convention."""
+    if axis_names != "xyz":
+        return None
+    table = _double_records_by_symbol().get(record["symbol"])
+    if table is None:
+        return None
+
+    generator_bytes = json.dumps(
+        record["generators"], separators=(",", ":"), sort_keys=True
+    ).encode()
+    fingerprint = hashlib.sha256(generator_bytes).hexdigest()
+    if table.get("generator_sha256") != fingerprint:
+        raise ValueError(
+            f"Spinor table generator fingerprint is stale for {record['symbol']}."
+        )
+
+    normalized = dict(table)
+    normalized["operations"] = tuple(
+        _cartesianize_generator(
+            sy.ImmutableDenseMatrix(operation), record["crystal_system"]
+        )
+        for operation in table["operations"]
+    )
+    return normalized
+
+
 def named_pointgroup(query: str) -> FinitePointGroup:
     """
     Build a finite point group from packaged generator data.
@@ -182,4 +230,5 @@ def named_pointgroup(query: str) -> FinitePointGroup:
         axes=_axis_symbols(axis_names),
         symbol=symbol,
         irreps=record.get("irreps"),
+        spinor_irreps=_spinor_table(record, axis_names),
     )

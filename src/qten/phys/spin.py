@@ -31,6 +31,7 @@ _HALF = sy.Rational(1, 2)
 _SPIN_MS = (_HALF, -_HALF)
 _CARTESIAN_AXES = ("x", "y", "z")
 _ROTATION_TOL = 1e-10
+SU2_SECTION_CONVENTION = "qten-su2-principal-v1"
 
 
 @dataclass(frozen=True)

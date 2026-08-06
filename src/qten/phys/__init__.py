@@ -28,6 +28,7 @@ corresponding tensor data.
 from ._bonds import Bond as Bond
 from ._ff_observables import FFObservable as FFObservable
 from .spin import (
+    SU2_SECTION_CONVENTION as SU2_SECTION_CONVENTION,
     Spin as Spin,
     contains_spin as contains_spin,
     expand_spin as expand_spin,

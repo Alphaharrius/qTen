@@ -184,6 +184,16 @@ class FiniteIrrepSector:
 
 
 @dataclass(frozen=True)
+class SpinorIrrepSector:
+    """Label for a finite double-valued point-group symmetry sector."""
+
+    group: str
+    irrep: str
+    dim: int
+    source: str = "spgrep"
+
+
+@dataclass(frozen=True)
 class SpinfulPhaseSector:
     r"""Label for an abelian spinorial sector with phase \(\omega^{2n}=1\)."""
 
@@ -285,16 +295,25 @@ def _finite_point_group_column_symmetrize(
     retained. Sector-wise SVD is then applied to remove linear dependence and
     keep independent projected columns.
     """
-    if not group.irreps:
-        raise ValueError(
-            f"No character-table data is available for finite point group {group.symbol}."
-        )
-
     row_dim, seeds = _column_symmetrize_context(w)
-    if contains_spin(row_dim):
-        raise NotImplementedError(
-            "Spinful finite-group projection requires double-group character "
-            "tables; ordinary point-group irreps are not valid for spin-1/2."
+    spinful = contains_spin(row_dim)
+    if spinful:
+        if not group.spinor_irreps:
+            raise ValueError(
+                "No spinor character-table data is available for finite point "
+                f"group {group.symbol}."
+            )
+        irrep_table = group.spinor_irreps["irreps"]
+    else:
+        if not group.irreps:
+            raise ValueError(
+                "No character-table data is available for finite point group "
+                f"{group.symbol}."
+            )
+        irrep_table = group.irreps["irreps"]
+    if not irrep_table:
+        raise ValueError(
+            f"Character-table data contains no irreps for point group {group.symbol}."
         )
     single_col = IndexSpace.linear(1)
 
@@ -316,26 +335,34 @@ def _finite_point_group_column_symmetrize(
     working_dtype = reps[0].data.dtype
     tol = _relative_tolerance(working_dtype, row_dim.dim)
     group_order = len(elements)
-    irrep_table = group.irreps["irreps"]
 
-    sector_projectors: list[tuple[FiniteIrrepSector, Tensor]] = []
+    sector_projectors: list[tuple[Any, Tensor]] = []
     for irrep_name, irrep_data in irrep_table.items():
         dim = int(irrep_data["dim"])
-        characters = group.irrep_characters_by_element(irrep_name)
+        if spinful:
+            characters = group.spinor_irrep_characters_by_element(irrep_name)
+            sector_label: Any = SpinorIrrepSector(
+                group=group.symbol or "<anonymous>",
+                irrep=irrep_name,
+                dim=dim,
+            )
+        else:
+            characters = group.irrep_characters_by_element(irrep_name)
+            sector_label = FiniteIrrepSector(
+                group=group.symbol or "<anonymous>",
+                irrep=irrep_name,
+                dim=dim,
+            )
         projector = 0 * reps[0]
         for character, rep in zip(characters, reps):
-            projector = projector + complex(sy.N(sy.conjugate(character))) * rep
-        projector = (dim / group_order) * projector
-        sector_projectors.append(
-            (
-                FiniteIrrepSector(
-                    group=group.symbol or "<anonymous>",
-                    irrep=irrep_name,
-                    dim=dim,
-                ),
-                projector,
+            coefficient = (
+                complex(character).conjugate()
+                if spinful
+                else complex(sy.N(sy.conjugate(character)))
             )
-        )
+            projector = projector + coefficient * rep
+        projector = (dim / group_order) * projector
+        sector_projectors.append((sector_label, projector))
 
     pooled_cols: dict[U1Basis, list[Tensor]] = {}
     label_order: list[U1Basis] = []
@@ -956,12 +983,10 @@ def point_group_column_symmetrize(
     identity.
 
     If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup], this
-    routine dispatches to the non-abelian character-projector path for
-    spinless spaces
+    routine dispatches to the non-abelian character-projector path
     \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\), using the
-    packaged irreducible-representation character table. Spinful finite-group
-    projection raises `NotImplementedError` until double-group character data
-    is available.
+    packaged ordinary character table for spinless spaces or the packaged
+    operation-wise projective spinor characters for spinful spaces.
 
     The projector is applied to each input column separately. When
     `full_sector` is `True`, every
