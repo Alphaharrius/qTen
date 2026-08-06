@@ -35,4 +35,6 @@ from .finite import FinitePointGroup as FinitePointGroup
 from .ops import (
     get_direct_transform as get_direct_transform,
     joint_point_group_basis as joint_point_group_basis,
+    spinful_hilbert_opr_repr as spinful_hilbert_opr_repr,
+    spinful_transform_basis as spinful_transform_basis,
 )

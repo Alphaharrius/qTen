@@ -34,7 +34,15 @@ from .elements import (
 from .finite import FinitePointGroup
 from ..geometries import Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
-from ..symbolics import HilbertSpace, IndexSpace, Multiple, U1Basis, hilbert_opr_repr
+from ..phys.spin import Spin, contains_spin, expand_spin, su2_numeric
+from ..symbolics import (
+    HilbertSpace,
+    IndexSpace,
+    Multiple,
+    U1Basis,
+    U1Span,
+    hilbert_opr_repr,
+)
 from ..utils.collections_ext import FrozenDict
 from ..utils.devices import Device
 from ..precision import get_precision_config
@@ -293,7 +301,184 @@ def _transform_point_group_basis_direct(
     return Multiple(sy.Abs(scale), transformed_basis)
 
 
+def _split_spin_basis(psi: U1Basis) -> tuple[tuple[Any, ...], Spin, sy.Expr]:
+    """Split a basis state into (non-spin irreps, Spin, U(1) coef)."""
+    spin_reps = [rep for rep in psi.base if type(rep) is Spin]
+    if len(spin_reps) != 1:
+        raise ValueError(
+            f"Expected exactly one Spin irrep in {psi}, found {len(spin_reps)}"
+        )
+    nons = tuple(rep for rep in psi.base if type(rep) is not Spin)
+    return nons, spin_reps[0], psi.coef
+
+
+def _transform_nons_spin_irreps(
+    opr: PointGroupOpr, nons: tuple[Any, ...]
+) -> tuple[sy.Expr, tuple[Any, ...]]:
+    """Apply the orbital/spatial part of `opr` to non-spin irreps."""
+    new_coef: sy.Expr = sy.Integer(1)
+    new_base: list[Any] = []
+    for rep in nons:
+        if type(rep) is PointGroupBasis:
+            transformed = _transform_point_group_basis_direct(opr, rep)
+            new_coef *= transformed.coef
+            new_base.append(transformed.base)
+        elif opr.allows(rep):
+            ret = opr(rep)
+            if isinstance(ret, Multiple):
+                new_coef *= ret.coef
+                new_base.append(ret.base)
+            else:
+                new_base.append(ret)
+        else:
+            new_base.append(rep)
+    return sy.simplify(new_coef), tuple(new_base)
+
+
+def _fold_offset_irreps(nons: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Replace exact-type Offset irreps by their intra-cell fractional form."""
+    return tuple(
+        rep.fractional() if type(rep) is Offset else rep for rep in nons
+    )
+
+
+def _space_uses_fractional_offsets(space: HilbertSpace) -> bool:
+    """
+    True if every Offset label in `space` is already intra-cell fractional.
+
+    Bloch / region_hilbert orbital spaces typically store fractional lattice
+    offsets. PointGroupOpr images can leave the unit cell; D(g) must fold them
+    back before lookup. Open real-space patches (integer sites outside [0,1))
+    keep exact matching so fractional folding does not falsely close the space.
+    """
+    saw_offset = False
+    for psi in space.elements():
+        for rep in psi.base:
+            if type(rep) is Offset:
+                saw_offset = True
+                if rep != rep.fractional():
+                    return False
+    return saw_offset
+
+
+def spinful_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Span:
+    r"""
+    Apply \(D_{\mathrm{orb}}(g)\otimes u(g)\) to a single basis state.
+
+    Spatial irreps that `opr` allows are transformed as usual. The
+    [`Spin`][qten.phys.spin.Spin] irrep is expanded with the SU(2) factor.
+    Returns a [`U1Span`][qten.symbolics.hilbert_space.U1Span] because spin
+    mixing generally produces a superposition.
+    """
+    nons, spin, psi_coef = _split_spin_basis(psi)
+    spatial_coef, new_nons = _transform_nons_spin_irreps(opr, nons)
+    # Standalone transform keeps the raw geometric image; callers that need
+    # periodic/Bloch matching should use spinful_hilbert_opr_repr.
+
+    terms: list[U1Basis] = []
+    for amp, spin_out in expand_spin(opr, spin):
+        coef = sy.simplify(psi_coef * spatial_coef * amp)
+        if coef == 0:
+            continue
+        terms.append(U1Basis(coef, new_nons + (spin_out,)))
+
+    if not terms:
+        raise RuntimeError(f"spinful image of {psi} vanished")
+
+    merged: dict[U1Basis, U1Basis] = {}
+    for term in terms:
+        ray = term.rays()
+        if ray in merged:
+            prev = merged[ray]
+            merged[ray] = U1Basis(sy.simplify(prev.coef + term.coef), term.base)
+        else:
+            merged[ray] = term
+    return U1Span(tuple(merged.values()))
+
+
+def spinful_hilbert_opr_repr(
+    opr: PointGroupOpr,
+    space: HilbertSpace,
+    *,
+    device: Optional[Device] = None,
+) -> Tensor:
+    r"""
+    Matrix of \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\) on a spinful Hilbert space.
+
+    Fast path: compute the SU(2) factor once, cache the orbital image of each
+    distinct non-spin irrep tuple, and scatter numerical amplitudes into a dense
+    matrix. This avoids per-basis SymPy Gram assembly used by the earlier
+    prototype and is suitable for full finite-group symmetrization.
+
+    When every [`Offset`][qten.geometries.spatials.Offset] label in `space` is
+    already intra-cell fractional (typical for Bloch / `region_hilbert`
+    spaces), orbital images are folded with `Offset.fractional()` before
+    lookup so periodic lattice translations match the stored basis.
+    """
+    precision = get_precision_config()
+    torch_device = device.torch_device() if device is not None else None
+    n = space.dim
+    data = torch.zeros(
+        (n, n),
+        dtype=precision.torch_complex,
+        device=torch_device,
+    )
+
+    # u[out, in] in the ordered basis (Spin.up, Spin.down)
+    u = torch.tensor(
+        su2_numeric(opr),
+        dtype=precision.torch_complex,
+        device=torch_device,
+    )
+    spin_list = (Spin.up, Spin.down)
+    spin_index = {Spin.up: 0, Spin.down: 1}
+
+    elements = list(space.elements())
+    fold_offsets = _space_uses_fractional_offsets(space)
+    # Lookup: (non-spin irrep tuple, Spin) -> basis index
+    index_of: dict[tuple[tuple[Any, ...], Spin], int] = {}
+    parsed: list[tuple[tuple[Any, ...], Spin, complex, int]] = []
+    for psi in elements:
+        nons, spin, coef = _split_spin_basis(psi)
+        j = space.structure[psi]
+        index_of[(nons, spin)] = j
+        parsed.append((nons, spin, complex(sy.N(coef)), j))
+
+    # Cache orbital images of unique non-spin labels
+    nons_image: dict[tuple[Any, ...], tuple[complex, tuple[Any, ...]]] = {}
+    for nons, _, _, _ in parsed:
+        if nons in nons_image:
+            continue
+        spatial_coef, new_nons = _transform_nons_spin_irreps(opr, nons)
+        if fold_offsets:
+            new_nons = _fold_offset_irreps(new_nons)
+        nons_image[nons] = (complex(sy.N(spatial_coef)), new_nons)
+
+    for nons, spin_in, psi_coef, j in parsed:
+        spatial_coef, new_nons = nons_image[nons]
+        s_in = spin_index[spin_in]
+        for s_out, spin_out in enumerate(spin_list):
+            amp = u[s_out, s_in]
+            if amp.abs() < 1e-15:
+                continue
+            key = (new_nons, spin_out)
+            if key not in index_of:
+                raise ValueError(
+                    f"Spinful image ({new_nons}, {spin_out}) is not in space "
+                    f"{space}. Space is not closed under {opr}."
+                )
+            i = index_of[key]
+            data[i, j] += (spatial_coef * psi_coef) * amp
+
+    return Tensor(data=data, dims=(space, space))
+
+
 def _ext_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Basis:
+    if any(type(rep) is Spin for rep in psi.base):
+        raise NotImplementedError(
+            "External one-to-one basis maps cannot express SU(2) spin mixing. "
+            "Use spinful_transform_basis / spinful_hilbert_opr_repr instead."
+        )
     new_coef: sy.Expr = psi.coef
     new_base: Tuple[Any, ...] = tuple()
     for rep in psi.base:
@@ -400,6 +585,12 @@ def _canonicalize_point_group_basis(
 def _internal_transform_basis(
     opr: PointGroupOpr, psi: U1Basis, space: HilbertSpace
 ) -> U1Basis:
+    if any(type(rep) is Spin for rep in psi.base):
+        raise NotImplementedError(
+            "Internal one-to-one basis maps cannot express SU(2) spin mixing. "
+            "Use spinful_hilbert_opr_repr / point_group_column_symmetrize on "
+            "spinful spaces (which build the full D(g) matrix)."
+        )
     new_coef: sy.Expr = psi.coef
     new_base: Tuple[Any, ...] = tuple()
     for rep in psi.base:
@@ -424,6 +615,13 @@ def _internal_transform_basis(
 def _hilbert_opr_repr(
     opr: PointGroupOpr, space: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
+    if contains_spin(space):
+        if _contains_point_group_basis(space):
+            raise NotImplementedError(
+                "Combined PointGroupBasis + Spin Hilbert representations "
+                "are not implemented yet."
+            )
+        return spinful_hilbert_opr_repr(opr, space, device=device)
     if not _contains_point_group_basis(space):
         return hilbert_opr_repr(opr, space, device=device)
 
