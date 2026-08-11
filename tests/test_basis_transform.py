@@ -717,8 +717,12 @@ def test_downsampling_gap_preimage_keeps_both_honeycomb_valleys():
         shape=(12, 12),
     )
     k_space = brillouin_zone(lattice.dual)
-    a = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]), space=lattice)
-    b = Offset(rep=ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]), space=lattice)
+    a = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]), space=lattice
+    )
+    b = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]), space=lattice
+    )
     h_space = HilbertSpace.new([_mode(a, "a"), _mode(b, "b")])
 
     # Synthetic Dirac cones at K and K': gapless only there.

@@ -17,7 +17,10 @@ from qten.bands import (
     proj_wannierization,
     svd_projection,
     von_neumann,
+    upsample,
+    bandfold,
 )
+from qten.geometries.basis_transform import BasisTransform
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
 from qten.geometries.spatials import AffineSpace, KPointSet, Lattice, Offset
@@ -61,6 +64,149 @@ def _band_tensor() -> tuple[Tensor, HilbertSpace]:
     data = torch.diag_embed(energies).to(torch.complex128)
     tensor = Tensor(data=data, dims=(k_space, band_space, band_space))
     return tensor, band_space
+
+
+def test_upsample_1d_tight_binding_is_exact_and_keeps_old_points():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    bands = _space("orb", 1)
+    k = torch.tensor(
+        [float(point.rep[0, 0]) for point in k_space.elements()], dtype=torch.float64
+    )
+    data = (1.0 + 2.0 * torch.cos(2 * torch.pi * k))[:, None, None]
+
+    tensor = Tensor(data=data, dims=(k_space, bands, bands))
+    unchanged = upsample(tensor, (1,))
+    result = upsample(tensor, (3,))
+    new_k = torch.tensor(
+        [float(point.rep[0, 0]) for point in result.dims[0].elements()],
+        dtype=torch.float64,
+    )
+    expected = 1.0 + 2.0 * torch.cos(2 * torch.pi * new_k)
+
+    assert result.data.shape == (12, 1, 1)
+    assert unchanged.dims == tensor.dims
+    assert torch.allclose(unchanged.data, tensor.data, atol=1e-12)
+    assert result.data.dtype == torch.float64
+    assert torch.allclose(result.data[:, 0, 0], expected, atol=1e-12)
+    old_values = {
+        str(point): data[i, 0, 0] for i, point in enumerate(k_space.elements())
+    }
+    for i, point in enumerate(result.dims[0].elements()):
+        if str(point) in old_values:
+            assert torch.allclose(
+                result.data[i, 0, 0], old_values[str(point)], atol=1e-12
+            )
+
+
+def test_upsample_matrix_skew_cell_and_autograd():
+    boundary = ImmutableDenseMatrix([[2, 1], [0, 2]])
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(boundary),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    bands = _space("orb", 2)
+    base = torch.tensor([[1.0, 1.0j], [-1.0j, -1.0]], dtype=torch.complex128)
+    data = base.expand(k_space.dim, -1, -1).clone().requires_grad_(True)
+
+    result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (2, 3))
+
+    assert result.data.shape == (k_space.dim * 6, 2, 2)
+    assert result.data.dtype == torch.complex128
+    assert result.data.device == data.device
+    assert torch.allclose(result.data, base.expand_as(result.data), atol=1e-12)
+    assert torch.allclose(result.data, result.data.mH, atol=1e-12)
+    expected_boundary = boundary @ ImmutableDenseMatrix.diag(2, 3)
+    assert result.dims[0].extract(Lattice).boundaries.basis == expected_boundary
+    result.data.real.sum().backward()
+    assert data.grad is not None
+
+
+def test_repeated_upsample_preserves_hermiticity_and_composes():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4, 4)),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    offset = Offset(rep=ImmutableDenseMatrix([0, 0]), space=lattice)
+    bands = HilbertSpace.new([_mode(offset, "a"), _mode(offset, "b")])
+    generator = torch.Generator().manual_seed(7)
+    raw = torch.randn((k_space.dim, 2, 2), generator=generator, dtype=torch.float64)
+    raw = raw + 1j * torch.randn(
+        (k_space.dim, 2, 2), generator=generator, dtype=torch.float64
+    )
+    hermitian = raw + raw.mH
+    tensor = Tensor(data=hermitian, dims=(k_space, bands, bands))
+
+    twice = upsample(upsample(tensor, (2, 2)), (2, 2))
+    direct = upsample(tensor, (4, 4))
+
+    assert torch.allclose(twice.data, twice.data.mH, atol=1e-12)
+    assert torch.allclose(twice.data, direct.data, atol=1e-12)
+
+
+def test_rectangular_upsample_does_not_build_dense_fourier_kernels(monkeypatch):
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(8, 8)),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    bands = _space("orb", 2)
+    data = torch.randn((k_space.dim, bands.dim, bands.dim), dtype=torch.complex128)
+
+    def reject_dense_kernel(*args, **kwargs):
+        raise AssertionError("rectangular upsample constructed a dense kernel")
+
+    # The fallback forms its Fourier kernels with torch.exp; the FFT path does
+    # not.  This makes the memory-scaling choice an explicit regression test.
+    monkeypatch.setattr(torch, "exp", reject_dense_kernel)
+    result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (2, 2))
+
+    assert result.data.shape == (16 * 16, bands.dim, bands.dim)
+
+
+def test_upsample_rehomes_bloch_space_for_subsequent_blocking():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix([[1]]),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
+    )
+    k_space = brillouin_zone(lattice.dual)
+    offset = Offset(rep=ImmutableDenseMatrix([0]), space=lattice)
+    bands = HilbertSpace.new([_mode(offset)])
+    tensor = Tensor(
+        data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1),
+        dims=(k_space, bands, bands),
+    )
+
+    result = upsample(tensor, (2,))
+    result_lattice = result.dims[0].extract(Lattice)
+    result_offset = result.dims[1].elements()[0].irrep_of(Offset)
+
+    assert result_lattice.basis == lattice.basis
+    assert result_lattice.boundaries.basis == ImmutableDenseMatrix.diag(8)
+    assert result_offset.space == result_lattice
+    folded = bandfold(BasisTransform(ImmutableDenseMatrix([[2]])), result)
+    assert folded.dims[0].dim == 4
+
+
+@pytest.mark.parametrize(
+    ("scale", "error"),
+    [((0,), ValueError), ((True,), TypeError), ((2, 2), ValueError), ([2], TypeError)],
+)
+def test_upsample_rejects_invalid_scale(scale, error):
+    tensor, _ = _band_tensor()
+    with pytest.raises(error):
+        upsample(tensor, scale)
+
+
+def test_upsample_is_available_from_ops():
+    from qten.ops import upsample as ops_upsample
+
+    assert ops_upsample is upsample
 
 
 def test_bandselect_supports_slice_criterion():
