@@ -37,13 +37,12 @@ symbolic state spaces label tensor axes, and linear algebra routines diagonalize
 the momentum-sector matrices when filling or selecting bands.
 """
 
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 import math
 from typing import (
     Any,
     Callable,
     Dict,
-    List,
     Literal,
     Optional,
     Sequence,
@@ -88,9 +87,7 @@ from .symbolics import (
     StateSpace,
     U1Basis,
     brillouin_zone,
-    embedding_order,
     fractional_opr,
-    permutation_order,
     rebase_opr,
     restructure,
 )
@@ -2817,350 +2814,105 @@ def proj_wannierization(
     )
 
 
-def _momentum_all_preimages(
-    src: MomentumSpace,
-    dest: MomentumSpace,
-    transform: Union[np.ndarray, Callable[[Momentum], Momentum]],
-) -> List[List[int]]:
+def cartesian_scale(tensor: Tensor, scale: Sequence[sy.Expr | int]) -> Tensor:
     r"""
-    For each destination momentum, return all source indices that map onto it.
+    Rescale the Cartesian geometry of a momentum-resolved tensor in place of
+    selecting or interpolating its information.
 
-    Source momenta are mapped into the destination fractional frame. Every
-    destination sector must have at least one preimage. Within each destination
-    bucket, source indices appear in `src` order.
-    """
-    src_elements = src.elements()
-    dest_elements = dest.elements()
-    if not dest_elements:
-        return []
-    if not src_elements:
-        raise ValueError(
-            "Source MomentumSpace is empty; cannot cover destination momenta."
-        )
-
-    if callable(transform):
-        recip_lat = src_elements[0].space
-        M, c, _ = _probe_affine(transform, recip_lat)
-    else:
-        M, c = transform, None
-
-    precision = get_precision_config()
-    src_frac = np.array(
-        [
-            [float(k.rep[j, 0]) for j in range(src_elements[0].space.dim)]
-            for k in src_elements
-        ],
-        dtype=precision.np_float,
-    )
-    mapped = src_frac @ M.T
-    if c is not None:
-        mapped = mapped + c
-    mapped_wrapped = mapped - np.floor(mapped)
-
-    first_dest_k = dest_elements[0]
-    dim = first_dest_k.space.dim
-    boundary_np = np.array(
-        first_dest_k.space.lattice.boundaries.basis.evalf(),
-        dtype=precision.np_float,
-    )
-    D = abs(int(round(np.linalg.det(boundary_np))))
-    mapped_scaled = np.rint(mapped_wrapped * D).astype(np.int64) % D
-    dest_coords = np.array(
-        [
-            [int(round(float(k.rep[j, 0]) * D)) % D for j in range(dim)]
-            for k in dest_elements
-        ],
-        dtype=np.int64,
-    )
-
-    src_for_coord: Dict[Tuple[int, ...], List[int]] = defaultdict(list)
-    for src_i, coord in enumerate(mapped_scaled):
-        key = tuple(int(x) for x in coord)
-        src_for_coord[key].append(src_i)
-
-    all_preimages: List[List[int]] = []
-    for dest_i, coord in enumerate(dest_coords):
-        key = tuple(int(x) for x in coord)
-        bucket = src_for_coord.get(key)
-        if not bucket:
-            raise ValueError(
-                f"Destination momentum at index {dest_i} with scaled coord "
-                f"{key} (D={D}) has no preimage in the source MomentumSpace."
-            )
-        all_preimages.append(bucket)
-    return all_preimages
-
-
-def _momentum_preimage_indices(
-    src: MomentumSpace,
-    dest: MomentumSpace,
-    transform: Union[np.ndarray, Callable[[Momentum], Momentum]],
-    *,
-    device: Optional[Device] = None,
-    choose: Optional[Callable[[int, Sequence[int]], int]] = None,
-) -> Tensor[torch.LongTensor]:
-    r"""
-    For each destination momentum, return one source index that maps onto it.
-
-    This is the dest-centric counterpart of
-    [`_momentum_match_indices`][qten.bands._momentum_match_indices]. By default
-    the first source (in `src` order) is retained. Pass `choose(dest_i,
-    src_indices)` to select among coset partners.
-    """
-    torch_device = device.torch_device() if device is not None else None
-    dest_elements = dest.elements()
-    if not dest_elements:
-        return Tensor(
-            data=cast(
-                torch.LongTensor,
-                torch.tensor([], dtype=torch.long, device=torch_device),
-            ),
-            dims=(dest,),
-        )
-
-    all_preimages = _momentum_all_preimages(src, dest, transform)
-    if choose is None:
-        indices = np.array([bucket[0] for bucket in all_preimages], dtype=np.int64)
-    else:
-        indices = np.empty(len(all_preimages), dtype=np.int64)
-        for dest_i, bucket in enumerate(all_preimages):
-            indices[dest_i] = int(choose(dest_i, bucket))
-
-    return Tensor(
-        data=cast(
-            torch.LongTensor,
-            torch.tensor(indices, dtype=torch.long, device=torch_device),
-        ),
-        dims=(dest,),
-    )
-
-
-def _spectral_touching_score(block: torch.Tensor) -> float:
-    """Return the smallest adjacent eigenvalue gap of a Hermitian block."""
-    herm = 0.5 * (block + block.mH)
-    evals = torch.linalg.eigvalsh(herm)
-    if evals.numel() == 0:
-        return float("inf")
-    if evals.numel() == 1:
-        return float(evals.abs().item())
-    return float((evals[1:] - evals[:-1]).min().item())
-
-
-def _choose_gap_preimage(
-    data: torch.Tensor,
-    dest_i: int,
-    src_indices: Sequence[int],
-) -> int:
-    """Pick the coset partner whose matrix block is closest to a band touching."""
-    del dest_i
-    best_src = int(src_indices[0])
-    best_score = float("inf")
-    for src_i in src_indices:
-        score = _spectral_touching_score(data[int(src_i)])
-        if score < best_score:
-            best_score = score
-            best_src = int(src_i)
-    return best_src
-
-
-def _downsample_gather_indices(
-    k_src: MomentumSpace,
-    k_target: MomentumSpace,
-    *,
-    device: Optional[Device] = None,
-    choose: Optional[Callable[[int, Sequence[int]], int]] = None,
-) -> Tensor[torch.LongTensor]:
-    """Return source indices that cover each target momentum once."""
-    if k_src == k_target:
-        torch_device = device.torch_device() if device is not None else None
-        return Tensor(
-            data=cast(
-                torch.LongTensor,
-                torch.arange(k_src.dim, dtype=torch.long, device=torch_device),
-            ),
-            dims=(k_target,),
-        )
-
-    if k_src.same_rays(k_target) or (k_target in k_src):
-        # Unique embedding / permutation: coset selection does not apply.
-        if k_src.same_rays(k_target):
-            indices = permutation_order(k_src, k_target)
-        else:
-            indices = embedding_order(k_target, k_src)
-        torch_device = device.torch_device() if device is not None else None
-        return Tensor(
-            data=cast(
-                torch.LongTensor,
-                torch.tensor(indices, dtype=torch.long, device=torch_device),
-            ),
-            dims=(k_target,),
-        )
-
-    src_lattice_set = set(map(lambda k: k.space, k_src))
-    tgt_lattice_set = set(map(lambda k: k.space, k_target))
-    if len(src_lattice_set) != 1:
-        raise ValueError("Source MomentumSpace mixes incompatible reciprocal lattices")
-    if len(tgt_lattice_set) != 1:
-        raise ValueError("Target MomentumSpace mixes incompatible reciprocal lattices")
-
-    src_reciprocal = src_lattice_set.pop()
-    tgt_reciprocal = tgt_lattice_set.pop()
-    if not isinstance(src_reciprocal, ReciprocalLattice):
-        raise TypeError(
-            "Space of source momentum should be ReciprocalLattice, "
-            f"but got {type(src_reciprocal)}"
-        )
-    if not isinstance(tgt_reciprocal, ReciprocalLattice):
-        raise TypeError(
-            "Space of target momentum should be ReciprocalLattice, "
-            f"but got {type(tgt_reciprocal)}"
-        )
-
-    precision = get_precision_config()
-    src_basis_np = np.array(src_reciprocal.basis.evalf(), dtype=precision.np_float)
-    tgt_basis_np = np.array(tgt_reciprocal.basis.evalf(), dtype=precision.np_float)
-    M_rebase = np.linalg.solve(tgt_basis_np, src_basis_np)
-    return _momentum_preimage_indices(
-        k_src, k_target, M_rebase, device=device, choose=choose
-    )
-
-
-def downsampling(
-    T: Tensor,
-    k_target: MomentumSpace,
-    *,
-    preimage: Literal["first", "gap"] = "first",
-) -> Tensor:
-    r"""
-    Restrict a momentum-resolved tensor onto a target Brillouin-zone grid.
-
-    The leading axis of the result is exactly `k_target`, so it can share a
-    [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace] with, for
-    example, the output of [`bandfold`][qten.bands.bandfold]. Hilbert-space
-    legs are left unchanged; this is the K-only counterpart of Brillouin-zone
-    folding.
-
-    Behavior
-    --------
-    When `k_target` is structurally contained in `T.dims[0]` (same momentum
-    labels, including permutations of the full set), this delegates to ordinary
-    tensor indexing and preserves exact symbolic identity of the selected
-    momenta.
-
-    Otherwise the source and target reciprocal lattices are related by the
-    Cartesian rebase
-    \(\kappa_{\mathrm{target}} = M\kappa_{\mathrm{source}}\pmod{1}\),
-    with \(M = B_{\mathrm{target}}^{-1} B_{\mathrm{source}}\). Several source
-    momenta (coset partners / umklapp images) can map to the same target
-    sector; `preimage` chooses which one is kept.
-
-    This choice is what goes wrong for honeycomb Dirac cones under naive
-    downsampling: \(K\) and \(K'\) fold to *different* reduced-zone points, but
-    each of those points also has mundane coset partners. Keeping only the
-    first partner in source order typically preserves one valley and replaces
-    the other by a gapped preimage — one cone "flies away". That routing is a
-    **k-space coset choice**, not a Hilbert-space Clifford / Fourier
-    \(\gamma\)-matrix. Orbital phase matrices from
-    [`get_band_fold`][qten.bands.get_band_fold] do not move eigenvalues.
+    For Cartesian scale matrix \(S=\operatorname{diag}(s_1,\ldots,s_d)\), a
+    direct-lattice basis \(A\) becomes \(SA\). Its reciprocal basis therefore
+    becomes \(S^{-T}G\). Fractional real-space and momentum coordinates,
+    periodic boundaries, unit-cell sites, tensor data, and every axis size are
+    preserved.
 
     Parameters
     ----------
-    T : Tensor
+    tensor : Tensor
         Momentum-resolved tensor whose first axis is a
         [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
-    k_target : MomentumSpace
-        Target momentum grid. A common choice is `folded.dims[0]` after
-        [`bandfold`][qten.bands.bandfold].
-    preimage : {"first", "gap"}, default="first"
-        Coset-selection policy when lattices differ:
-
-        - `"first"`: keep the first source sector in source order (legacy).
-        - `"gap"`: among partners of each target \(k'\), keep the block whose
-          Hermitian spectrum is closest to a band touching (smallest adjacent
-          eigenvalue gap). This is lattice-agnostic and recovers both honeycomb
-          valleys without special-casing \(K/K'\`. Requires a rank-3 tensor with
-          square matrix legs.
+    scale : Sequence[sympy.Expr | int | float]
+        Nonzero Cartesian scale factor for each spatial direction. Entries
+        must be Python integers or symbolic SymPy expressions.
 
     Returns
     -------
     Tensor
-        dims `(k_target, *T.dims[1:])`.
+        A tensor sharing the original data with geometrically rescaled
+        `MomentumSpace` and spatial `HilbertSpace` dimensions.
 
     Raises
     ------
     ValueError
-        If `T` has no axes, if either momentum space is empty or mixes
-        reciprocal lattices, if some target momentum has no preimage in
-        `T.dims[0]`, or if `preimage="gap"` is used with an incompatible tensor
-        shape.
+        If a scale entry is zero or its length differs from the spatial
+        dimension.
     TypeError
-        If `T.dims[0]` or `k_target` is not a
-        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace], or if a
-        momentum axis is not backed by a
-        [`ReciprocalLattice`][qten.geometries.spatials.ReciprocalLattice].
-
-    Examples
-    --------
-    Match the momentum grid of a folded band tensor:
-
-    ```python
-    folded = bandfold(transform, tensor)
-    sampled = downsampling(tensor, folded.dims[0])
-    assert sampled.dims[0] == folded.dims[0]
-    ```
-
-    Keep Dirac touchings under honeycomb \(2\times 2\) blocking:
-
-    ```python
-    sampled = downsampling(bloch, folded.dims[0], preimage="gap")
-    ```
-
-    See Also
-    --------
-    [`bandfold`][qten.bands.bandfold]
-        Fold momenta and enlarge Hilbert-space legs together (all cosets).
+        If the first tensor dimension is not a `MomentumSpace`, a momentum is
+        not backed by a `ReciprocalLattice`, or a scale entry is neither an
+        integer nor a SymPy expression.
     """
-    if T.rank() < 1:
-        raise ValueError("downsampling requires a tensor with at least one axis.")
-    if not isinstance(T.dims[0], MomentumSpace):
+    if tensor.rank() < 1:
+        raise ValueError("cartesian_scale requires a tensor with at least one axis.")
+    if not isinstance(tensor.dims[0], MomentumSpace):
         raise TypeError(
             "The first dimension of the tensor must be a MomentumSpace, "
-            f"but is of type {type(T.dims[0])}"
+            f"but is of type {type(tensor.dims[0])}"
         )
-    if not isinstance(k_target, MomentumSpace):
-        raise TypeError(f"k_target must be a MomentumSpace, but got {type(k_target)}")
-    if preimage not in ("first", "gap"):
-        raise ValueError(f"preimage must be 'first' or 'gap', got {preimage!r}.")
 
-    k_src = cast(MomentumSpace, T.dims[0])
-    if not k_src.elements():
-        raise ValueError("Source MomentumSpace is empty")
-    if not k_target.elements():
-        raise ValueError("Target MomentumSpace is empty")
+    if any(
+        not isinstance(entry, sy.Expr)
+        and (not isinstance(entry, int) or isinstance(entry, bool))
+        for entry in scale
+    ):
+        raise TypeError("cartesian_scale scale entries must be int or sympy.Expr.")
+    factors = tuple(sy.sympify(entry) for entry in scale)
+    if any(sy.simplify(entry) == 0 for entry in factors):
+        raise ValueError("cartesian_scale scale entries must all be nonzero.")
 
-    choose_fn: Optional[Callable[[int, Sequence[int]], int]] = None
-    if preimage == "gap":
-        if T.rank() != 3 or T.data.shape[-1] != T.data.shape[-2]:
+    scaled_lattices: dict[Lattice, Lattice] = {}
+
+    def scale_lattice(lattice: Lattice) -> Lattice:
+        if len(factors) != lattice.dim:
             raise ValueError(
-                "preimage='gap' requires a rank-3 tensor with square matrix legs."
+                "cartesian_scale scale must have one entry per Cartesian direction: "
+                f"expected {lattice.dim}, got {len(factors)}."
             )
+        if lattice not in scaled_lattices:
+            scaled_lattices[lattice] = Lattice(
+                basis=ImmutableDenseMatrix.diag(*factors) @ lattice.basis,
+                boundaries=lattice.boundaries,
+                unit_cell={name: site.rep for name, site in lattice.unit_cell.items()},
+            )
+        return scaled_lattices[lattice]
 
-        def choose_fn(dest_i: int, src_indices: Sequence[int]) -> int:
-            return _choose_gap_preimage(T.data, dest_i, src_indices)
+    def scale_momentum(momentum: Momentum) -> Momentum:
+        if not isinstance(momentum.space, ReciprocalLattice):
+            raise TypeError(
+                "Momentum must be backed by a ReciprocalLattice, got "
+                f"{type(momentum.space).__name__}."
+            )
+        return Momentum(
+            rep=momentum.rep,
+            space=scale_lattice(momentum.space.dual).dual,
+        )
 
-    gather = _downsample_gather_indices(
-        k_src, k_target, device=T.device, choose=choose_fn
+    def scale_hilbert(space: HilbertSpace) -> HilbertSpace:
+        states: list[U1Basis] = []
+        for state in space.elements():
+            base = tuple(
+                Offset(rep=irrep.rep, space=scale_lattice(irrep.space))
+                if isinstance(irrep, Offset) and isinstance(irrep.space, Lattice)
+                else irrep
+                for irrep in state.base
+            )
+            states.append(U1Basis(coef=state.coef, base=base))
+        return HilbertSpace.new(states)
+
+    dims = tuple(
+        dim.map(scale_momentum)
+        if isinstance(dim, MomentumSpace)
+        else scale_hilbert(dim)
+        if isinstance(dim, HilbertSpace)
+        else dim
+        for dim in tensor.dims
     )
-
-    if k_src == k_target:
-        return T
-
-    # Same symbolic momentum labels: reuse StateSpace-aware indexing.
-    if choose_fn is None and (k_src.same_rays(k_target) or (k_target in k_src)):
-        index = (k_target,) + (slice(None),) * (T.rank() - 1)
-        return cast(Tensor, T[index])
-
-    return Tensor(
-        data=T.data[gather.data],
-        dims=(k_target, *T.dims[1:]),
-    )
+    return Tensor(data=tensor.data, dims=dims)

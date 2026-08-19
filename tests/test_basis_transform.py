@@ -20,7 +20,7 @@ from qten.bands import (
     bandfold,
     bandtransform,
     bandunfold,
-    downsampling,
+    cartesian_scale,
     get_band_fold,
     get_band_transform,
 )
@@ -650,104 +650,46 @@ def test_momentum_transform():
     assert new_k.space.basis == ImmutableDenseMatrix([[sy.pi]])
 
 
-def test_downsampling_matches_bandfold_momentum_space():
-    basis = ImmutableDenseMatrix([[1]])
+def test_cartesian_scale_preserves_tensor_information_and_rescales_spaces():
+    basis = ImmutableDenseMatrix.diag(2, 3, 4)
     lattice = Lattice(
         basis=basis,
-        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
-        unit_cell={"r": ImmutableDenseMatrix([0])},
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0])},
     )
     k_space = brillouin_zone(lattice.dual)
-    h_space = HilbertSpace.new(
-        [_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))]
-    )
-    data = torch.arange(4, dtype=torch.float64).reshape(4, 1, 1)
+    offset = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice)
+    h_space = HilbertSpace.new([_mode(offset)])
+    data = torch.arange(k_space.dim, dtype=torch.float64).reshape(k_space.dim, 1, 1)
     tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
 
-    transform = BasisTransform(ImmutableDenseMatrix([[2]]))
-    folded = bandfold(transform, tensor_in)
-    sampled = downsampling(tensor_in, folded.dims[0])
+    scaled = cartesian_scale(tensor_in, (sy.Rational(1, 2),) * 3)
 
-    assert sampled.dims[0] == folded.dims[0]
-    assert sampled.dims[1] == h_space
-    assert sampled.dims[2] == h_space
-    # First preimages: k=0 -> fold 0 (value 0), k=1/4 -> fold 1/2 (value 1)
-    assert torch.allclose(
-        sampled.data, torch.tensor([[[0.0]], [[1.0]]], dtype=torch.float64)
+    assert scaled.data is tensor_in.data
+    assert scaled.data.shape == tensor_in.data.shape
+    scaled_k = scaled.dims[0]
+    assert isinstance(scaled_k, MomentumSpace)
+    scaled_reciprocal = scaled_k.elements()[0].space
+    assert scaled_reciprocal.dual.basis == ImmutableDenseMatrix.diag(
+        1, sy.Rational(3, 2), 2
     )
+    assert scaled_reciprocal.basis == lattice.dual.basis * 2
+    assert [k.rep for k in scaled_k.elements()] == [k.rep for k in k_space.elements()]
+
+    for dim in scaled.dims[1:]:
+        assert isinstance(dim, HilbertSpace)
+        scaled_offset = dim.elements()[0].irrep_of(Offset)
+        assert scaled_offset.rep == offset.rep
+        assert scaled_offset.space == scaled_reciprocal.dual
 
 
-def test_downsampling_same_lattice_subset():
-    basis = ImmutableDenseMatrix([[1]])
-    lattice = Lattice(
-        basis=basis,
-        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(4)),
-        unit_cell={"r": ImmutableDenseMatrix([0])},
-    )
-    k_space = brillouin_zone(lattice.dual)
-    h_space = HilbertSpace.new(
-        [_mode(Offset(rep=ImmutableDenseMatrix([0]), space=lattice))]
-    )
-    data = torch.arange(4, dtype=torch.float64).reshape(4, 1, 1)
-    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+def test_cartesian_scale_rejects_invalid_scale():
+    lattice = Lattice(basis=ImmutableDenseMatrix([[2]]), shape=(2,))
+    tensor = Tensor(data=torch.arange(2), dims=(brillouin_zone(lattice.dual),))
 
-    k_subset = k_space[::2]
-    sampled = downsampling(tensor_in, k_subset)
-
-    assert sampled.dims[0] == k_subset
-    assert torch.allclose(
-        sampled.data, torch.tensor([[[0.0]], [[2.0]]], dtype=torch.float64)
-    )
-
-
-def test_downsampling_gap_preimage_keeps_both_honeycomb_valleys():
-    """First-preimage drops K'; gap policy recovers both Dirac touchings."""
-    triangular = sy.ImmutableMatrix(
-        [
-            [sy.sqrt(3) / 2, 0],
-            [-sy.Rational(1, 2), 1],
-        ]
-    )
-    lattice = Lattice(
-        basis=triangular,
-        unit_cell={
-            "a": sy.ImmutableMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]),
-            "b": sy.ImmutableMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]),
-        },
-        shape=(12, 12),
-    )
-    k_space = brillouin_zone(lattice.dual)
-    a = Offset(
-        rep=ImmutableDenseMatrix([sy.Rational(1, 3), sy.Rational(2, 3)]), space=lattice
-    )
-    b = Offset(
-        rep=ImmutableDenseMatrix([sy.Rational(2, 3), sy.Rational(1, 3)]), space=lattice
-    )
-    h_space = HilbertSpace.new([_mode(a, "a"), _mode(b, "b")])
-
-    # Synthetic Dirac cones at K and K': gapless only there.
-    data = torch.zeros(k_space.dim, 2, 2, dtype=torch.complex128)
-    for i, k in enumerate(k_space.elements()):
-        kx = float(k.rep[0, 0])
-        ky = float(k.rep[1, 0])
-        near_K = abs(kx - 1 / 3) < 1e-8 and abs(ky - 1 / 3) < 1e-8
-        near_Kp = abs(kx - 2 / 3) < 1e-8 and abs(ky - 2 / 3) < 1e-8
-        gap = 0.0 if (near_K or near_Kp) else 1.0
-        data[i, 0, 0] = gap
-        data[i, 1, 1] = -gap
-    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
-
-    folded = bandfold(BasisTransform(sy.ImmutableMatrix.eye(2) * 2), tensor_in)
-    first = downsampling(tensor_in, folded.dims[0], preimage="first")
-    gap = downsampling(tensor_in, folded.dims[0], preimage="gap")
-
-    def _touching_count(sampled: Tensor) -> int:
-        count = 0
-        for block in sampled.data:
-            evals = torch.linalg.eigvalsh(0.5 * (block + block.mH))
-            if float((evals[1:] - evals[:-1]).min()) < 1e-10:
-                count += 1
-        return count
-
-    assert _touching_count(first) == 1
-    assert _touching_count(gap) == 2
+    with pytest.raises(ValueError, match="expected 1, got 2"):
+        cartesian_scale(tensor, (1, 1))
+    with pytest.raises(ValueError, match="nonzero"):
+        cartesian_scale(tensor, (0,))
+    with pytest.raises(TypeError, match="int or sympy.Expr"):
+        cartesian_scale(tensor, (0.5,))  # type: ignore[arg-type]
