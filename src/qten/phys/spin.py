@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, ClassVar, Tuple
 
 import sympy as sy
 
@@ -52,6 +52,8 @@ class Spin(Operable):
     """
 
     ms: sy.Rational
+    up: ClassVar[Spin]
+    down: ClassVar[Spin]
 
     def __post_init__(self) -> None:
         ms = sy.Rational(self.ms)
@@ -74,16 +76,17 @@ class Spin(Operable):
         return f"Spin.{'up' if self.is_up else 'down'}"
 
 
-Spin.up = Spin(_HALF)  # type: ignore[attr-defined]
-Spin.down = Spin(-_HALF)  # type: ignore[attr-defined]
+Spin.up = Spin(_HALF)
+Spin.down = Spin(-_HALF)
 
 
-@Operable.__lt__.register
+# mypy does not model multimethod's dynamic .register API.
+@Operable.__lt__.register  # type: ignore[attr-defined]
 def _(a: Spin, b: Spin) -> bool:
     return a.ms > b.ms  # up (+1/2) before down (-1/2)
 
 
-@Operable.__gt__.register
+@Operable.__gt__.register  # type: ignore[attr-defined]
 def _(a: Spin, b: Spin) -> bool:
     return a.ms < b.ms
 
