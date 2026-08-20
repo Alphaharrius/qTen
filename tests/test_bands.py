@@ -15,6 +15,7 @@ from qten.bands import (
     _infer_wannier_bridge,
     proj_wannierization,
     svd_projection,
+    fhs_chern_number,
 )
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
@@ -59,6 +60,42 @@ def _band_tensor() -> tuple[Tensor, HilbertSpace]:
     data = torch.diag_embed(energies).to(torch.complex128)
     tensor = Tensor(data=data, dims=(k_space, band_space, band_space))
     return tensor, band_space
+
+
+def test_fhs_chern_number_for_two_band_chern_insulator():
+    size = 8
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(size, size)),
+        unit_cell={"r": ImmutableDenseMatrix([0, 0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = _space("chern", 2)
+    blocks = []
+    for k in k_space.elements():
+        kx = 2.0 * torch.pi * float(k.rep[0])
+        ky = 2.0 * torch.pi * float(k.rep[1])
+        dx = torch.sin(torch.tensor(kx, dtype=torch.float64))
+        dy = torch.sin(torch.tensor(ky, dtype=torch.float64))
+        dz = -1.0 + torch.cos(torch.tensor(kx)) + torch.cos(torch.tensor(ky))
+        blocks.append(
+            torch.stack(
+                (
+                    torch.stack((dz, dx - 1j * dy)),
+                    torch.stack((dx + 1j * dy, -dz)),
+                )
+            ).to(torch.complex128)
+        )
+    hamiltonian = Tensor(
+        data=torch.stack(blocks), dims=(k_space, band_space, band_space)
+    )
+
+    result = fhs_chern_number(hamiltonian, n_occupied=1)
+
+    assert abs(result["nearest_integer"]) == 1
+    assert result["chern"] == pytest.approx(result["nearest_integer"], abs=1e-12)
+    assert result["direct_gap"] > 0
+    assert result["berry_flux"].shape == (size, size)
 
 
 def test_bandselect_supports_slice_criterion():

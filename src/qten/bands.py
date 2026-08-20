@@ -1399,6 +1399,123 @@ def bandcounts(tensor: Tensor) -> Tensor:
     return Tensor(data=counts, dims=(kspace,))
 
 
+def fhs_chern_number(
+    bloch_hamiltonian: Tensor,
+    n_occupied: Optional[int] = None,
+    gap_tolerance: float = 1e-8,
+) -> Dict[str, Any]:
+    r"""Compute the occupied-band Chern number on a two-dimensional k grid.
+
+    This uses the gauge-invariant Fukui-Hatsugai-Suzuki plaquette formula on
+    the momentum grid already carried by ``bloch_hamiltonian``.  The occupied
+    subspace consists of the ``n_occupied`` lowest-energy eigenstates at every
+    momentum.
+
+    Parameters
+    ----------
+    bloch_hamiltonian : Tensor
+        Rank-3 Hermitian tensor with dimensions
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``.
+    n_occupied : int, optional
+        Number of occupied bands. Defaults to half the bands.
+    gap_tolerance : float, default=1e-8
+        Warn when the minimum direct gap between the occupied and empty bands
+        is no larger than this value.
+
+    Returns
+    -------
+    dict
+        ``chern`` is the raw floating-point result, ``nearest_integer`` its
+        nearest integer, ``direct_gap`` the minimum direct band gap, and
+        ``berry_flux`` the NumPy array of plaquette Berry fluxes.
+
+    Raises
+    ------
+    ValueError
+        If the Hamiltonian shape, occupied-band count, or momentum grid is
+        invalid.
+    TypeError
+        If the first tensor dimension is not a ``MomentumSpace``.
+    RuntimeError
+        If a neighboring occupied-subspace overlap is singular.
+    """
+    if bloch_hamiltonian.rank() != 3:
+        raise ValueError("bloch_hamiltonian must have dimensions (k, band, band).")
+    if not isinstance(bloch_hamiltonian.dims[0], MomentumSpace):
+        raise TypeError("The first dimension must be a MomentumSpace.")
+
+    data = bloch_hamiltonian.data
+    if data.shape[-2] != data.shape[-1]:
+        raise ValueError("The Hamiltonian must be square at every momentum.")
+    n_bands = data.shape[-1]
+    if n_occupied is None:
+        n_occupied = n_bands // 2
+    if not 0 < n_occupied < n_bands:
+        raise ValueError("n_occupied must lie strictly between 0 and n_bands.")
+
+    momenta = bloch_hamiltonian.dims[0].elements()
+    if not momenta or len(momenta[0].rep) != 2:
+        raise ValueError("A two-dimensional momentum grid is required.")
+    fractional_k = [(float(k.rep[0]), float(k.rep[1])) for k in momenta]
+    lx = len({round(kx % 1.0, 12) for kx, _ in fractional_k})
+    ly = len({round(ky % 1.0, 12) for _, ky in fractional_k})
+    if lx * ly != len(momenta):
+        raise ValueError("Momentum points do not form a complete rectangular grid.")
+
+    energies, eigenvectors = torch.linalg.eigh(data)
+    occupied_grid = data.new_empty((lx, ly, n_bands, n_occupied))
+    energy_grid = energies.new_empty((lx, ly, n_bands))
+    visited: set[tuple[int, int]] = set()
+    for flat_index, (kx, ky) in enumerate(fractional_k):
+        ix = int(round((kx % 1.0) * lx)) % lx
+        iy = int(round((ky % 1.0) * ly)) % ly
+        if (ix, iy) in visited:
+            raise ValueError(f"Duplicate momentum grid point {(ix, iy)}.")
+        visited.add((ix, iy))
+        occupied_grid[ix, iy] = eigenvectors[flat_index, :, :n_occupied]
+        energy_grid[ix, iy] = energies[flat_index]
+
+    direct_gap = float(
+        (energy_grid[..., n_occupied] - energy_grid[..., n_occupied - 1]).min().item()
+    )
+    if direct_gap <= gap_tolerance:
+        warnings.warn(
+            f"Minimum direct gap is {direct_gap:.6e}; the occupied bundle is "
+            "not isolated, so its Chern number is not well-defined.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    def link(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+        overlap = left.conj().transpose(-2, -1) @ right
+        determinant = torch.linalg.det(overlap)
+        magnitude = determinant.abs()
+        if bool((magnitude < 1e-14).any()):
+            raise RuntimeError(
+                "A neighboring occupied-subspace overlap is singular; "
+                "increase the momentum-grid resolution."
+            )
+        return determinant / magnitude
+
+    link_x = link(occupied_grid, torch.roll(occupied_grid, shifts=-1, dims=0))
+    link_y = link(occupied_grid, torch.roll(occupied_grid, shifts=-1, dims=1))
+    plaquette = (
+        link_x
+        * torch.roll(link_y, shifts=-1, dims=0)
+        * torch.roll(link_x, shifts=-1, dims=1).conj()
+        * link_y.conj()
+    )
+    berry_flux = torch.angle(plaquette)
+    chern = float((berry_flux.sum() / (2.0 * torch.pi)).item())
+
+    return {
+        "chern": chern,
+        "nearest_integer": int(np.rint(chern)),
+        "direct_gap": direct_gap,
+        "berry_flux": berry_flux.detach().cpu().numpy(),
+    }
+
+
 def bandfillings(tensor: Tensor, frac: float) -> Tensor:
     r"""
     Return eigenvectors for occupied bands up to a filling fraction.
