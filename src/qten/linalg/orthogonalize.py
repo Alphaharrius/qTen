@@ -35,8 +35,8 @@ def lowdin_orthonormalize(tensor: Tensor, rank_tolerance: float = 1e-10) -> Tens
     r"""Symmetrically orthonormalize the columns of a tensor.
 
     Applies the Lowdin transformation
-    :math:`A \mapsto A(A^\dagger A)^{-1/2}` independently to every matrix in
-    the leading batch dimensions. The input dimensions are preserved.
+    \(A \mapsto A(A^\dagger A)^{-1/2}\) independently to every matrix in the
+    leading batch dimensions. The input dimensions are preserved.
 
     Parameters
     ----------
