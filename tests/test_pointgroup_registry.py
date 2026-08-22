@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import sympy as sy
 
 from qten.geometries.boundary import PeriodicBoundary
@@ -14,6 +15,7 @@ from qten.pointgroups._registry import (
     _double_point_group_data,
     _point_group_data,
     known_point_group_symbols,
+    verify_spinor_factor_system,
 )
 from qten.phys import su2_of_point_group
 
@@ -97,19 +99,17 @@ def test_all_packaged_spinor_tables_are_complete_and_orthonormal():
     assert set(records) == set(known_point_group_symbols())
 
     for symbol, record in records.items():
-        group = pointgroup(symbol)
-        assert group.spinor_irreps is not None
-        assert record["order"] == group.order
-        assert len(record["operations"]) == group.order
-        assert len(record["factor_system"]) == group.order
-        assert all(len(row) == group.order for row in record["factor_system"])
+        order = int(record["order"])
+        assert len(record["operations"]) == order
+        assert len(record["factor_system"]) == order
+        assert all(len(row) == order for row in record["factor_system"])
         assert {int(value) for row in record["factor_system"] for value in row} <= {
             -1,
             1,
         }
 
         irreps = record["irreps"]
-        assert sum(int(irrep["dim"]) ** 2 for irrep in irreps.values()) == group.order
+        assert sum(int(irrep["dim"]) ** 2 for irrep in irreps.values()) == order
         characters = np.asarray(
             [
                 [complex(*value) for value in irrep["characters"]]
@@ -117,12 +117,19 @@ def test_all_packaged_spinor_tables_are_complete_and_orthonormal():
             ]
         )
         assert np.allclose(
-            characters.conj() @ characters.T / group.order,
+            characters.conj() @ characters.T / order,
             np.eye(len(irreps)),
             rtol=0,
             atol=1e-12,
-        )
-        for irrep_name in irreps:
+        ), symbol
+
+
+def test_representative_spinor_tables_remap_to_generated_elements():
+    for symbol in ("4", "4mm", "-43m", "3", "6/mmm"):
+        group = pointgroup(symbol)
+        assert group.spinor_irreps is not None
+        verify_spinor_factor_system(group)
+        for irrep_name in group.spinor_irreps["irreps"]:
             assert len(group.spinor_irrep_characters_by_element(irrep_name)) == (
                 group.order
             )
@@ -291,6 +298,98 @@ def test_manual_c4_and_registry_c4_share_polynomial_basis_but_not_sector_basis()
     )
     assert manual_sector_exprs != finite_sector_exprs
     assert finite_sector_exprs == {x, y}
+
+
+def test_c3_class_alignment_respects_rotation_sense():
+    group = pointgroup("3")
+    omega = sy.exp(2 * sy.pi * sy.I / 3)
+    characters = group.irrep_characters_by_element("^2E")
+    labels = group.irreps["class_labels"]
+    class_by_element = group.element_class_indices()
+
+    seen_plus = False
+    seen_minus = False
+    for element, character, class_index in zip(
+        group.elements(), characters, class_by_element
+    ):
+        if element.group_order() != 3:
+            continue
+        image = sy.simplify(element.irrep[0, 0] + sy.I * element.irrep[1, 0])
+        label = labels[class_index]
+        if sy.simplify(sy.expand_complex(image - omega)).equals(0):
+            assert label == "3^+"
+            assert sy.simplify(sy.expand_complex(character - omega)).equals(0)
+            seen_plus = True
+        elif sy.simplify(sy.expand_complex(image - omega**2)).equals(0):
+            assert label == "3^-"
+            assert sy.simplify(sy.expand_complex(character - omega**2)).equals(0)
+            seen_minus = True
+        else:
+            raise AssertionError(f"Unexpected C3 image {image}")
+    assert seen_plus and seen_minus
+
+
+def test_class_alignment_rejects_size_only_fallback():
+    c4v = pointgroup("C4v-xy")
+    bad_irreps = {
+        "class_labels": ["1", "2", "4", "4", "4"],
+        "multiplicities": list(c4v.irreps["multiplicities"]),
+        "irreps": c4v.irreps["irreps"],
+        "source": "test",
+    }
+    with pytest.raises(ValueError, match="geometrically align"):
+        FinitePointGroup.from_matrices(
+            (generator.irrep for generator in c4v.generators),
+            axes=c4v.axes,
+            symbol="4mm",
+            irreps=bad_irreps,
+        ).element_class_indices()
+
+
+def test_distinct_character_tables_do_not_share_projector_cache():
+    import copy
+
+    c4v = pointgroup("C4v-xy")
+    swapped = copy.deepcopy(c4v.irreps)
+    swapped["irreps"]["B1"], swapped["irreps"]["B2"] = (
+        copy.deepcopy(c4v.irreps["irreps"]["B2"]),
+        copy.deepcopy(c4v.irreps["irreps"]["B1"]),
+    )
+    left = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in c4v.generators),
+        axes=c4v.axes,
+        symbol="4mm",
+        irreps=c4v.irreps,
+    )
+    right = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in c4v.generators),
+        axes=c4v.axes,
+        symbol="4mm",
+        irreps=swapped,
+    )
+    assert left != right
+    assert hash(left) != hash(right)
+    left_b1 = {sy.simplify(basis.expr) for basis in left.irrep_basis(2, "B1")}
+    right_b1 = {sy.simplify(basis.expr) for basis in right.irrep_basis(2, "B1")}
+    assert left_b1 == {c4v.axes[0] ** 2 - c4v.axes[1] ** 2}
+    assert right_b1 == {c4v.axes[0] * c4v.axes[1]}
+
+
+def test_tampered_factor_system_is_rejected():
+    group = pointgroup("4")
+    tampered_table = dict(group.spinor_irreps)
+    factor_system = [list(row) for row in tampered_table["factor_system"]]
+    factor_system[0][1] = -factor_system[0][1]
+    tampered_table["factor_system"] = factor_system
+    tampered = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in group.generators),
+        axes=group.axes,
+        symbol=group.symbol,
+        irreps=group.irreps,
+        spinor_irreps=tampered_table,
+    )
+    with pytest.raises(ValueError, match="factor system"):
+        verify_spinor_factor_system(tampered)
 
 
 def test_non_abelian_tetrahedral_point_group_preserves_diamond_lattice_basis():

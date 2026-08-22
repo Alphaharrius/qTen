@@ -13,11 +13,12 @@ import json
 import hashlib
 from functools import lru_cache
 from importlib import resources
-from typing import Any
+from typing import Any, Sequence
 
+import numpy as np
 import sympy as sy
 
-from ..phys.spin import SU2_SECTION_CONVENTION
+from ..phys.spin import SU2_SECTION_CONVENTION, principal_su2_from_rows
 from .finite import FinitePointGroup
 
 
@@ -158,6 +159,155 @@ def _cartesianize_generator(
     return sy.ImmutableDenseMatrix(sy.simplify(basis @ matrix @ basis.inv()))
 
 
+def _numpy_o3(matrix: sy.Matrix) -> np.ndarray:
+    """Real 3x3 matrix as float64, for numeric products and lifts."""
+    return np.array(
+        [[float(sy.N(matrix[row, col])) for col in range(3)] for row in range(3)],
+        dtype=np.float64,
+    )
+
+
+def _o3_key(rotation: np.ndarray, *, digits: int = 6) -> tuple[float, ...]:
+    return tuple(round(float(entry), digits) for entry in rotation.reshape(-1))
+
+
+def _su2_numpy_from_cartesian(matrix: sy.ImmutableDenseMatrix) -> np.ndarray:
+    """Numeric principal-branch SU(2) lift of a Cartesian O(3) matrix."""
+    return np.array(
+        principal_su2_from_rows(_numpy_o3(matrix).tolist()), dtype=np.complex128
+    )
+
+
+def _check_numeric_factor_system(
+    rotations: Sequence[np.ndarray],
+    lifts: np.ndarray,
+    factor_system: Sequence[Sequence[int]],
+    *,
+    symbol: str,
+    integer: bool,
+) -> None:
+    r"""Check \(U(g)U(h)=\omega(g,h)U(gh)\) with numeric 2x2 arithmetic."""
+    order = len(rotations)
+    if lifts.shape != (order, 2, 2):
+        raise ValueError(f"Spinor lift stack has the wrong shape for {symbol}.")
+    if len(factor_system) != order or any(len(row) != order for row in factor_system):
+        raise ValueError(f"Spinor factor system has the wrong shape for {symbol}.")
+
+    if integer:
+        index = {
+            tuple(int(entry) for entry in rotation.reshape(-1)): i
+            for i, rotation in enumerate(rotations)
+        }
+    else:
+        index = {_o3_key(rotation): i for i, rotation in enumerate(rotations)}
+    if len(index) != order:
+        raise ValueError(f"Spinor table contains duplicate operations for {symbol}.")
+
+    omega = np.asarray(factor_system, dtype=np.int8)
+    if set(int(value) for value in omega.reshape(-1)) - {-1, 1}:
+        raise ValueError(f"Spinor factor is not ±1 for {symbol}.")
+
+    for i, left in enumerate(rotations):
+        for j, right in enumerate(rotations):
+            product = left @ right
+            key = (
+                tuple(int(entry) for entry in product.reshape(-1))
+                if integer
+                else _o3_key(product)
+            )
+            if key not in index:
+                raise ValueError(
+                    f"Spinor factor system product is missing for {symbol}."
+                )
+            expected = int(omega[i, j]) * lifts[index[key]]
+            if not np.allclose(lifts[i] @ lifts[j], expected, rtol=0.0, atol=1e-8):
+                raise ValueError(
+                    "Spinor factor system does not match the current SU(2) lift "
+                    f"for {symbol}."
+                )
+
+
+def verify_spinor_factor_system(group: FinitePointGroup) -> None:
+    r"""
+    Check that a group's spinor table matches the current SU(2) lift.
+
+    Packaged tables are verified from crystallographic integer products, so the
+    pair loop never builds symbolic \(gh\). Custom tables use numeric Cartesian
+    keys. In both cases \(U(g)\) is the numeric principal-branch lift.
+    """
+    table = group.spinor_irreps
+    if table is None:
+        raise ValueError(
+            f"No spinor character-table data is available for {group.symbol}."
+        )
+
+    operations = tuple(
+        sy.ImmutableDenseMatrix(operation) for operation in table["operations"]
+    )
+    symbol = group.symbol or "<anonymous>"
+    cartesian = [_numpy_o3(matrix) for matrix in operations]
+    operation_keys = {_o3_key(rotation) for rotation in cartesian}
+    if len(operation_keys) != len(operations):
+        raise ValueError(f"Spinor table contains duplicate operations for {symbol}.")
+    element_keys = {_o3_key(_numpy_o3(element.irrep)) for element in group.elements()}
+    if element_keys != operation_keys:
+        raise ValueError(
+            "Spinor table operations do not match generated point-group "
+            f"elements for {symbol}."
+        )
+
+    lifts = np.stack([_su2_numpy_from_cartesian(matrix) for matrix in operations])
+    source = (
+        _double_records_by_symbol().get(group.symbol)
+        if group.symbol is not None
+        else None
+    )
+    if (
+        source is not None
+        and len(source.get("operations", ())) == len(operations)
+        and source.get("factor_system") == table.get("factor_system")
+    ):
+        cryst = [np.asarray(operation, dtype=int) for operation in source["operations"]]
+        _check_numeric_factor_system(
+            cryst,
+            lifts,
+            source["factor_system"],
+            symbol=symbol,
+            integer=True,
+        )
+        return
+
+    _check_numeric_factor_system(
+        cartesian,
+        lifts,
+        table["factor_system"],
+        symbol=symbol,
+        integer=False,
+    )
+
+
+@lru_cache
+def _verified_spinor_table(symbol: str) -> dict[str, Any] | None:
+    """Cartesian spinor table for `symbol`, checked once against the current lift."""
+    record = _records_by_symbol()[symbol]
+    table = _spinor_table(record, "xyz")
+    if table is None:
+        return None
+    source = _double_records_by_symbol()[symbol]
+    cryst = [np.asarray(operation, dtype=int) for operation in source["operations"]]
+    lifts = np.stack(
+        [_su2_numpy_from_cartesian(operation) for operation in table["operations"]]
+    )
+    _check_numeric_factor_system(
+        cryst,
+        lifts,
+        source["factor_system"],
+        symbol=symbol,
+        integer=True,
+    )
+    return table
+
+
 def _spinor_table(record: dict[str, Any], axis_names: str) -> dict[str, Any] | None:
     """Return a verified spinor table in QTen's Cartesian matrix convention."""
     if axis_names != "xyz":
@@ -185,6 +335,7 @@ def _spinor_table(record: dict[str, Any], axis_names: str) -> dict[str, Any] | N
     return normalized
 
 
+@lru_cache
 def named_pointgroup(query: str) -> FinitePointGroup:
     """
     Build a finite point group from packaged generator data.
@@ -225,10 +376,11 @@ def named_pointgroup(query: str) -> FinitePointGroup:
         )
         for generator in record["generators"]
     )
+    spinor_irreps = _verified_spinor_table(symbol) if axis_names == "xyz" else None
     return FinitePointGroup.from_matrices(
         matrices=matrices,
         axes=_axis_symbols(axis_names),
         symbol=symbol,
         irreps=record.get("irreps"),
-        spinor_irreps=_spinor_table(record, axis_names),
+        spinor_irreps=spinor_irreps,
     )

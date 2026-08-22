@@ -143,9 +143,11 @@ def pointgroup(query: str) -> PointGroupElement | FinitePointGroup:
 
     This is a user-facing constructor for common point operations and named
     crystallographic point groups in Cartesian axes (`x`, `y`, `z`). Compact
-    affine queries return an [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement].
-    Named crystallographic queries return a
-    [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup].
+    affine queries such as `c4-xy:xy` return a
+    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] with no
+    character table. Named crystallographic queries such as `C4v` or `-43m`
+    return a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup]
+    with packaged ordinary characters and, for `xyz` axes, spinor characters.
 
     Query grammar
     -------------

@@ -32,6 +32,11 @@ def _matrix_key(matrix: sy.ImmutableDenseMatrix) -> tuple[sy.Expr, ...]:
     return tuple(sy.simplify(entry) for entry in matrix)
 
 
+def _numeric_matrix_key(matrix: sy.Matrix, *, digits: int = 6) -> tuple[float, ...]:
+    """Hashable numeric key for matching Cartesian operations without simplify."""
+    return tuple(round(float(sy.N(entry)), digits) for entry in matrix)
+
+
 def _character_expr(value: Any) -> sy.Expr:
     if isinstance(value, int):
         return sy.Integer(value)
@@ -51,6 +56,57 @@ def _as_int(value: sy.Expr) -> int | None:
     if simplified.is_integer:
         return int(simplified)
     return None
+
+
+def _factor_system_from_lifts(
+    operations: tuple[sy.ImmutableDenseMatrix, ...] | list[sy.ImmutableDenseMatrix],
+    axes: tuple[sy.Symbol, ...],
+) -> list[list[int]]:
+    """Build ω(g,h) from the current SU(2) section of `operations`."""
+    from ..phys.spin import su2_of_point_group
+
+    lifts = []
+    for operation in operations:
+        lift = su2_of_point_group(PointGroupElement(irrep=operation, axes=axes))
+        lifts.append([[complex(sy.N(lift[i, j])) for j in range(2)] for i in range(2)])
+    index = {_matrix_key(operation): i for i, operation in enumerate(operations)}
+    order = len(operations)
+    factor_system = [[1] * order for _ in range(order)]
+    for i, left in enumerate(operations):
+        for j, right in enumerate(operations):
+            product_key = _matrix_key(
+                sy.ImmutableDenseMatrix(sy.simplify(left @ right))
+            )
+            k = index[product_key]
+            lhs = [
+                [
+                    lifts[i][row][0] * lifts[j][0][col]
+                    + lifts[i][row][1] * lifts[j][1][col]
+                    for col in range(2)
+                ]
+                for row in range(2)
+            ]
+            overlap = (
+                lhs[0][0] * lifts[k][0][0].conjugate()
+                + lhs[0][1] * lifts[k][0][1].conjugate()
+                + lhs[1][0] * lifts[k][1][0].conjugate()
+                + lhs[1][1] * lifts[k][1][1].conjugate()
+            ) / 2
+            factor_system[i][j] = 1 if overlap.real >= 0 else -1
+    return factor_system
+
+
+def _freeze_table(value: Any) -> Any:
+    """Hashable snapshot of packaged irrep / spinor-irrep payloads."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return tuple(sorted((key, _freeze_table(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_table(item) for item in value)
+    if isinstance(value, sy.Matrix):
+        return (value.rows, value.cols, tuple(sy.simplify(entry) for entry in value))
+    return value
 
 
 @dataclass(frozen=True)
@@ -90,11 +146,11 @@ class FinitePointGroup:
         Optional Hermann-Mauguin symbol, such as `"4mm"`.
     irreps : dict[str, Any] | None
         Optional packaged character-table payload with `class_labels`,
-        `multiplicities`, and per-irrep character rows. Compared and hashed as
-        identity metadata only.
+        `multiplicities`, and per-irrep character rows. Included in equality
+        and hashing so table-dependent caches cannot collide.
     spinor_irreps : dict[str, Any] | None
         Optional packaged operation-wise projective spinor character data.
-        Compared and hashed as identity metadata only.
+        Included in equality and hashing.
 
     Notes
     -----
@@ -120,6 +176,28 @@ class FinitePointGroup:
         dim = len(self.axes)
         if any(generator.irrep.shape != (dim, dim) for generator in self.generators):
             raise ValueError("Generator matrix shape must match the axis dimension.")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FinitePointGroup):
+            return NotImplemented
+        return (
+            self.generators == other.generators
+            and self.axes == other.axes
+            and self.symbol == other.symbol
+            and self.irreps == other.irreps
+            and self.spinor_irreps == other.spinor_irreps
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.generators,
+                self.axes,
+                self.symbol,
+                _freeze_table(self.irreps),
+                _freeze_table(self.spinor_irreps),
+            )
+        )
 
     @classmethod
     def from_matrices(
@@ -426,7 +504,14 @@ class FinitePointGroup:
                     dim=info["dim"],
                 )
             ]
-            slot_candidates[info["class_index"]] = strong_matches or size_matches
+            if not strong_matches:
+                raise ValueError(
+                    "Could not geometrically align conjugacy class "
+                    f"(size={info['size']}, order={info['order']}, det={info['det']}, "
+                    f"trace={info['trace']}) to character-table labels "
+                    f"for point group {self.symbol}."
+                )
+            slot_candidates[info["class_index"]] = strong_matches
 
         ordered_classes = sorted(
             slot_candidates, key=lambda idx: len(slot_candidates[idx])
@@ -531,21 +616,9 @@ class FinitePointGroup:
                 f"Unknown spinor irrep '{irrep}' for point group {self.symbol}."
             )
 
-        operation_matrices = tuple(
-            sy.ImmutableDenseMatrix(operation)
-            for operation in self.spinor_irreps["operations"]
-        )
-        operation_index = {
-            _matrix_key(matrix): index
-            for index, matrix in enumerate(operation_matrices)
-        }
-        if len(operation_index) != len(operation_matrices):
-            raise ValueError(
-                f"Spinor table contains duplicate operations for {self.symbol}."
-            )
-
+        operation_index = self._spinor_operation_index()
         encoded_characters = irrep_table[irrep]["characters"]
-        if len(encoded_characters) != len(operation_matrices):
+        if len(encoded_characters) != len(operation_index):
             raise ValueError(
                 f"Spinor character row length for '{irrep}' does not match operations."
             )
@@ -555,18 +628,128 @@ class FinitePointGroup:
 
         ordered: list[complex] = []
         for element in self.elements():
-            key = _matrix_key(element.irrep)
+            key = _numeric_matrix_key(element.irrep)
             if key not in operation_index:
                 raise ValueError(
                     "Spinor table operations do not match generated point-group "
                     f"elements for {self.symbol}."
                 )
             ordered.append(characters[operation_index[key]])
-        if len(ordered) != len(operation_matrices):
+        if len(ordered) != len(operation_index):
             raise ValueError(
                 f"Spinor table order does not match point group {self.symbol}."
             )
         return tuple(ordered)
+
+    @lru_cache
+    def _spinor_operation_index(self) -> dict[tuple[float, ...], int]:
+        if not self.spinor_irreps:
+            raise ValueError(
+                f"No spinor character-table data is available for {self.symbol}."
+            )
+        operation_index = {
+            _numeric_matrix_key(sy.ImmutableDenseMatrix(operation)): index
+            for index, operation in enumerate(self.spinor_irreps["operations"])
+        }
+        if len(operation_index) != len(self.spinor_irreps["operations"]):
+            raise ValueError(
+                f"Spinor table contains duplicate operations for {self.symbol}."
+            )
+        return operation_index
+
+    def reoriented_by(self, rotation: sy.Matrix) -> "FinitePointGroup":
+        r"""
+        Return the same abstract group with every matrix conjugated by `rotation`.
+
+        Ordinary characters are class functions and are reused. Spinor characters
+        are operation-wise: each value is multiplied by the section sign
+        \(\eta(g)=\pm 1\) comparing \(V u(g) V^\dagger\) to the runtime lift of
+        \(g'=R g R^{-1}\).
+        """
+        matrix = sy.ImmutableDenseMatrix(sy.simplify(rotation))
+        dim = len(self.axes)
+        if matrix.shape != (dim, dim):
+            raise ValueError(
+                f"Reorientation matrix must be {dim}x{dim}, got {matrix.shape}."
+            )
+        inverse = sy.ImmutableDenseMatrix(sy.simplify(matrix.inv()))
+        new_generators = tuple(
+            PointGroupElement(
+                irrep=sy.ImmutableDenseMatrix(
+                    sy.simplify(matrix @ generator.irrep @ inverse)
+                ),
+                axes=self.axes,
+            )
+            for generator in self.generators
+        )
+        return FinitePointGroup(
+            generators=new_generators,
+            axes=self.axes,
+            symbol=self.symbol,
+            irreps=self.irreps,
+            spinor_irreps=self._reoriented_spinor_irreps(matrix, inverse),
+        )
+
+    def _reoriented_spinor_irreps(
+        self,
+        rotation: sy.ImmutableDenseMatrix,
+        inverse: sy.ImmutableDenseMatrix,
+    ) -> dict[str, Any] | None:
+        if self.spinor_irreps is None:
+            return None
+        if len(self.axes) != 3:
+            raise ValueError("Spinor reorientation requires three-dimensional axes.")
+
+        from ..phys.spin import proper_rotation_matrix, su2_from_so3, su2_of_point_group
+
+        orthogonality = sy.ImmutableDenseMatrix(
+            sy.simplify(rotation.T @ rotation - sy.eye(3))
+        )
+        if any(entry != 0 for entry in orthogonality):
+            raise ValueError("Spinor reorientation requires an orthogonal rotation.")
+
+        cover = su2_from_so3(proper_rotation_matrix(rotation))
+        old_operations = tuple(
+            sy.ImmutableDenseMatrix(operation)
+            for operation in self.spinor_irreps["operations"]
+        )
+        new_operations: list[sy.ImmutableDenseMatrix] = []
+        section_signs: list[int] = []
+        for old_operation in old_operations:
+            new_operation = sy.ImmutableDenseMatrix(
+                sy.simplify(rotation @ old_operation @ inverse)
+            )
+            new_operations.append(new_operation)
+            old_element = PointGroupElement(irrep=old_operation, axes=self.axes)
+            new_element = PointGroupElement(irrep=new_operation, axes=self.axes)
+            conjugated = cover @ su2_of_point_group(old_element) @ cover.H
+            new_lift = su2_of_point_group(new_element)
+            overlap = complex(sy.N((new_lift.H @ conjugated).trace() / 2))
+            sign = 1 if overlap.real >= 0 else -1
+            if abs(abs(overlap) - 1) > 1e-8:
+                raise ValueError(
+                    "Reoriented SU(2) lifts are not related by a sign for "
+                    f"{self.symbol}."
+                )
+            section_signs.append(sign)
+
+        irreps: dict[str, Any] = {}
+        for name, data in self.spinor_irreps["irreps"].items():
+            irreps[name] = {
+                "dim": data["dim"],
+                "characters": [
+                    [sign * float(value[0]), sign * float(value[1])]
+                    for sign, value in zip(section_signs, data["characters"])
+                ],
+            }
+
+        payload = dict(self.spinor_irreps)
+        payload.pop("generator_sha256", None)
+        payload["operations"] = tuple(new_operations)
+        payload["irreps"] = irreps
+        payload["factor_system"] = _factor_system_from_lifts(new_operations, self.axes)
+        payload["order"] = len(new_operations)
+        return payload
 
     @lru_cache
     def trivial_projector(self, order: int) -> sy.ImmutableDenseMatrix:

@@ -31,7 +31,7 @@ from .elements import (
     PointGroupElement,
     PointGroupOpr,
 )
-from .finite import FinitePointGroup
+from .finite import FinitePointGroup, _matrix_key
 from ..geometries import Lattice, Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
 from ..phys.spin import Spin, contains_spin, expand_spin, su2_numeric
@@ -199,6 +199,14 @@ class SpinfulPhaseSector:
 
     phase: sy.Expr
     spatial_order: int
+
+
+@dataclass(frozen=True)
+class JointSpinfulPhaseSector:
+    r"""Label for simultaneous spinorial phases of a commuting family."""
+
+    phases: tuple[sy.Expr, ...]
+    spatial_orders: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -492,16 +500,27 @@ def _validate_spinful_space(space: HilbertSpace) -> None:
 
 
 def _transform_nons_spin_irreps(
-    opr: PointGroupOpr, nons: tuple[Any, ...]
+    opr: PointGroupOpr,
+    nons: tuple[Any, ...],
+    *,
+    space: HilbertSpace | None = None,
+    fold_offsets: bool = False,
 ) -> tuple[sy.Expr, tuple[Any, ...]]:
     """Apply the orbital/spatial part of `opr` to non-spin irreps."""
     new_coef: sy.Expr = sy.Integer(1)
     new_base: list[Any] = []
+    canonicalize = space is not None and _contains_point_group_basis(space)
     for rep in nons:
         if type(rep) is PointGroupBasis:
             transformed = _transform_point_group_basis_direct(opr, rep)
             new_coef *= transformed.coef
-            new_base.append(transformed.base)
+            if canonicalize:
+                assert space is not None
+                canonical = _canonicalize_point_group_basis(transformed.base, space)
+                new_coef *= canonical.coef
+                new_base.append(canonical.base)
+            else:
+                new_base.append(transformed.base)
         elif opr.allows(rep):
             ret = opr(rep)
             if isinstance(ret, Multiple):
@@ -511,7 +530,10 @@ def _transform_nons_spin_irreps(
                 new_base.append(ret)
         else:
             new_base.append(rep)
-    return sy.simplify(new_coef), tuple(new_base)
+    orbital = tuple(new_base)
+    if fold_offsets:
+        orbital = _fold_offset_irreps(orbital)
+    return sy.simplify(new_coef), orbital
 
 
 def _fold_offset_irreps(nons: tuple[Any, ...]) -> tuple[Any, ...]:
@@ -631,9 +653,9 @@ def spinful_hilbert_opr_repr(
     for nons, _, _, _ in parsed:
         if nons in nons_image:
             continue
-        spatial_coef, new_nons = _transform_nons_spin_irreps(opr, nons)
-        if fold_offsets:
-            new_nons = _fold_offset_irreps(new_nons)
+        spatial_coef, new_nons = _transform_nons_spin_irreps(
+            opr, nons, space=space, fold_offsets=fold_offsets
+        )
         nons_image[nons] = (complex(sy.N(spatial_coef)), new_nons)
 
     for nons, spin_in, psi_coef, j in parsed:
@@ -794,16 +816,21 @@ def _internal_transform_basis(
     return U1Basis(sy.simplify(new_coef), new_base)
 
 
-def _hilbert_opr_repr(
+def hilbert_repr(
     opr: PointGroupOpr, space: HilbertSpace, *, device: Optional[Device] = None
 ) -> Tensor:
+    r"""
+    Assemble the Hilbert-space representation \(D(g)\) of a point operation.
+
+    Each basis irrep is transformed on its own: lattice
+    [`Offset`][qten.geometries.spatials.Offset] labels may be folded back into
+    the unit cell, [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
+    polynomials are canonicalized onto labels already present in `space`, and
+    [`Spin`][qten.phys.spin.Spin] is expanded by the SU(2) lift. The same
+    assembler is used for spinless and spinful spaces.
+    """
     _validate_hilbert_basis(space)
     if contains_spin(space):
-        if _contains_point_group_basis(space):
-            raise NotImplementedError(
-                "Combined PointGroupBasis + Spin Hilbert representations "
-                "are not implemented yet."
-            )
         return spinful_hilbert_opr_repr(opr, space, device=device)
     if not _contains_point_group_basis(space):
         return hilbert_opr_repr(opr, space, device=device)
@@ -829,6 +856,12 @@ def _hilbert_opr_repr(
         data[i, j] += complex(sy.N(matrix_element))
 
     return Tensor(data=data, dims=(space, space))
+
+
+def _hilbert_opr_repr(
+    opr: PointGroupOpr, space: HilbertSpace, *, device: Optional[Device] = None
+) -> Tensor:
+    return hilbert_repr(opr, space, device=device)
 
 
 def joint_point_group_basis(
@@ -992,8 +1025,14 @@ def point_group_column_symmetrize(
     `full_sector` is `True`, every
     nonzero projected sector component is returned. When `full_sector` is
     `False`, only the dominant nonzero sector component of each input column is
-    kept, so the output column count does not exceed the input count. Returned
-    columns carry the corresponding [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
+    kept, so the output column count does not exceed the input count.     Returned columns carry a sector label:
+    [`FiniteIrrepSector`][qten.pointgroups.ops.FiniteIrrepSector] for ordinary
+    finite-group irreps,
+    [`SpinorIrrepSector`][qten.pointgroups.ops.SpinorIrrepSector] for packaged
+    spinor irreps, or
+    [`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector] /
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for abelian
+    phase sectors.
 
     The output column count can differ from the input one only when
     `full_sector=True`, because symmetry projection may split one approximate
@@ -1120,8 +1159,30 @@ def point_group_column_symmetrize(
     return cat(projected_cols, dim=-1).replace_dim(-1, out_dim)
 
 
+def _require_joint_oprs_in_group(
+    oprs: Sequence[PointGroupOpr], group: FinitePointGroup
+) -> None:
+    """Require every operator's linear part to be an element of `group`."""
+    keys = {_matrix_key(element.irrep) for element in group.elements()}
+    for opr in oprs:
+        if opr.g.axes != group.axes:
+            raise ValueError(
+                "Joint spinful operators must use the same ordered axes as "
+                f"{group.symbol}."
+            )
+        if _matrix_key(opr.g.irrep) not in keys:
+            raise ValueError(
+                f"Joint spinful operator {opr.g} is not an element of point "
+                f"group {group.symbol}."
+            )
+
+
 def joint_point_group_column_symmetrize(
-    oprs: Sequence[PointGroupOpr], w: Tensor, full_sector: bool = False
+    oprs: Sequence[PointGroupOpr],
+    w: Tensor,
+    full_sector: bool = False,
+    *,
+    group: FinitePointGroup | None = None,
 ) -> Tensor:
     """
     Symmetrize columns of `w` into simultaneous sectors of abelian operators.
@@ -1133,8 +1194,10 @@ def joint_point_group_column_symmetrize(
 
     When `full_sector` is `True`, every nonzero joint-sector component is
     returned. When `False`, only the dominant nonzero joint-sector component of
-    each input column is kept. Returned columns carry a representative common
-    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for the corresponding joint phase sector.
+    each input column is kept. Spinless columns carry a representative common
+    [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for the
+    corresponding joint phase sector. Spinful columns carry one
+    [`JointSpinfulPhaseSector`][qten.pointgroups.ops.JointSpinfulPhaseSector].
 
     Parameters
     ----------
@@ -1149,6 +1212,10 @@ def joint_point_group_column_symmetrize(
         If `True`, return every nonzero joint-sector component of each input
         column. If `False`, keep only the largest nonzero joint-sector
         component per input column.
+    group : FinitePointGroup | None, optional
+        Parent finite point group. Required when `w` is spinful: every operator
+        must be an element of this group, so the joint family stays inside one
+        double cover.
 
     Returns
     -------
@@ -1169,14 +1236,17 @@ def joint_point_group_column_symmetrize(
     if len(oprs) == 1:
         return point_group_column_symmetrize(oprs[0], w, full_sector=full_sector)
     row_dim, seeds = _column_symmetrize_context(w)
-    if contains_spin(row_dim):
-        raise NotImplementedError(
-            "Joint spinful projection requires double-group compatibility; "
-            "spatially commuting operations can have anticommuting spin lifts."
-        )
+    spinful = contains_spin(row_dim)
+    if spinful:
+        if group is None:
+            raise ValueError(
+                "Joint spinful projection requires group= the FinitePointGroup "
+                "that contains every operator."
+            )
+        _require_joint_oprs_in_group(oprs, group)
 
     single_col = IndexSpace.linear(1)
-    joint_sector_bases = _joint_phase_basis(oprs)
+    joint_sector_bases = None if spinful else _joint_phase_basis(oprs)
     all_sector_projectors: list[list[tuple[sy.Expr, Tensor]]] = []
     representations: list[Tensor] = []
     dtype = w.data.dtype
@@ -1200,7 +1270,8 @@ def joint_point_group_column_symmetrize(
                     f"representations; max |[D_i,D_j]|={max_error:.3e}."
                 )
         representations.append(g_full)
-        order = opr.g.group_order()
+        spatial_order = opr.g.group_order()
+        order = 2 * spatial_order if spinful else spatial_order
         ident = eye((row_dim, row_dim)).astype(dtype).to_device(device)
 
         g_powers: list[Tensor] = [ident]
@@ -1232,9 +1303,20 @@ def joint_point_group_column_symmetrize(
         candidates: list[tuple[float, Tensor, U1Basis]] = []
         for sector_product in product(*all_sector_projectors):
             phases = tuple(sy.simplify(phase) for phase, _ in sector_product)
-            basis = joint_sector_bases.get(phases)
-            if basis is None:
-                continue
+            if spinful:
+                label = _attach_sector_label(
+                    seed,
+                    JointSpinfulPhaseSector(
+                        phases=phases,
+                        spatial_orders=tuple(opr.g.group_order() for opr in oprs),
+                    ),
+                )
+            else:
+                assert joint_sector_bases is not None
+                basis = joint_sector_bases.get(phases)
+                if basis is None:
+                    continue
+                label = _attach_basis_label(seed, basis)
             projected = col
             for _, projector in sector_product:
                 projected = projector @ projected
@@ -1244,13 +1326,7 @@ def joint_point_group_column_symmetrize(
             if norm_value <= projection_cutoff:
                 continue
 
-            candidates.append(
-                (
-                    norm_value,
-                    projected / norm_value,
-                    _attach_basis_label(seed, basis),
-                )
-            )
+            candidates.append((norm_value, projected / norm_value, label))
 
         if full_sector:
             for _, projected, label in candidates:

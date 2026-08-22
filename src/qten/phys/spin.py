@@ -164,9 +164,17 @@ def _matrix_cache_key(M: sy.Matrix) -> tuple:
     return (mat.rows, mat.cols, tuple(sy.simplify(entry) for entry in mat))
 
 
-def _numeric_su2_from_so3(M: sy.Matrix) -> sy.ImmutableDenseMatrix:
-    """Robust quaternion lift for an inexact numerical rotation matrix."""
-    r = [[float(sy.N(M[i, j])) for j in range(3)] for i in range(3)]
+def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
+    """Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows."""
+    r = [list(row) for row in rotation]
+    det = (
+        r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
+    )
+    if det < 0.0:
+        r = [[-entry for entry in row] for row in r]
+
     trace = r[0][0] + r[1][1] + r[2][2]
 
     if trace > 0.0:
@@ -196,7 +204,7 @@ def _numeric_su2_from_so3(M: sy.Matrix) -> sy.ImmutableDenseMatrix:
 
     norm = (w * w + x * x + y * y + z * z) ** 0.5
     if norm == 0.0:
-        raise ValueError(f"Could not extract a quaternion from rotation {M}")
+        raise ValueError(f"Could not extract a quaternion from rotation {r}")
     w, x, y, z = (component / norm for component in (w, x, y, z))
 
     # Choose the principal SO(3) branch. Both signs are valid lifts, but this
@@ -204,10 +212,27 @@ def _numeric_su2_from_so3(M: sy.Matrix) -> sy.ImmutableDenseMatrix:
     if w < 0.0:
         w, x, y, z = (-component for component in (w, x, y, z))
 
+    return [
+        [w - 1j * z, -y - 1j * x],
+        [y - 1j * x, w + 1j * z],
+    ]
+
+
+def _numeric_su2_from_so3(M: sy.Matrix) -> sy.ImmutableDenseMatrix:
+    """Robust quaternion lift for an inexact numerical rotation matrix."""
+    lift = principal_su2_from_rows(
+        [[float(sy.N(M[i, j])) for j in range(3)] for i in range(3)]
+    )
     return sy.ImmutableDenseMatrix(
         [
-            [sy.Float(w) - sy.I * sy.Float(z), -sy.Float(y) - sy.I * sy.Float(x)],
-            [sy.Float(y) - sy.I * sy.Float(x), sy.Float(w) + sy.I * sy.Float(z)],
+            [
+                sy.Float(lift[0][0].real) + sy.I * sy.Float(lift[0][0].imag),
+                sy.Float(lift[0][1].real) + sy.I * sy.Float(lift[0][1].imag),
+            ],
+            [
+                sy.Float(lift[1][0].real) + sy.I * sy.Float(lift[1][0].imag),
+                sy.Float(lift[1][1].real) + sy.I * sy.Float(lift[1][1].imag),
+            ],
         ]
     )
 
@@ -323,6 +348,34 @@ def su2_from_so3(R: sy.Matrix) -> sy.ImmutableDenseMatrix:
     return _su2_from_so3_cached(_matrix_cache_key(M))
 
 
+def _embed_in_cartesian_xyz(
+    matrix: sy.ImmutableDenseMatrix, axis_names: tuple[str, ...]
+) -> sy.ImmutableDenseMatrix:
+    """Embed a linear point operation into the canonical (x, y, z) frame."""
+    if axis_names == _CARTESIAN_AXES:
+        return sy.ImmutableDenseMatrix(matrix)
+
+    unknown = [name for name in axis_names if name not in _CARTESIAN_AXES]
+    if unknown:
+        raise ValueError(
+            "Spin-1/2 lifts require Cartesian axis names from (x, y, z), "
+            f"got {axis_names}"
+        )
+    if matrix.shape != (len(axis_names), len(axis_names)):
+        raise ValueError(
+            "Spin-1/2 lift matrix shape must match the named axes, "
+            f"got shape={matrix.shape} for {axis_names}."
+        )
+
+    name_to_index = {name: index for index, name in enumerate(_CARTESIAN_AXES)}
+    selected = tuple(name_to_index[name] for name in axis_names)
+    embedded = sy.Matrix.eye(3)
+    for row_src, row_dst in enumerate(selected):
+        for col_src, col_dst in enumerate(selected):
+            embedded[row_dst, col_dst] = matrix[row_src, col_src]
+    return sy.ImmutableDenseMatrix(embedded)
+
+
 def _canonical_cartesian_rotation(
     g: "PointGroupElement | PointGroupOpr",
 ) -> sy.ImmutableDenseMatrix:
@@ -331,21 +384,18 @@ def _canonical_cartesian_rotation(
 
     element = g.g if isinstance(g, PointGroupOpr) else g
     axis_names = tuple(getattr(axis, "name", str(axis)) for axis in element.axes)
-    if axis_names != _CARTESIAN_AXES:
-        raise ValueError(
-            "Spin-1/2 lifts require canonical Cartesian axes (x, y, z), "
-            f"got {axis_names}"
-        )
 
     matrix = sy.ImmutableDenseMatrix(element.irrep)
     if isinstance(g, PointGroupOpr):
         basis = sy.ImmutableDenseMatrix(g.base().basis)
-        if basis.shape != (3, 3):
+        if basis.shape != matrix.shape:
             raise ValueError(
-                "Spin-1/2 lifts require a three-dimensional affine-space basis"
+                "Spin-1/2 lifts require the affine-space basis to match the "
+                f"linear representation; got basis {basis.shape} and matrix "
+                f"{matrix.shape}."
             )
         matrix = sy.ImmutableDenseMatrix(sy.simplify(basis @ matrix @ basis.inv()))
-    return matrix
+    return _embed_in_cartesian_xyz(matrix, axis_names)
 
 
 def su2_of_point_group(

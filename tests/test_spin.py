@@ -9,6 +9,7 @@ from qten.phys import Spin, expand_spin, su2_from_so3, su2_of_point_group
 from qten.phys.spin import proper_rotation_matrix
 from qten.pointgroups import (
     FinitePointGroup,
+    JointSpinfulPhaseSector,
     PointGroupElement,
     PointGroupOpr,
     SpinorIrrepSector,
@@ -70,13 +71,19 @@ def test_su2_identity_and_unitarity():
     assert sy.simplify(u.det()) == 1
 
 
-def test_su2_rejects_non_so3_inputs_and_noncanonical_axes():
+def test_su2_rejects_non_so3_inputs():
     with pytest.raises(ValueError, match="3x3"):
         su2_from_so3(ImmutableDenseMatrix.eye(2))
     with pytest.raises(ValueError, match="orthogonal"):
         su2_from_so3(ImmutableDenseMatrix([[1, 1, 0], [0, 1, 0], [0, 0, 1]]))
-    with pytest.raises(ValueError, match="canonical Cartesian axes"):
-        su2_of_point_group(pointgroup("c4-xy:xy"))
+
+
+def test_su2_of_point_group_pads_2d_xy_to_c4z():
+    planar = pointgroup("c4-xy:xy")
+    padded = su2_from_so3(ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]]))
+    assert sy.simplify(su2_of_point_group(planar) - padded) == (
+        ImmutableDenseMatrix.zeros(2)
+    )
 
 
 def test_su2_c2z_is_minus_i_sigma_z():
@@ -567,7 +574,7 @@ def test_operator_average_rejects_different_leg_gauges_clearly():
         Q.point_group_operator_symmetrize(td, operator, fixpoint=center)
 
 
-def test_joint_spinful_symmetrize_rejects_projectively_noncommuting_lifts():
+def test_joint_spinful_symmetrize_requires_parent_group_and_commuting_lifts():
     x, y, z = sy.symbols("x y z")
     center = _site()
     c2x = PointGroupOpr(
@@ -589,8 +596,45 @@ def test_joint_spinful_symmetrize_rejects_projectively_noncommuting_lifts():
         data=torch.eye(2, 1, dtype=torch.complex128),
         dims=(space, IndexSpace.linear(1)),
     )
-    with pytest.raises(NotImplementedError, match="anticommuting spin lifts"):
+    with pytest.raises(ValueError, match="group="):
         joint_point_group_column_symmetrize((c2x, c2y), w)
+
+    d2 = pointgroup("222")
+    with pytest.raises(ValueError, match="commuting Hilbert-space"):
+        joint_point_group_column_symmetrize((c2x, c2y), w, group=d2)
+
+
+def test_joint_spinful_symmetrize_accepts_commuting_elements_of_one_group():
+    center = _site()
+    c4 = pointgroup("4")
+    by_order = {element.group_order(): element for element in c4.elements()}
+    oprs = (
+        PointGroupOpr(by_order[4]).fixpoint_at(center),
+        PointGroupOpr(by_order[2]).fixpoint_at(center),
+    )
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    w = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(2)),
+    )
+    projected = joint_point_group_column_symmetrize(oprs, w, full_sector=True, group=c4)
+    assert projected.data.shape[0] == 2
+    assert projected.data.shape[1] >= 1
+    representations = [_hilbert_opr_repr(opr, space).data for opr in oprs]
+    for j, label in enumerate(projected.dims[1].elements()):
+        column = projected.data[:, j]
+        assert torch.allclose(
+            column.conj() @ column, torch.tensor(1.0, dtype=column.dtype), atol=1e-12
+        )
+        sector = label.irrep_of(JointSpinfulPhaseSector)
+        assert len(sector.phases) == 2
+        for representation, phase_expr in zip(representations, sector.phases):
+            phase = complex(sy.N(phase_expr))
+            assert torch.allclose(
+                representation @ column, phase * column, rtol=0, atol=1e-12
+            )
 
 
 def test_spinful_hilbert_opr_repr_folds_fractional_lattice_offsets():
@@ -661,3 +705,122 @@ def test_spinful_projection_uses_active_precision():
     finally:
         qten.set_precision(previous_precision.torch_float, set_torch_default=False)
         torch.set_default_dtype(previous_torch_default)
+
+
+def test_point_group_basis_tensor_spin_c4v_is_closed():
+    c4v = pointgroup("C4v")
+    e_basis = c4v.irrep_basis(1, "E")
+    assert {sy.simplify(basis.expr) for basis in e_basis} == set(sy.symbols("x y"))
+    space = HilbertSpace.new(
+        [U1Basis.new(basis, Spin.up) for basis in e_basis]
+        + [U1Basis.new(basis, Spin.down) for basis in e_basis]
+    )
+    representation = _hilbert_opr_repr(PointGroupOpr(c4v.generators[0]), space)
+    identity = torch.eye(space.dim, dtype=representation.data.dtype)
+    assert torch.allclose(
+        representation.data.conj().T @ representation.data,
+        identity,
+        rtol=0,
+        atol=1e-12,
+    )
+    seed = qten.Tensor(
+        data=torch.eye(space.dim, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(space.dim)),
+    )
+    projected = Q.point_group_column_symmetrize(c4v, seed, full_sector=True)
+    assert projected.data.shape[0] == space.dim
+    gram = projected.data.conj().T @ projected.data
+    assert torch.allclose(
+        gram, torch.eye(gram.shape[0], dtype=gram.dtype), rtol=0, atol=1e-11
+    )
+
+
+def test_point_group_basis_tensor_spin_td_projectors_are_complete():
+    td = pointgroup("-43m")
+    t2 = td.irrep_basis(1, "T2")
+    space = HilbertSpace.new(
+        [U1Basis.new(basis, Spin.up) for basis in t2]
+        + [U1Basis.new(basis, Spin.down) for basis in t2]
+    )
+    seed = qten.Tensor(
+        data=torch.eye(space.dim, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(space.dim)),
+    )
+    projected = Q.point_group_column_symmetrize(td, seed, full_sector=True)
+    assert projected.data.shape == (6, 6)
+    identity = torch.eye(6, dtype=torch.complex128)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        identity,
+        rtol=0,
+        atol=1e-11,
+    )
+    assert all(
+        isinstance(label.irrep_of(SpinorIrrepSector), SpinorIrrepSector)
+        for label in projected.dims[1].elements()
+    )
+
+
+def test_reoriented_td_keeps_spinor_completeness():
+    td = pointgroup("-43m")
+    rotation = ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    reoriented = td.reoriented_by(rotation)
+    assert reoriented.order == td.order
+    center = _site()
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    seed = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(2)),
+    )
+    projected = Q.point_group_column_symmetrize(
+        reoriented, seed, full_sector=True, fixpoint=center
+    )
+    identity = torch.eye(2, dtype=torch.complex128)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        identity,
+        rtol=0,
+        atol=1e-11,
+    )
+
+
+def test_reoriented_d3d_contains_c3_along_111():
+    d3d = pointgroup("-3m")
+    sqrt2 = sy.sqrt(2)
+    sqrt3 = sy.sqrt(3)
+    sqrt6 = sy.sqrt(6)
+    rotation = ImmutableDenseMatrix(
+        [
+            [1 / sqrt2, 1 / sqrt6, 1 / sqrt3],
+            [-1 / sqrt2, 1 / sqrt6, 1 / sqrt3],
+            [0, -2 / sqrt6, 1 / sqrt3],
+        ]
+    )
+    reoriented = d3d.reoriented_by(rotation)
+    c3_111 = ImmutableDenseMatrix([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
+    c3_111_inv = ImmutableDenseMatrix([[0, 1, 0], [0, 0, 1], [1, 0, 0]])
+    generated = {
+        tuple(sy.simplify(entry) for entry in element.irrep)
+        for element in reoriented.elements()
+    }
+    assert tuple(c3_111) in generated or tuple(c3_111_inv) in generated
+    center = _site()
+    space = HilbertSpace.new(
+        [U1Basis.new(center, Spin.up), U1Basis.new(center, Spin.down)]
+    )
+    seed = qten.Tensor(
+        data=torch.eye(2, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(2)),
+    )
+    projected = Q.point_group_column_symmetrize(
+        reoriented, seed, full_sector=True, fixpoint=center
+    )
+    identity = torch.eye(2, dtype=torch.complex128)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        identity,
+        rtol=0,
+        atol=1e-11,
+    )
