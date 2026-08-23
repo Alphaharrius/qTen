@@ -1,3 +1,11 @@
+"""Spin labels, SU(2) lifts, and spinful Hilbert / projector assembly.
+
+Role: unit tests for ``qten.phys.spin`` and the spinful path in
+``qten.pointgroups.ops``. Geometry oracles (1D / 2D / 3D ``rotation3``) live
+in ``test_pointgroup_spin_oracles.py``. Lattice Bloch models live in
+``test_spinful_lattices.py``.
+"""
+
 import math
 
 import sympy as sy
@@ -78,10 +86,10 @@ def test_su2_rejects_non_so3_inputs():
         su2_from_so3(ImmutableDenseMatrix([[1, 1, 0], [0, 1, 0], [0, 0, 1]]))
 
 
-def test_su2_of_point_group_pads_2d_xy_to_c4z():
+def test_su2_of_affine_c4_xy_uses_stored_c4z():
     planar = pointgroup("c4-xy:xy")
-    padded = su2_from_so3(ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]]))
-    assert sy.simplify(su2_of_point_group(planar) - padded) == (
+    c4z = su2_from_so3(ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]]))
+    assert sy.simplify(su2_of_point_group(planar) - c4z) == (
         ImmutableDenseMatrix.zeros(2)
     )
 

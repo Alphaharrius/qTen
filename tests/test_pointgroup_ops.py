@@ -1,3 +1,10 @@
+"""Point-group helpers on tensors: column / joint projection and transforms.
+
+Role: spinless and spinful *operations* (``point_group_column_symmetrize``,
+``joint_*``, ``get_direct_transform``). SU(2) numerics are in ``test_spin.py``;
+1D / 2D / 3D geometry is in ``test_pointgroup_spin_oracles.py``.
+"""
+
 import sympy as sy
 import pytest
 import torch

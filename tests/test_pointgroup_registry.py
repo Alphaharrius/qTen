@@ -1,3 +1,10 @@
+"""Packaged point-group catalog: generators, Bilbao χ, and class alignment.
+
+Role: JSON loading and conjugacy-class matching. Spinor *projector* completeness
+on a bare spin space is in ``test_spin.py``; 1D / 2D / 3D lifts are in
+``test_pointgroup_spin_oracles.py``.
+"""
+
 import pytest
 import sympy as sy
 
