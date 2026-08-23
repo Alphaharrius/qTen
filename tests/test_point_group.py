@@ -1377,7 +1377,9 @@ def test_bandtransform_notebook_cb_c4_symmetry_about_block_center():
 
 
 def _element_of_order(group, order):
-    return next(element for element in group.elements() if element.group_order() == order)
+    return next(
+        element for element in group.elements() if element.group_order() == order
+    )
 
 
 def test_named_c3_xy_and_flipped_plane_are_inverses():
