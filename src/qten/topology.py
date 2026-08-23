@@ -1,20 +1,62 @@
 r"""Quantum geometry and topology of momentum-resolved band Hamiltonians.
 
-The quantum geometric tensor (QGT) is the common parent of the
-Fubini--Study metric and Berry curvature.  With the convention used here,
+This module computes geometric properties of an isolated occupied-band
+subspace carried by a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with dims
+``(MomentumSpace, HilbertSpace, HilbertSpace)``. The Hamiltonian is
+diagonalized independently at every momentum, and the ``n_occupied``
+lowest-energy eigenvectors define the occupied projector (P(k)).
 
-.. math::
+Core API
+--------
+- [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+  Gauge-invariant quantum geometric tensor obtained from finite differences
+  of the occupied projector.
+- [`fubini_study_metric`][qten.topology.fubini_study_metric]
+  Symmetric metric given by the real part of the quantum geometric tensor.
+- [`berry_curvature`][qten.topology.berry_curvature]
+  Local Berry curvature given by its imaginary antisymmetric part.
+- [`chern_number`][qten.topology.chern_number]
+  First Chern number computed either with discrete FHS link variables or by
+  integrating the finite-difference Berry curvature.
 
-    Q_{ij} = \operatorname{Tr}[P (\partial_i P)(\partial_j P)],\qquad
-    g_{ij} = \operatorname{Re} Q_{ij},\qquad
-    \Omega_{ij} = 2\operatorname{Im} Q_{ij},
+Mathematical convention
+-----------------------
+For occupied projector $P(k)$, QTen uses
 
-where ``P`` projects onto the occupied subspace.  Projector finite differences
-make the local quantities invariant under occupied-band gauge rotations.
 
-For a Chern number, the discrete Fukui--Hatsugai--Suzuki (FHS) formula remains
-the default: unlike integrating a finite-difference curvature, it is robustly
-quantized on a finite mesh.
+$$
+Q_{ij}(k) = \operatorname{Tr}\!\left[
+    P(k)\,\partial_i P(k)\,\partial_j P(k)
+\right],
+\qquad
+g_{ij}(k) = \operatorname{Re} Q_{ij}(k),
+\qquad
+\Omega_{ij}(k) = 2\operatorname{Im} Q_{ij}(k).
+$$
+
+The curvature sign agrees with the oriented plaquette used by
+[`chern_number(..., method="fhs")`][qten.topology.chern_number]. Projector
+derivatives make these local quantities invariant under phase changes and
+general unitary rotations among occupied eigenvectors.
+
+Momentum-grid convention
+------------------------
+Finite differences follow the two primitive quotient directions
+$e_x=(1,0)$ and $e_y=(0,1)$. Tensor components are therefore expressed per
+reciprocal-grid step. For a diagonal periodic cell, returned arrays use the
+rectangular momentum-grid shape. For a sheared cell, values remain flat in
+canonical quotient-representative order: reshaping Smith-normal-form order
+would incorrectly imply rectangular Brillouin-zone adjacency.
+
+Numerical methods
+-----------------
+The default Chern method is the gauge-invariant
+Fukui--Hatsugai--Suzuki (FHS) link-variable formula. It is the preferred
+finite-mesh topological invariant because a sufficiently resolved, isolated
+bundle gives an integer up to floating-point error. Integrating QGT-derived
+curvature exposes the connection between local quantum geometry and topology,
+but is a central-finite-difference estimate and generally approaches an
+integer only as the momentum mesh is refined.
 """
 
 from dataclasses import dataclass
@@ -154,16 +196,65 @@ def quantum_geometric_tensor(
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
 ) -> np.ndarray:
-    r"""Return the gauge-invariant occupied-subspace QGT on a 2-D mesh.
+    r"""Compute the occupied-subspace quantum geometric tensor on a 2-D grid.
 
-    Central finite differences of the occupied projector are taken along the
-    two primitive reciprocal-grid directions.  Consequently the tensor
-    components are expressed per grid step, and summing its associated Berry
-    curvature performs the corresponding discrete Brillouin-zone integral.
+    The occupied projector is built from the ``n_occupied`` lowest-energy
+    eigenvectors at every momentum. Central differences along the two
+    primitive reciprocal-grid directions approximate $\partial_xP$ and
+    $\partial_yP$, after which
+    $Q_{ij}=\operatorname{Tr}[P(\partial_iP)(\partial_jP)]$ is evaluated.
 
-    The result has shape ``grid_shape + (2, 2)``.  For sheared periodic cells,
-    ``grid_shape`` is one-dimensional canonical representative order, since a
-    rectangular reshape would misrepresent momentum-space adjacency.
+    Parameters
+    ----------
+    bloch_hamiltonian : Tensor
+        Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The final two data
+        axes must be square and represent the Bloch Hamiltonian at each
+        momentum.
+    n_occupied : int | None, optional
+        Number of lowest-energy bands included in the occupied projector.
+        Defaults to half the Hamiltonian bands using integer division.
+    gap_tolerance : float, optional
+        Minimum acceptable direct gap between bands ``n_occupied - 1`` and
+        ``n_occupied``. A gap at or below this value emits a
+        `RuntimeWarning`, because the selected bundle is not
+        numerically isolated. Defaults to ``1e-8``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complex QGT with trailing shape ``(2, 2)``. On a diagonal periodic
+        cell the full shape is ``(N_x, N_y, 2, 2)``. On a sheared cell it is
+        ``(N_k, 2, 2)`` in canonical quotient-representative order. Components
+        are measured per reciprocal-grid step, not per Cartesian inverse-length
+        unit.
+
+    Raises
+    ------
+    TypeError
+        If the first tensor dimension is not a
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+    ValueError
+        If the tensor is not rank 3, its Hamiltonian blocks are not square,
+        ``n_occupied`` is invalid, the momentum space is not two-dimensional,
+        the boundary is not periodic, or momentum points do not form a unique
+        complete reciprocal quotient.
+
+    Notes
+    -----
+    The projector formulation is invariant under arbitrary momentum-dependent
+    unitary rotations within the occupied subspace. It therefore remains
+    well-defined when occupied bands cross each other, provided the occupied
+    subspace stays separated from the empty bands.
+
+    See Also
+    --------
+    [`fubini_study_metric`][qten.topology.fubini_study_metric]
+        Real part of this tensor.
+    [`berry_curvature`][qten.topology.berry_curvature]
+        Imaginary antisymmetric part of this tensor.
+    [`chern_number`][qten.topology.chern_number]
+        Brillouin-zone topological invariant.
     """
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
     neighbor_indices = (grid.neighbor_x, grid.neighbor_y)
@@ -195,7 +286,46 @@ def fubini_study_metric(
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
 ) -> np.ndarray:
-    """Return the Fubini--Study metric, the real part of the QGT."""
+    r"""Compute the occupied-subspace Fubini--Study metric on a 2-D grid.
+
+    This function returns $g_{ij}(k)=\operatorname{Re}Q_{ij}(k)$, where the
+    QGT is computed by
+    [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor].
+
+    Parameters
+    ----------
+    bloch_hamiltonian : Tensor
+        Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``.
+    n_occupied : int | None, optional
+        Number of lowest-energy occupied bands. Defaults to half the bands.
+    gap_tolerance : float, optional
+        Direct-gap warning threshold. Defaults to ``1e-8``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Real metric with trailing shape ``(2, 2)``. Its full shape is
+        ``(N_x, N_y, 2, 2)`` for diagonal cells or ``(N_k, 2, 2)`` for
+        sheared cells. Components are expressed per reciprocal-grid step.
+
+    Raises
+    ------
+    TypeError
+        If the first tensor dimension is not a momentum space.
+    ValueError
+        If the Hamiltonian, occupied-band selection, or reciprocal grid is
+        invalid. See
+        [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        for the complete validation contract.
+
+    See Also
+    --------
+    [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        Complex parent tensor of the metric and curvature.
+    [`berry_curvature`][qten.topology.berry_curvature]
+        Berry curvature from the imaginary part of the QGT.
+    """
     return quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance).real
 
 
@@ -204,10 +334,52 @@ def berry_curvature(
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
 ) -> np.ndarray:
-    r"""Return ``Omega_xy = 2 Im(Q_xy)`` on the reciprocal mesh.
+    r"""Compute occupied-subspace Berry curvature on a 2-D momentum grid.
 
-    This sign convention agrees with the oriented plaquette used by
-    :func:`chern_number` with ``method="fhs"``.
+    QTen uses $\Omega_{xy}(k)=2\operatorname{Im}Q_{xy}(k)$. This orientation
+    agrees with [`chern_number(..., method="fhs")`][qten.topology.chern_number].
+
+    Parameters
+    ----------
+    bloch_hamiltonian : Tensor
+        Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``.
+    n_occupied : int | None, optional
+        Number of lowest-energy occupied bands. Defaults to half the bands.
+    gap_tolerance : float, optional
+        Direct-gap warning threshold. Defaults to ``1e-8``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Real scalar curvature at every momentum plaquette. The shape is
+        ``(N_x, N_y)`` for a diagonal periodic cell or ``(N_k,)`` in canonical
+        quotient-representative order for a sheared cell. Values are expressed
+        per reciprocal-grid plaquette, so ``curvature.sum() / (2*pi)`` is the
+        central-finite-difference estimate of the first Chern number.
+
+    Raises
+    ------
+    TypeError
+        If the first tensor dimension is not a momentum space.
+    ValueError
+        If the Hamiltonian, occupied-band selection, or reciprocal grid is
+        invalid. See
+        [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        for the complete validation contract.
+
+    Notes
+    -----
+    This is QGT-derived curvature, not the compact plaquette flux returned by
+    ``chern_number(..., method="fhs")``. Its integral need not be exactly
+    quantized on a finite grid.
+
+    See Also
+    --------
+    [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        Complex tensor from which the curvature is derived.
+    [`chern_number`][qten.topology.chern_number]
+        FHS or curvature-integral Chern number.
     """
     qgt = quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance)
     return 2.0 * qgt[..., 0, 1].imag
@@ -256,12 +428,134 @@ def chern_number(
     *,
     method: Literal["fhs", "qgt"] = "fhs",
 ) -> dict[str, Any]:
-    """Compute a Chern number using FHS or integrated QGT curvature.
+    r"""Compute the first Chern number of an occupied band subspace.
 
-    ``method="fhs"`` is recommended and returns ``berry_flux``.
-    ``method="qgt"`` returns ``quantum_geometric_tensor``,
-    ``fubini_study_metric``, and ``berry_curvature`` as well; its Chern number
-    is a finite-difference estimate and need not be exactly quantized.
+    The ``n_occupied`` lowest-energy eigenstates define an occupied bundle over
+    a complete two-dimensional periodic momentum grid. Two numerical methods
+    are available:
+
+    - ``method="fhs"`` computes normalized determinant link variables between
+      neighboring occupied subspaces and sums their oriented plaquette phases.
+      This gauge-invariant Fukui--Hatsugai--Suzuki construction is the default
+      and the recommended finite-grid topological invariant.
+    - ``method="qgt"`` computes the projector quantum geometric tensor, takes
+      $\Omega_{xy}=2\operatorname{Im}Q_{xy}$, and evaluates
+      $C=(2\pi)^{-1}\sum_k\Omega_{xy}(k)$. It additionally returns all local
+      quantum-geometric data.
+
+    Parameters
+    ----------
+    bloch_hamiltonian : Tensor
+        Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The first data axis
+        enumerates a complete two-dimensional reciprocal quotient; the last
+        two axes are square Bloch-Hamiltonian matrices.
+    n_occupied : int | None, optional
+        Number of lowest-energy bands defining the occupied subspace. It must
+        lie strictly between zero and the total band count. Defaults to half
+        the bands using integer division.
+    gap_tolerance : float, optional
+        Warning threshold for the minimum direct gap
+        $\min_k[E_{n_\mathrm{occupied}}(k)-
+        E_{n_\mathrm{occupied}-1}(k)]$. A gap at or below this value emits a
+        `RuntimeWarning`, because the occupied bundle is not
+        isolated and its Chern number is not well-defined. Defaults to
+        ``1e-8``.
+    method : {"fhs", "qgt"}, optional
+        Numerical construction. ``"fhs"`` uses discrete determinant link
+        variables and is robustly quantized on a suitable finite mesh.
+        ``"qgt"`` integrates central-finite-difference curvature and exposes
+        local quantum geometry. Defaults to ``"fhs"``.
+
+    Returns
+    -------
+    dict[str, Any]
+        Result mapping. Both methods return:
+
+        - ``"chern"``: raw floating-point Chern value.
+        - ``"nearest_integer"``: nearest integer obtained with `numpy.rint`.
+        - ``"direct_gap"``: minimum occupied-to-empty direct gap.
+
+        For ``method="fhs"`` the mapping also contains ``"berry_flux"``, the
+        oriented plaquette phase in radians. Its shape is ``(N_x, N_y)`` for a
+        diagonal periodic cell and ``(N_k,)`` in canonical representative
+        order for a sheared cell.
+
+        For ``method="qgt"`` the mapping instead contains
+        ``"quantum_geometric_tensor"`` and ``"fubini_study_metric"`` with
+        trailing shape ``(2, 2)``, plus scalar ``"berry_curvature"``. Their
+        grid prefix is ``(N_x, N_y)`` for diagonal cells or ``(N_k,)`` for
+        sheared cells.
+
+    Raises
+    ------
+    TypeError
+        If the first tensor dimension is not a
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+    ValueError
+        If ``method`` is unsupported; the input is not a rank-3 square Bloch
+        Hamiltonian; ``n_occupied`` is outside the valid range; the momentum
+        space is not two-dimensional and periodic; or its points do not form a
+        unique complete reciprocal quotient.
+    RuntimeError
+        For ``method="fhs"``, if a neighboring occupied-subspace overlap has
+        determinant magnitude below ``1e-14``. This indicates a singular link;
+        increasing the momentum-grid resolution may resolve it.
+
+    Warns
+    -----
+    RuntimeWarning
+        If the minimum direct gap is no larger than ``gap_tolerance``.
+
+    Notes
+    -----
+    The FHS value satisfies
+
+    $$
+    C_\mathrm{FHS} = \frac{1}{2\pi}
+    \sum_k \operatorname{Arg}\!\left[
+      U_x(k)U_y(k+e_x)U_x(k+e_y)^*U_y(k)^*
+    \right],
+    $$
+
+    where $U_i(k)$ is the phase of the determinant of the occupied-subspace
+    overlap between $k$ and $k+e_i$. Determinants make the formula
+    invariant under arbitrary unitary changes of occupied-band basis.
+
+    ``nearest_integer`` is a convenience diagnostic, not proof that the bundle
+    is isolated or the mesh is sufficiently resolved. Inspect ``direct_gap``
+    and, when necessary, repeat the calculation on finer momentum grids.
+
+    For sheared cells, the Chern sum and neighbor graph remain correct, but a
+    flat returned array is intentional: canonical quotient order is not a
+    rectangular Brillouin-zone heatmap.
+
+    Examples
+    --------
+    Use the robust finite-grid method:
+
+    ```python
+    result = chern_number(hamiltonian, n_occupied=1)
+    invariant = result["nearest_integer"]
+    flux = result["berry_flux"]
+    ```
+
+    Request the differential-geometric decomposition:
+
+    ```python
+    geometry = chern_number(hamiltonian, n_occupied=1, method="qgt")
+    metric = geometry["fubini_study_metric"]
+    curvature = geometry["berry_curvature"]
+    ```
+
+    See Also
+    --------
+    [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        Gauge-invariant local quantum geometric tensor.
+    [`fubini_study_metric`][qten.topology.fubini_study_metric]
+        Metric part of the QGT.
+    [`berry_curvature`][qten.topology.berry_curvature]
+        Curvature part of the QGT.
     """
     if method == "fhs":
         return _discrete_chern_number(bloch_hamiltonian, n_occupied, gap_tolerance)
