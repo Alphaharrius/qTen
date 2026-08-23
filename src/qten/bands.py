@@ -67,6 +67,7 @@ from .geometries import (
     Lattice,
     Momentum,
     Offset,
+    PeriodicBoundary,
     ReciprocalLattice,
 )
 from .geometries.fourier import fourier_transform
@@ -1618,30 +1619,42 @@ def fhs_chern_number(
     if not 0 < n_occupied < n_bands:
         raise ValueError("n_occupied must lie strictly between 0 and n_bands.")
 
-    momenta = bloch_hamiltonian.dims[0].elements()
+    k_space = bloch_hamiltonian.dims[0]
+    momenta = k_space.elements()
     if not momenta or len(momenta[0].rep) != 2:
         raise ValueError("A two-dimensional momentum grid is required.")
-    fractional_k = [(float(k.rep[0]), float(k.rep[1])) for k in momenta]
-    lx = len({round(kx % 1.0, 12) for kx, _ in fractional_k})
-    ly = len({round(ky % 1.0, 12) for _, ky in fractional_k})
-    if lx * ly != len(momenta):
-        raise ValueError("Momentum points do not form a complete rectangular grid.")
+
+    reciprocal_lattice = k_space.extract(ReciprocalLattice)
+    direct_boundary = reciprocal_lattice.lattice.boundaries
+    if not isinstance(direct_boundary, PeriodicBoundary):
+        raise ValueError("The momentum grid requires periodic lattice boundaries.")
+    dual_boundary = PeriodicBoundary(ImmutableDenseMatrix(direct_boundary.basis.T))
+
+    def rep_key(rep: ImmutableDenseMatrix) -> tuple[sy.Expr, ...]:
+        return tuple(sy.sympify(rep[i, 0]) for i in range(rep.rows))
+
+    representative_to_index: dict[tuple[sy.Expr, ...], int] = {}
+    for momentum in momenta:
+        integer_rep = ImmutableDenseMatrix(direct_boundary.basis.T @ momentum.rep)
+        if any(not sy.sympify(value).is_integer for value in integer_rep):
+            raise ValueError(
+                "Momentum grid contains a point outside the reciprocal quotient."
+            )
+        canonical_rep = dual_boundary.wrap(integer_rep)
+        key = rep_key(canonical_rep)
+        if key in representative_to_index:
+            raise ValueError(f"Duplicate momentum quotient representative {key}.")
+        representative_to_index[key] = k_space.structure[momentum]
+
+    canonical_reps = dual_boundary.representatives()
+    if len(representative_to_index) != len(canonical_reps) or any(
+        rep_key(rep) not in representative_to_index for rep in canonical_reps
+    ):
+        raise ValueError("Momentum points do not form a complete reciprocal grid.")
 
     energies, eigenvectors = torch.linalg.eigh(data)
-    occupied_grid = data.new_empty((lx, ly, n_bands, n_occupied))
-    energy_grid = energies.new_empty((lx, ly, n_bands))
-    visited: set[tuple[int, int]] = set()
-    for flat_index, (kx, ky) in enumerate(fractional_k):
-        ix = int(round((kx % 1.0) * lx)) % lx
-        iy = int(round((ky % 1.0) * ly)) % ly
-        if (ix, iy) in visited:
-            raise ValueError(f"Duplicate momentum grid point {(ix, iy)}.")
-        visited.add((ix, iy))
-        occupied_grid[ix, iy] = eigenvectors[flat_index, :, :n_occupied]
-        energy_grid[ix, iy] = energies[flat_index]
-
     direct_gap = float(
-        (energy_grid[..., n_occupied] - energy_grid[..., n_occupied - 1]).min().item()
+        (energies[..., n_occupied] - energies[..., n_occupied - 1]).min().item()
     )
     if direct_gap <= gap_tolerance:
         warnings.warn(
@@ -1662,15 +1675,47 @@ def fhs_chern_number(
             )
         return determinant / magnitude
 
-    link_x = link(occupied_grid, torch.roll(occupied_grid, shifts=-1, dims=0))
-    link_y = link(occupied_grid, torch.roll(occupied_grid, shifts=-1, dims=1))
-    plaquette = (
-        link_x
-        * torch.roll(link_y, shifts=-1, dims=0)
-        * torch.roll(link_x, shifts=-1, dims=1).conj()
-        * link_y.conj()
+    unit_x = ImmutableDenseMatrix([1, 0])
+    unit_y = ImmutableDenseMatrix([0, 1])
+    canonical_position = {rep_key(rep): i for i, rep in enumerate(canonical_reps)}
+    neighbor_x_keys = [
+        rep_key(dual_boundary.wrap(rep + unit_x)) for rep in canonical_reps
+    ]
+    neighbor_y_keys = [
+        rep_key(dual_boundary.wrap(rep + unit_y)) for rep in canonical_reps
+    ]
+    index_x = torch.tensor(
+        [representative_to_index[key] for key in neighbor_x_keys],
+        dtype=torch.long,
+        device=data.device,
     )
-    berry_flux = torch.angle(plaquette)
+    index_y = torch.tensor(
+        [representative_to_index[key] for key in neighbor_y_keys],
+        dtype=torch.long,
+        device=data.device,
+    )
+    canonical_indices = torch.tensor(
+        [representative_to_index[rep_key(rep)] for rep in canonical_reps],
+        dtype=torch.long,
+        device=data.device,
+    )
+    occupied = eigenvectors[..., :n_occupied]
+    occupied_canonical = occupied[canonical_indices]
+    link_x = link(occupied_canonical, occupied[index_x])
+    link_y = link(occupied_canonical, occupied[index_y])
+    position_x = torch.tensor(
+        [canonical_position[key] for key in neighbor_x_keys],
+        dtype=torch.long,
+        device=data.device,
+    )
+    position_y = torch.tensor(
+        [canonical_position[key] for key in neighbor_y_keys],
+        dtype=torch.long,
+        device=data.device,
+    )
+    plaquette = link_x * link_y[position_x] * link_x[position_y].conj() * link_y.conj()
+    grid_shape = tuple(int(period) for period in reciprocal_lattice.shape)
+    berry_flux = torch.angle(plaquette).reshape(grid_shape)
     chern = float((berry_flux.sum() / (2.0 * torch.pi)).item())
 
     return {

@@ -64,11 +64,17 @@ def _band_tensor() -> tuple[Tensor, HilbertSpace]:
     return tensor, band_space
 
 
-def test_fhs_chern_number_for_two_band_chern_insulator():
-    size = 8
+@pytest.mark.parametrize(
+    ("boundary_basis", "flux_shape"),
+    [
+        (ImmutableDenseMatrix.diag(8, 8), (8, 8)),
+        (ImmutableDenseMatrix([[8, 2], [0, 8]]), (2, 32)),
+    ],
+)
+def test_fhs_chern_number_for_two_band_chern_insulator(boundary_basis, flux_shape):
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(2),
-        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(size, size)),
+        boundaries=PeriodicBoundary(boundary_basis),
         unit_cell={"r": ImmutableDenseMatrix([0, 0])},
     )
     k_space = brillouin_zone(lattice.dual)
@@ -97,7 +103,7 @@ def test_fhs_chern_number_for_two_band_chern_insulator():
     assert abs(result["nearest_integer"]) == 1
     assert result["chern"] == pytest.approx(result["nearest_integer"], abs=1e-12)
     assert result["direct_gap"] > 0
-    assert result["berry_flux"].shape == (size, size)
+    assert result["berry_flux"].shape == flux_shape
 
 
 def test_bandselect_supports_slice_criterion():
