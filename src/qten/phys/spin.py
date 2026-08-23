@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, Tuple
+from typing import TYPE_CHECKING, ClassVar, Literal, Tuple, cast
 
 import sympy as sy
 
@@ -94,10 +94,10 @@ class SpinAction:
         from ..pointgroups.elements import PointGroupOpr
 
         element = g.g if isinstance(g, PointGroupOpr) else g
-        kind = getattr(element, "spin", "electron")
+        kind = element.spin
         if kind not in {"electron", "trivial"}:
             raise ValueError(f"Unknown spin policy {kind!r}.")
-        return cls(kind=kind)
+        return cls(kind=cast(Literal["electron", "trivial"], kind))
 
 
 # mypy does not model multimethod's dynamic .register API.

@@ -305,7 +305,9 @@ def _hashable_axis(value: object) -> str | tuple[float, ...] | None:
         return None
     if isinstance(value, str):
         return value
-    return tuple(float(sy.N(component)) for component in value)  # type: ignore[arg-type]
+    if not isinstance(value, tuple):
+        raise TypeError(f"plane/axis must be a string or tuple, got {type(value)!r}.")
+    return tuple(float(sy.N(component)) for component in value)
 
 
 @lru_cache
@@ -404,9 +406,9 @@ def named_pointgroup(
     if embedded is not None:
         return _group_from_record(embedded, spin)
 
-    spatial = tuple(_project_generator(matrix, axis_names) for matrix in cartesian)
+    projected = tuple(_project_generator(matrix, axis_names) for matrix in cartesian)
     group = FinitePointGroup.from_matrices(
-        matrices=spatial,
+        matrices=projected,
         axes=_axis_symbols(axis_names),
         symbol=symbol,
         irreps=record.get("irreps"),

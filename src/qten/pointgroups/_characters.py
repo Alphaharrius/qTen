@@ -207,7 +207,7 @@ def _group_multiplication_table(group: FinitePointGroup) -> np.ndarray:
     table = np.empty((order, order), dtype=int)
     for i, left in enumerate(elements):
         for j, right in enumerate(elements):
-            table[i, j] = index[_matrix_key((left @ right).irrep)]
+            table[i, j] = index[_matrix_key(left.invoke(right).irrep)]
     return table
 
 
@@ -293,9 +293,9 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
         )
 
     hat_class_of = {}
-    for class_index, members in enumerate(hat_classes):
+    for hat_class_index, members in enumerate(hat_classes):
         for member in members:
-            hat_class_of[member] = class_index
+            hat_class_of[member] = hat_class_index
 
     chi_by_element = np.vstack(
         [
@@ -309,12 +309,12 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
 
     if group.irreps:
         labels = list(group.irreps["class_labels"])
-        class_index = group._class_label_index_by_element()
+        label_by_element = group._class_label_index_by_element()
         n_class = len(labels)
     else:
         generated = group.conjugacy_classes()
         labels = [f"C{index}" for index in range(len(generated))]
-        class_index = tuple(
+        label_by_element = tuple(
             next(i for i, members in enumerate(generated) if element in members)
             for element in range(len(elements))
         )
@@ -325,7 +325,7 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
         totals = np.zeros(n_class, dtype=complex)
         counts = np.zeros(n_class, dtype=int)
         for element_index, character in enumerate(row):
-            label_index = class_index[element_index]
+            label_index = label_by_element[element_index]
             totals[label_index] += character
             counts[label_index] += 1
         class_characters = []
@@ -335,7 +335,7 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
                 continue
             values = [
                 row[element_index]
-                for element_index, label_index in enumerate(class_index)
+                for element_index, label_index in enumerate(label_by_element)
                 if label_index == index
             ]
             mean = totals[index] / counts[index]
@@ -358,7 +358,7 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
     multiplicities = (
         list(group.irreps["multiplicities"])
         if group.irreps
-        else [class_index.count(index) for index in range(n_class)]
+        else [label_by_element.count(index) for index in range(n_class)]
     )
     return {
         "class_labels": labels,
