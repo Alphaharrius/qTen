@@ -1,12 +1,11 @@
-"""Spinful Bloch models on a few lattices (the checks in the repo-root ``test.py``).
+"""Spinful Bloch models on a few lattices.
 
 Role: end-to-end free-fermion + Fourier + ``bandfillings`` on 1D / 2D / 3D
 lattices whose Hilbert space already carries ``Spin``. This is not a substitute
 for geometry oracles or SU(2) unit tests.
 
-The root ``test.py`` script is a scratch Kane-Mele / Fu-Kane-Mele builder.
-These tests keep the same operations on small meshes: Hermitian Bloch blocks,
-half-filling, and the correlation ``I - P``.
+Checks on small meshes: Hermitian Bloch blocks, half-filling, and the
+correlation ``I - P``.
 """
 
 import sympy as sy
