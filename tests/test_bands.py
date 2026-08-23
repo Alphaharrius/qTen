@@ -7,15 +7,17 @@ import sympy as sy
 from sympy import ImmutableDenseMatrix
 
 from qten.bands import (
+    assert_pure,
     bandcounts,
     bandfillings,
     nearest_bands,
     bandselect,
     interpolate_path,
     _infer_wannier_bridge,
+    fhs_chern_number,
     proj_wannierization,
     svd_projection,
-    fhs_chern_number,
+    von_neumann,
 )
 from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.fourier import fourier_transform
@@ -170,6 +172,143 @@ def test_bandcounts_accepts_hilbertspace_as_trailing_statespace():
 
     assert counts.dims == (tensor.dims[0],)
     assert torch.equal(counts.data, torch.tensor([4, 4], dtype=torch.int64))
+
+
+def test_von_neumann_returns_zero_for_projector():
+    tensor, _ = _band_tensor()
+
+    entropy = von_neumann(tensor)
+    per_k = von_neumann(tensor, mode="per-k")
+
+    assert entropy == pytest.approx(0.0)
+    assert per_k.dims == (tensor.dims[0],)
+    assert torch.allclose(per_k.data, torch.zeros(2, dtype=torch.float64))
+
+
+def test_von_neumann_returns_momentum_resolved_entropy():
+    tensor, band_space = _band_tensor()
+    mixed = Tensor(
+        data=torch.diag_embed(
+            torch.tensor(
+                [
+                    [0.0, 1.0, 1.0, 0.0],
+                    [0.0, 0.5, 1.0, 0.0],
+                ],
+                dtype=torch.float64,
+            )
+        ).to(torch.complex128),
+        dims=(tensor.dims[0], band_space, band_space),
+    )
+
+    per_k = von_neumann(mixed, mode="per-k")
+    mean = von_neumann(mixed, mode="mean")
+    total = von_neumann(mixed, mode="sum")
+
+    expected = torch.tensor([0.0, np.log(2.0)], dtype=torch.float64)
+    assert torch.allclose(per_k.data, expected)
+    assert mean == pytest.approx(float(expected.mean().item()))
+    assert total == pytest.approx(float(expected.sum().item()))
+
+
+def test_von_neumann_rejects_unknown_mode():
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(ValueError, match="mode must be one of"):
+        von_neumann(tensor, mode="bad")  # type: ignore[arg-type]
+
+
+def test_assert_pure_accepts_projector_tensor():
+    tensor, _ = _band_tensor()
+
+    assert_pure(tensor)
+
+
+def test_assert_pure_reports_bad_momenta():
+    tensor, band_space = _band_tensor()
+    mixed = Tensor(
+        data=torch.diag_embed(
+            torch.tensor(
+                [
+                    [0.0, 0.5, 1.0, 0.0],
+                    [0.25, 1.0, 1.0, 0.0],
+                ],
+                dtype=torch.float64,
+            )
+        ).to(torch.complex128),
+        dims=(tensor.dims[0], band_space, band_space),
+    )
+
+    with pytest.raises(AssertionError, match="Band tensor is not pure") as excinfo:
+        assert_pure(mixed)
+
+    message = str(excinfo.value)
+    assert "2 / 2 momentum sectors" in message
+    assert "k[0]" in message
+    assert "k[1]" in message
+    assert "S =" in message
+
+
+def test_assert_pure_uses_user_threshold():
+    tensor, band_space = _band_tensor()
+    almost_pure = Tensor(
+        data=torch.diag_embed(
+            torch.tensor(
+                [
+                    [0.0, 1e-12, 1.0 - 1e-12, 0.0],
+                    [0.0, 1.0, 1.0, 0.0],
+                ],
+                dtype=torch.float64,
+            )
+        ).to(torch.complex128),
+        dims=(tensor.dims[0], band_space, band_space),
+    )
+
+    assert_pure(almost_pure)
+
+    with pytest.raises(AssertionError):
+        assert_pure(almost_pure, threshold=1e-12)
+
+
+def test_assert_pure_rejects_negative_threshold():
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(ValueError, match="non-negative threshold"):
+        assert_pure(tensor, threshold=-1.0)
+
+
+def test_assert_pure_uses_user_report_limit():
+    tensor, band_space = _band_tensor()
+    mixed = Tensor(
+        data=torch.full(
+            (tensor.dims[0].dim, band_space.dim),
+            0.5,
+            dtype=torch.complex128,
+        ).diag_embed(),
+        dims=(tensor.dims[0], band_space, band_space),
+    )
+
+    with pytest.raises(AssertionError) as excinfo:
+        assert_pure(mixed, report_limit=1)
+
+    message = str(excinfo.value)
+    assert "Largest 1 violating momentum sectors:" in message
+    assert message.count("S =") == 1
+
+
+@pytest.mark.parametrize("report_limit", [0, -1])
+def test_assert_pure_rejects_non_positive_report_limit(report_limit: int):
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(ValueError, match="positive report_limit"):
+        assert_pure(tensor, report_limit=report_limit)
+
+
+@pytest.mark.parametrize("report_limit", [1.5, True])
+def test_assert_pure_rejects_non_integer_report_limit(report_limit: object):
+    tensor, _ = _band_tensor()
+
+    with pytest.raises(TypeError, match="report_limit to be an integer"):
+        assert_pure(tensor, report_limit=report_limit)  # type: ignore[arg-type]
 
 
 def test_svd_projection_ignores_zero_padded_filled_bands():

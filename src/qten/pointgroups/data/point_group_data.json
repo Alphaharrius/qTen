@@ -1,0 +1,4613 @@
+{
+  "point_groups": [
+    {
+      "aliases": [
+        "Ci",
+        "S2"
+      ],
+      "crystal_system": "triclinic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "-1"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2,xy,xz,yz,Jx,Jy,Jz"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x,y,z"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=2&sg=2"
+      },
+      "source_encoding": "h",
+      "symbol": "-1"
+    },
+    {
+      "aliases": [
+        "C3i",
+        "S6"
+      ],
+      "crystal_system": "trigonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "-1",
+          "-3^+",
+          "-3^-"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "^1Eg": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          },
+          "^1Eu": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              -1,
+              "-w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          },
+          "^2Eg": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          },
+          "^2Eu": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              -1,
+              "-w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=17&sg=147"
+      },
+      "source_encoding": "hn",
+      "symbol": "-3"
+    },
+    {
+      "aliases": [
+        "D3d"
+      ],
+      "crystal_system": "trigonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "21-10",
+          "-1",
+          "-3",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1g": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A1u": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "A2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "Eg": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              2,
+              -1,
+              0,
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x^2-y^2,xy),(xz,yz),(Jx,Jy)"
+          },
+          "Eu": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              2,
+              -1,
+              0,
+              -2,
+              1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y)"
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3,
+          1,
+          2,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=20&sg=162"
+      },
+      "source_encoding": "fhn",
+      "symbol": "-3m"
+    },
+    {
+      "aliases": [
+        "S4"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-4^+",
+          "-4^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,xy,x^2-y^2"
+          },
+          "^1E": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              "-1j",
+              "1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              "1j",
+              "-1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=10&sg=81"
+      },
+      "source_encoding": "m",
+      "symbol": "-4"
+    },
+    {
+      "aliases": [
+        "D2d"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-4",
+          "2100",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,xy"
+          },
+          "E": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=14&sg=111"
+      },
+      "source_encoding": "cm",
+      "symbol": "-42m"
+    },
+    {
+      "aliases": [
+        "Td"
+      ],
+      "crystal_system": "cubic",
+      "generators": [
+        [
+          [
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "2100",
+          "-4",
+          "m110"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2+z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              2,
+              -1,
+              2,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "T1": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              3,
+              0,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 3,
+            "functions": "(Jx,Jy,Jz)"
+          },
+          "T2": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              3,
+              0,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 3,
+            "functions": "(x,y,z),(xy,xz,yz)"
+          }
+        },
+        "multiplicities": [
+          1,
+          8,
+          3,
+          6,
+          6
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=31&sg=215"
+      },
+      "source_encoding": "dml",
+      "symbol": "-43m"
+    },
+    {
+      "aliases": [
+        "C3h"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "m",
+          "-6^-",
+          "-6^+"
+        ],
+        "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
+          "A^''": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "^1E^'": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(x^2-y^2,xy)"
+          },
+          "^1E^''": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              -1,
+              "-w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "^2E^'": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(x^2-y^2,xy)"
+          },
+          "^2E^''": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              -1,
+              "-w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=22&sg=174"
+      },
+      "source_encoding": "in",
+      "symbol": "-6"
+    },
+    {
+      "aliases": [
+        "D3h"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "m",
+          "3",
+          "-6",
+          "2120",
+          "m100"
+        ],
+        "irreps": {
+          "A^''1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A^''2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "A^'1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A^'2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "E^'": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              2,
+              2,
+              -1,
+              -1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(x^2-y^2,xy)"
+          },
+          "E^''": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              -1,
+              1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=26&sg=187"
+      },
+      "source_encoding": "ikn",
+      "symbol": "-6m2"
+    },
+    {
+      "aliases": [
+        "C1"
+      ],
+      "crystal_system": "triclinic",
+      "generators": [
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1
+            ],
+            "dim": 1,
+            "functions": ""
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=1&sg=1"
+      },
+      "source_encoding": "a",
+      "symbol": "1"
+    },
+    {
+      "aliases": [
+        "C2"
+      ],
+      "crystal_system": "monoclinic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2,xy,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x,y,xz,yz,Jx,Jy"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=3&sg=3"
+      },
+      "source_encoding": "c",
+      "symbol": "2"
+    },
+    {
+      "aliases": [
+        "C2h"
+      ],
+      "crystal_system": "monoclinic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-1",
+          "m"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2,xy,Jz"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "Bg": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xz,yz,Jx,Jy"
+          },
+          "Bu": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,y"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=5&sg=10"
+      },
+      "source_encoding": "ch",
+      "symbol": "2/m"
+    },
+    {
+      "aliases": [
+        "D2",
+        "V"
+      ],
+      "crystal_system": "orthorhombic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "2y",
+          "2x"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,xy,Jz"
+          },
+          "B2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "y,xz,Jy"
+          },
+          "B3": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,yz,Jx"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=6&sg=16"
+      },
+      "source_encoding": "bc",
+      "symbol": "222"
+    },
+    {
+      "aliases": [
+        "T"
+      ],
+      "crystal_system": "cubic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2+z^2"
+          },
+          "T": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              3,
+              -1,
+              0,
+              0
+            ],
+            "dim": 3,
+            "functions": "(x,y,z),(xy,xz,yz),(Jx,Jy,Jz)"
+          },
+          "^1E": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          }
+        },
+        "multiplicities": [
+          1,
+          3,
+          4,
+          4
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=28&sg=195"
+      },
+      "source_encoding": "cd",
+      "symbol": "23"
+    },
+    {
+      "aliases": [
+        "C3"
+      ],
+      "crystal_system": "trigonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "^1E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=16&sg=143"
+      },
+      "source_encoding": "n",
+      "symbol": "3"
+    },
+    {
+      "aliases": [
+        "D3"
+      ],
+      "crystal_system": "trigonal",
+      "generators": [
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "21-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,Jz"
+          },
+          "E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=18&sg=149"
+      },
+      "source_encoding": "en",
+      "symbol": "32"
+    },
+    {
+      "aliases": [
+        "C3v"
+      ],
+      "crystal_system": "trigonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=19&sg=156"
+      },
+      "source_encoding": "kn",
+      "symbol": "3m"
+    },
+    {
+      "aliases": [
+        "C4"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2,xy"
+          },
+          "^1E": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              "-1j",
+              "1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              "1j",
+              "-1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=9&sg=75"
+      },
+      "source_encoding": "g",
+      "symbol": "4"
+    },
+    {
+      "aliases": [
+        "C4h"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-",
+          "-1",
+          "m",
+          "-4^+",
+          "-4^-"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "Bg": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xy,x^2-y^2"
+          },
+          "Bu": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^1Eg": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              1,
+              -1,
+              "-1j",
+              "1j",
+              1,
+              -1,
+              "-1j",
+              "1j"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "^1Eu": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              1,
+              -1,
+              "-1j",
+              "1j",
+              -1,
+              1,
+              "1j",
+              "-1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          },
+          "^2Eg": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              -1,
+              "1j",
+              "-1j",
+              1,
+              -1,
+              "1j",
+              "-1j"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "^2Eu": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              -1,
+              "1j",
+              "-1j",
+              -1,
+              1,
+              "-1j",
+              "1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=11&sg=83"
+      },
+      "source_encoding": "gh",
+      "symbol": "4/m"
+    },
+    {
+      "aliases": [
+        "D4h"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "2100",
+          "21-10",
+          "-1",
+          "mz",
+          "-4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1g": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A1u": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "A2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "B1g": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2"
+          },
+          "B1u": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              -1,
+              1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2g": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "xy"
+          },
+          "B2u": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "Eg": {
+            "bilbao_label": "\u03935^+",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0,
+              2,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "Eu": {
+            "bilbao_label": "\u03935^-",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0,
+              -2,
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2,
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=15&sg=123"
+      },
+      "source_encoding": "cgh",
+      "symbol": "4/mmm"
+    },
+    {
+      "aliases": [
+        "D4"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "2100",
+          "21-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "xy"
+          },
+          "E": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=12&sg=89"
+      },
+      "source_encoding": "cg",
+      "symbol": "422"
+    },
+    {
+      "aliases": [
+        "O"
+      ],
+      "crystal_system": "cubic",
+      "generators": [
+        [
+          [
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "4",
+          "2100",
+          "3",
+          "2110"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2+z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              2,
+              0,
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "T1": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              3,
+              1,
+              -1,
+              0,
+              -1
+            ],
+            "dim": 3,
+            "functions": "(x,y,z),(Jx,Jy,Jz)"
+          },
+          "T2": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              3,
+              -1,
+              -1,
+              0,
+              1
+            ],
+            "dim": 3,
+            "functions": "(xy,xz,yz)"
+          }
+        },
+        "multiplicities": [
+          1,
+          6,
+          3,
+          8,
+          6
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=30&sg=207"
+      },
+      "source_encoding": "dg",
+      "symbol": "432"
+    },
+    {
+      "aliases": [
+        "C4v"
+      ],
+      "crystal_system": "tetragonal",
+      "generators": [
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "xy"
+          },
+          "E": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=13&sg=99"
+      },
+      "source_encoding": "gj",
+      "symbol": "4mm"
+    },
+    {
+      "aliases": [
+        "C6"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^1E1": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              1,
+              "-w",
+              "w^2",
+              -1,
+              "w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^1E2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          },
+          "^2E1": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              1,
+              "-w^2",
+              "w",
+              -1,
+              "w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^2E2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=21&sg=168"
+      },
+      "source_encoding": "bn",
+      "symbol": "6"
+    },
+    {
+      "aliases": [
+        "C6h"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-",
+          "-1",
+          "-6^+",
+          "-3^+",
+          "m",
+          "-3^-",
+          "-6^-"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2,Jz"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "Bg": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "Bu": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^1E1g": {
+            "bilbao_label": "\u03936^+",
+            "characters": [
+              1,
+              "-w",
+              "w^2",
+              -1,
+              "w",
+              "-w^2",
+              1,
+              "-w",
+              "w^2",
+              -1,
+              "w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "^1E1u": {
+            "bilbao_label": "\u03936^-",
+            "characters": [
+              1,
+              "-w",
+              "w^2",
+              -1,
+              "w",
+              "-w^2",
+              -1,
+              "w",
+              "-w^2",
+              1,
+              "-w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          },
+          "^1E2g": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          },
+          "^1E2u": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2",
+              -1,
+              "-w",
+              "-w^2",
+              -1,
+              "-w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^2E1g": {
+            "bilbao_label": "\u03935^+",
+            "characters": [
+              1,
+              "-w^2",
+              "w",
+              -1,
+              "w^2",
+              "-w",
+              1,
+              "-w^2",
+              "w",
+              -1,
+              "w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "^2E1u": {
+            "bilbao_label": "\u03935^-",
+            "characters": [
+              1,
+              "-w^2",
+              "w",
+              -1,
+              "w^2",
+              "-w",
+              -1,
+              "w^2",
+              "-w",
+              1,
+              "-w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x,y)"
+          },
+          "^2E2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          },
+          "^2E2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w",
+              -1,
+              "-w^2",
+              "-w",
+              -1,
+              "-w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=23&sg=175"
+      },
+      "source_encoding": "bhn",
+      "symbol": "6/m"
+    },
+    {
+      "aliases": [
+        "D6h"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "6",
+          "3",
+          "2z",
+          "2120",
+          "2100",
+          "-1",
+          "-6",
+          "-3",
+          "mz",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "A1g": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A1u": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "A2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "B1g": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B1u": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2g": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2u": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E1g": {
+            "bilbao_label": "\u03935^+",
+            "characters": [
+              2,
+              1,
+              -1,
+              -2,
+              0,
+              0,
+              2,
+              1,
+              -1,
+              -2,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(xz,yz),(Jx,Jy)"
+          },
+          "E1u": {
+            "bilbao_label": "\u03935^-",
+            "characters": [
+              2,
+              1,
+              -1,
+              -2,
+              0,
+              0,
+              -2,
+              -1,
+              1,
+              2,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y)"
+          },
+          "E2g": {
+            "bilbao_label": "\u03936^+",
+            "characters": [
+              2,
+              -1,
+              -1,
+              2,
+              0,
+              0,
+              2,
+              -1,
+              -1,
+              2,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x^2-y^2,xy)"
+          },
+          "E2u": {
+            "bilbao_label": "\u03936^-",
+            "characters": [
+              2,
+              -1,
+              -1,
+              2,
+              0,
+              0,
+              -2,
+              1,
+              1,
+              -2,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "\u00b7"
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          2,
+          1,
+          3,
+          3,
+          1,
+          2,
+          2,
+          1,
+          3,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=27&sg=191"
+      },
+      "source_encoding": "benh",
+      "symbol": "6/mmm"
+    },
+    {
+      "aliases": [
+        "D6"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "3",
+          "6",
+          "2120",
+          "2100"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E1": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              -1,
+              1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "E2": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              2,
+              2,
+              -1,
+              -1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x^2-y^2,xy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=24&sg=177"
+      },
+      "source_encoding": "ben",
+      "symbol": "622"
+    },
+    {
+      "aliases": [
+        "C6v"
+      ],
+      "crystal_system": "hexagonal",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3",
+          "6",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E1": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              -1,
+              1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "E2": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              2,
+              2,
+              -1,
+              -1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x^2-y^2,xy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=25&sg=183"
+      },
+      "source_encoding": "bkn",
+      "symbol": "6mm"
+    },
+    {
+      "aliases": [
+        "C1h",
+        "Cs"
+      ],
+      "crystal_system": "monoclinic",
+      "generators": [
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,y,x^2,y^2,z^2,xy,Jz"
+          },
+          "A^''": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,xz,yz,Jx,Jy"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=4&sg=6"
+      },
+      "source_encoding": "j",
+      "symbol": "m"
+    },
+    {
+      "aliases": [
+        "Th"
+      ],
+      "crystal_system": "cubic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "2",
+          "-1",
+          "-3^+",
+          "-3^-",
+          "m"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2+z^2"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "Tg": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              3,
+              0,
+              0,
+              -1,
+              3,
+              0,
+              0,
+              -1
+            ],
+            "dim": 3,
+            "functions": "(xz,yz,xy),(Jx,Jy,Jz)"
+          },
+          "Tu": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              3,
+              0,
+              0,
+              -1,
+              -3,
+              0,
+              0,
+              1
+            ],
+            "dim": 3,
+            "functions": "(x,y,z)"
+          },
+          "^1Eg": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              1,
+              "w",
+              "w^2",
+              1
+            ],
+            "dim": 1,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "^1Eu": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              -1,
+              "-w",
+              "-w^2",
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^2Eg": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              1,
+              "w^2",
+              "w",
+              1
+            ],
+            "dim": 1,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "^2Eu": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              -1,
+              "-w^2",
+              "-w",
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          }
+        },
+        "multiplicities": [
+          1,
+          4,
+          4,
+          3,
+          1,
+          4,
+          4,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=29&sg=200"
+      },
+      "source_encoding": "cdh",
+      "symbol": "m-3"
+    },
+    {
+      "aliases": [
+        "Oh"
+      ],
+      "crystal_system": "cubic",
+      "generators": [
+        [
+          [
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "4",
+          "2100",
+          "3",
+          "2110",
+          "-1",
+          "-4",
+          "m100",
+          "-3",
+          "m110"
+        ],
+        "irreps": {
+          "A1g": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2+y^2+z^2"
+          },
+          "A1u": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "A2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              -1,
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "Eg": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              2,
+              0,
+              2,
+              -1,
+              0,
+              2,
+              0,
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(2z^2-x^2-y^2,x^2-y^2)"
+          },
+          "Eu": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              2,
+              0,
+              2,
+              -1,
+              0,
+              -2,
+              0,
+              -2,
+              1,
+              0
+            ],
+            "dim": 2,
+            "functions": "\u00b7"
+          },
+          "T1g": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              3,
+              1,
+              -1,
+              0,
+              -1,
+              3,
+              1,
+              -1,
+              0,
+              -1
+            ],
+            "dim": 3,
+            "functions": "(Jx,Jy,Jz)"
+          },
+          "T1u": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              3,
+              1,
+              -1,
+              0,
+              -1,
+              -3,
+              -1,
+              1,
+              0,
+              1
+            ],
+            "dim": 3,
+            "functions": "(x,y,z)"
+          },
+          "T2g": {
+            "bilbao_label": "\u03935^+",
+            "characters": [
+              3,
+              -1,
+              -1,
+              0,
+              1,
+              3,
+              -1,
+              -1,
+              0,
+              1
+            ],
+            "dim": 3,
+            "functions": "(xy,xz,yz)"
+          },
+          "T2u": {
+            "bilbao_label": "\u03935^-",
+            "characters": [
+              3,
+              -1,
+              -1,
+              0,
+              1,
+              -3,
+              1,
+              1,
+              0,
+              -1
+            ],
+            "dim": 3,
+            "functions": "\u00b7"
+          }
+        },
+        "multiplicities": [
+          1,
+          6,
+          3,
+          8,
+          6,
+          1,
+          6,
+          3,
+          8,
+          6
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=32&sg=221"
+      },
+      "source_encoding": "dghl",
+      "symbol": "m-3m"
+    },
+    {
+      "aliases": [
+        "C2v"
+      ],
+      "crystal_system": "orthorhombic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xy,Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x,xz,Jy"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "y,yz,Jx"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=7&sg=25"
+      },
+      "source_encoding": "bj",
+      "symbol": "mm2"
+    },
+    {
+      "aliases": [
+        "D2h",
+        "Vh"
+      ],
+      "crystal_system": "orthorhombic",
+      "generators": [
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ],
+        [
+          [
+            -1,
+            0,
+            0
+          ],
+          [
+            0,
+            -1,
+            0
+          ],
+          [
+            0,
+            0,
+            -1
+          ]
+        ]
+      ],
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "2y",
+          "2x",
+          "-1",
+          "mz",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "Ag": {
+            "bilbao_label": "\u03931^+",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x^2,y^2,z^2"
+          },
+          "Au": {
+            "bilbao_label": "\u03931^-",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B1g": {
+            "bilbao_label": "\u03933^+",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xy,Jz"
+          },
+          "B1u": {
+            "bilbao_label": "\u03933^-",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              -1,
+              -1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z"
+          },
+          "B2g": {
+            "bilbao_label": "\u03932^+",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xz,Jy"
+          },
+          "B2u": {
+            "bilbao_label": "\u03932^-",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "y"
+          },
+          "B3g": {
+            "bilbao_label": "\u03934^+",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "yz,Jx"
+          },
+          "B3u": {
+            "bilbao_label": "\u03934^-",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=8&sg=47"
+      },
+      "source_encoding": "bch",
+      "symbol": "mmm"
+    }
+  ],
+  "schema_version": 2,
+  "source": {
+    "name": "pymatgen-core",
+    "url": "https://raw.githubusercontent.com/materialsproject/pymatgen-core/v2026.5.18/src/pymatgen/symmetry/symm_data.json",
+    "version": "v2026.5.18"
+  }
+}

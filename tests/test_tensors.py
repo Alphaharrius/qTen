@@ -13,6 +13,9 @@ from qten.linalg.tensors import (
     allclose,
     astype,
     cat,
+    diag_embed,
+    diagonal,
+    eye,
     einsum,
     equal,
     imag as tensor_imag,
@@ -1003,6 +1006,71 @@ class TestTensorOperations:
         assert out.dims == dims
         assert out.data.shape == (2, 2)
         assert torch.equal(out.data, torch.ones(2, 2))
+
+    def test_eye_helper_preserves_full_dims(self, tensor_ops_ctx):
+        dims = (tensor_ops_ctx.space_a, tensor_ops_ctx.space_a, tensor_ops_ctx.space_a)
+        out = eye(dims)
+        expected = torch.eye(2).expand(2, 2, 2)
+
+        assert isinstance(out, Tensor)
+        assert out.dims == dims
+        assert out.data.shape == (2, 2, 2)
+        assert torch.equal(out.data, expected)
+
+    def test_diagonal_extracts_main_diagonal(self, tensor_ops_ctx):
+        space = tensor_ops_ctx.space_a
+        data = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        t = Tensor(data=data, dims=(space, space))
+
+        out = t.diagonal()
+        assert out.dims == (space,)
+        assert torch.equal(out.data, torch.tensor([1.0, 4.0]))
+        assert torch.equal(diagonal(t).data, out.data)
+
+    def test_diagonal_preserves_batch_dims(self, tensor_ops_ctx):
+        space = tensor_ops_ctx.space_a
+        data = torch.arange(8, dtype=torch.float32).reshape(2, 2, 2)
+        t = Tensor(data=data, dims=(space, space, space))
+
+        out = t.diagonal()
+        assert out.dims == (space, space)
+        assert torch.equal(out.data, torch.diagonal(data, dim1=-2, dim2=-1))
+
+    def test_diagonal_rejects_nonsquare_last_axes(self, tensor_ops_ctx):
+        space_a = tensor_ops_ctx.space_a
+        space_b = _space_from_modes(make_mode("b", 3))
+        t = Tensor(data=torch.randn(2, 3), dims=(space_a, space_b))
+
+        with pytest.raises(ValueError, match="same size"):
+            t.diagonal()
+
+    def test_diagonal_rejects_rank_less_than_two(self, tensor_ops_ctx):
+        with pytest.raises(ValueError, match="at least rank 2"):
+            tensor_ops_ctx.tensor.diagonal()
+
+    def test_diag_embed_builds_diagonal_matrix(self, tensor_ops_ctx):
+        space = tensor_ops_ctx.space_a
+        data = torch.tensor([1.0, 2.0])
+        t = Tensor(data=data, dims=(space,))
+
+        out = t.diag_embed()
+        assert out.dims == (space, space)
+        assert torch.equal(out.data, torch.diag_embed(data))
+        assert torch.equal(diag_embed(t).data, out.data)
+
+    def test_diag_embed_preserves_batch_dims(self, tensor_ops_ctx):
+        space = tensor_ops_ctx.space_a
+        data = torch.arange(4, dtype=torch.float32).reshape(2, 2)
+        t = Tensor(data=data, dims=(space, space))
+
+        out = t.diag_embed()
+        assert out.dims == (space, space, space)
+        assert torch.equal(out.data, torch.diag_embed(data))
+
+    def test_diag_embed_rejects_rank_zero(self):
+        scalar = Tensor.scalar(1.0)
+        with pytest.raises(ValueError, match="at least rank 1"):
+            scalar.diag_embed()
 
     def test_neg(self, tensor_ops_ctx):
         res = -tensor_ops_ctx.tensor

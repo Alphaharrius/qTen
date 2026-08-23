@@ -1092,6 +1092,28 @@ class Tensor(
         """
         return squeeze(self, dim)
 
+    def diagonal(self) -> Union[Self, "Tensor"]:
+        """
+        Extract the main diagonal of the last two matrix axes.
+
+        See Also
+        --------
+        [`diagonal(tensor)`][qten.linalg.tensors.diagonal]
+            Functional form with the full behavior description.
+        """
+        return diagonal(self)
+
+    def diag_embed(self) -> Union[Self, "Tensor"]:
+        """
+        Embed the last axis as the main diagonal of a square matrix.
+
+        See Also
+        --------
+        [`diag_embed(tensor)`][qten.linalg.tensors.diag_embed]
+            Functional form with the full behavior description.
+        """
+        return diag_embed(self)
+
     def index_add(
         self,
         dim: int,
@@ -3525,6 +3547,106 @@ def squeeze(tensor: TensorType, dim: int) -> Union[TensorType, Tensor]:
     )
 
 
+def diagonal(tensor: TensorType) -> Union[TensorType, Tensor]:
+    """
+    Extract the main diagonal over the last two matrix axes.
+
+    This is the metadata-aware analogue of
+    [`torch.diagonal`](https://docs.pytorch.org/docs/stable/generated/torch.diagonal.html)
+    with `dim1=-2` and `dim2=-1`. Leading axes are treated as batch dimensions
+    and are preserved. The last two axes must have the same size.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Input tensor of rank at least 2 whose last two axes form square
+        matrices.
+
+    Returns
+    -------
+    Union[TensorType, Tensor]
+        Tensor whose dims are `tensor.dims[:-2] + (tensor.dims[-2],)` and whose
+        data contain the main-diagonal entries of each matrix. For subclasses
+        marked with [`strict_dims`][qten.linalg.tensors.strict_dims], this may
+        return a plain [`Tensor`][qten.linalg.tensors.Tensor].
+
+    Raises
+    ------
+    ValueError
+        If `tensor` has rank less than 2, or if the last two axes have different
+        sizes.
+    """
+    if tensor.rank() < 2:
+        raise ValueError(f"diagonal requires at least rank 2, got rank {tensor.rank()}")
+    row_dim, col_dim = tensor.dims[-2], tensor.dims[-1]
+    if row_dim.dim != col_dim.dim:
+        raise ValueError(
+            "diagonal requires the last two dimensions to have the same size, "
+            f"got {row_dim.dim} and {col_dim.dim}"
+        )
+
+    new_data = torch.diagonal(tensor.data, offset=0, dim1=-2, dim2=-1)
+    new_dims = tensor.dims[:-2] + (row_dim,)
+    return cast(
+        TensorType,
+        _wrap_tensor_result(
+            tensor,
+            data=new_data,
+            dims=new_dims,
+            preserve_strict=False,
+        ),
+    )
+
+
+def diag_embed(tensor: TensorType) -> Union[TensorType, Tensor]:
+    """
+    Embed the last axis as the main diagonal of a square matrix.
+
+    This is the metadata-aware analogue of
+    [`torch.diag_embed`](https://docs.pytorch.org/docs/stable/generated/torch.diag_embed.html).
+    Leading axes are treated as batch dimensions and are preserved. The last
+    [`StateSpace`][qten.symbolics.state_space.StateSpace] is duplicated to form
+    the new row and column axes.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Input tensor of rank at least 1 whose last axis supplies the diagonal
+        entries.
+
+    Returns
+    -------
+    Union[TensorType, Tensor]
+        Tensor whose dims are
+        `tensor.dims[:-1] + (tensor.dims[-1], tensor.dims[-1])` and whose data
+        place the input values on the main diagonal. For subclasses marked with
+        [`strict_dims`][qten.linalg.tensors.strict_dims], this may return a
+        plain [`Tensor`][qten.linalg.tensors.Tensor].
+
+    Raises
+    ------
+    ValueError
+        If `tensor` has rank less than 1.
+    """
+    if tensor.rank() < 1:
+        raise ValueError(
+            f"diag_embed requires at least rank 1, got rank {tensor.rank()}"
+        )
+
+    last_dim = tensor.dims[-1]
+    new_data = torch.diag_embed(tensor.data)
+    new_dims = tensor.dims[:-1] + (last_dim, last_dim)
+    return cast(
+        TensorType,
+        _wrap_tensor_result(
+            tensor,
+            data=new_data,
+            dims=new_dims,
+            preserve_strict=False,
+        ),
+    )
+
+
 def _normalize_dim(dim: int, rank: int) -> int:
     if dim < 0:
         dim += rank
@@ -4768,11 +4890,11 @@ def mapping_matrix(
 
 def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
     """
-    Create an identity matrix tensor from the last two symbolic dimensions.
+    Create an identity tensor on the requested symbolic dimensions.
 
-    This helper interprets `dims[-2:]` as the matrix axes and returns a rank-2
-    identity tensor on those spaces. Any leading dimensions in `dims` are
-    ignored; this function does not build a batched identity tensor.
+    This helper interprets `dims[-2:]` as the matrix axes. When leading
+    dimensions are present, it broadcasts the identity across those axes so the
+    returned tensor preserves the full `dims` tuple.
 
     Parameters
     ----------
@@ -4785,7 +4907,7 @@ def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Ten
     Returns
     -------
     Tensor
-        Rank-2 identity tensor with dims `(dims[-2], dims[-1])`.
+        Identity tensor with dims equal to `dims`.
 
     Raises
     ------
@@ -4796,11 +4918,16 @@ def eye(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Ten
         raise ValueError(
             f"Identity tensor creation requires at least rank 2, got rank {len(dims)}!"
         )
-    matrix_dims = dims[-2:]
-    rows = matrix_dims[0].dim
-    cols = matrix_dims[1].dim
+    rows = dims[-2].dim
+    cols = dims[-1].dim
+    leading_shape = tuple(dim.dim for dim in dims[:-2])
     torch_device = device.torch_device() if device is not None else None
-    return Tensor(data=torch.eye(rows, cols, device=torch_device), dims=matrix_dims)
+    data = torch.eye(rows, cols, device=torch_device)
+    if leading_shape:
+        data = data.reshape((1,) * len(leading_shape) + (rows, cols)).expand(
+            leading_shape + (rows, cols)
+        )
+    return Tensor(data=data, dims=dims)
 
 
 def zeros(dims: Tuple[StateSpace, ...], *, device: Optional[Device] = None) -> Tensor:
