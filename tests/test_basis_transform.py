@@ -693,3 +693,20 @@ def test_cartesian_scale_rejects_invalid_scale():
         cartesian_scale(tensor, (0,))
     with pytest.raises(TypeError, match="int or sympy.Expr"):
         cartesian_scale(tensor, (0.5,))  # type: ignore[arg-type]
+
+
+def test_cartesian_scale_rescales_affine_space_offsets():
+    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(1, 1))
+    affine = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    offset = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 1]), space=affine)
+    hilbert = HilbertSpace.new([_mode(offset)])
+    tensor = Tensor(
+        data=torch.ones((1, 1, 1)),
+        dims=(brillouin_zone(lattice.dual), hilbert, hilbert),
+    )
+
+    scaled = cartesian_scale(tensor, (2, 3))
+
+    scaled_offset = scaled.dims[1].elements()[0].irrep_of(Offset)
+    assert scaled_offset.rep == offset.rep
+    assert scaled_offset.space == AffineSpace(basis=ImmutableDenseMatrix.diag(4, 9))

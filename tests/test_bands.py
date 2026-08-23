@@ -161,9 +161,14 @@ def test_rectangular_upsample_does_not_build_dense_fourier_kernels(monkeypatch):
     def reject_dense_kernel(*args, **kwargs):
         raise AssertionError("rectangular upsample constructed a dense kernel")
 
+    def reject_centered_translation(*args, **kwargs):
+        raise AssertionError("rectangular upsample centered lattice translations")
+
     # The fallback forms its Fourier kernels with torch.exp; the FFT path does
-    # not.  This makes the memory-scaling choice an explicit regression test.
+    # not.  It also uses sympy.floor while centering lattice translations,
+    # which the rectangular path handles directly with integer indices.
     monkeypatch.setattr(torch, "exp", reject_dense_kernel)
+    monkeypatch.setattr(sy, "floor", reject_centered_translation)
     result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (2, 2))
 
     assert result.data.shape == (16 * 16, bands.dim, bands.dim)

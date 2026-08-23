@@ -62,6 +62,7 @@ from multimethod import multimethod
 import torch
 
 from .geometries import (
+    AffineSpace,
     BasisTransform,
     InverseBasisTransform,
     KPointSet,
@@ -226,15 +227,6 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
         )
 
     boundary = lattice.boundaries.basis
-    boundary_inv = boundary.inv()
-    centered_reps: list[ImmutableDenseMatrix] = []
-    for rep in lattice.boundaries.representatives():
-        coeff = boundary_inv @ rep
-        shift = ImmutableDenseMatrix(
-            [sy.floor(coeff[i, 0] + sy.Rational(1, 2)) for i in range(dim)]
-        )
-        centered_reps.append(ImmutableDenseMatrix(rep - boundary @ shift))
-
     enlarged_boundary = ImmutableDenseMatrix(
         boundary @ ImmutableDenseMatrix.diag(*scale)
     )
@@ -284,6 +276,18 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
             data=interpolated,
             dims=(new_k_space, left_space, right_space),
         )
+
+    # Only the dense cardinal kernel needs explicit centered translations.
+    # The rectangular FFT path above applies the same convention directly in
+    # integer index space.
+    boundary_inv = boundary.inv()
+    centered_reps: list[ImmutableDenseMatrix] = []
+    for rep in lattice.boundaries.representatives():
+        coeff = boundary_inv @ rep
+        shift = ImmutableDenseMatrix(
+            [sy.floor(coeff[i, 0] + sy.Rational(1, 2)) for i in range(dim)]
+        )
+        centered_reps.append(ImmutableDenseMatrix(rep - boundary @ shift))
 
     real_dtype = (
         torch.float32
@@ -2830,7 +2834,7 @@ def cartesian_scale(tensor: Tensor, scale: Sequence[sy.Expr | int]) -> Tensor:
     tensor : Tensor
         Momentum-resolved tensor whose first axis is a
         [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
-    scale : Sequence[sympy.Expr | int | float]
+    scale : Sequence[sympy.Expr | int]
         Nonzero Cartesian scale factor for each spatial direction. Entries
         must be Python integers or symbolic SymPy expressions.
 
@@ -2868,21 +2872,28 @@ def cartesian_scale(tensor: Tensor, scale: Sequence[sy.Expr | int]) -> Tensor:
     if any(sy.simplify(entry) == 0 for entry in factors):
         raise ValueError("cartesian_scale scale entries must all be nonzero.")
 
-    scaled_lattices: dict[Lattice, Lattice] = {}
+    scaled_spaces: dict[AffineSpace, AffineSpace] = {}
 
-    def scale_lattice(lattice: Lattice) -> Lattice:
-        if len(factors) != lattice.dim:
+    def scale_space(space: AffineSpace) -> AffineSpace:
+        if len(factors) != space.dim:
             raise ValueError(
                 "cartesian_scale scale must have one entry per Cartesian direction: "
-                f"expected {lattice.dim}, got {len(factors)}."
+                f"expected {space.dim}, got {len(factors)}."
             )
-        if lattice not in scaled_lattices:
-            scaled_lattices[lattice] = Lattice(
-                basis=ImmutableDenseMatrix.diag(*factors) @ lattice.basis,
-                boundaries=lattice.boundaries,
-                unit_cell={name: site.rep for name, site in lattice.unit_cell.items()},
+        if space not in scaled_spaces:
+            basis = ImmutableDenseMatrix.diag(*factors) @ space.basis
+            scaled_spaces[space] = (
+                Lattice(
+                    basis=basis,
+                    boundaries=space.boundaries,
+                    unit_cell={
+                        name: site.rep for name, site in space.unit_cell.items()
+                    },
+                )
+                if isinstance(space, Lattice)
+                else AffineSpace(basis=basis)
             )
-        return scaled_lattices[lattice]
+        return scaled_spaces[space]
 
     def scale_momentum(momentum: Momentum) -> Momentum:
         if not isinstance(momentum.space, ReciprocalLattice):
@@ -2892,15 +2903,15 @@ def cartesian_scale(tensor: Tensor, scale: Sequence[sy.Expr | int]) -> Tensor:
             )
         return Momentum(
             rep=momentum.rep,
-            space=scale_lattice(momentum.space.dual).dual,
+            space=cast(Lattice, scale_space(momentum.space.dual)).dual,
         )
 
     def scale_hilbert(space: HilbertSpace) -> HilbertSpace:
         states: list[U1Basis] = []
         for state in space.elements():
             base = tuple(
-                Offset(rep=irrep.rep, space=scale_lattice(irrep.space))
-                if isinstance(irrep, Offset) and isinstance(irrep.space, Lattice)
+                Offset(rep=irrep.rep, space=scale_space(irrep.space))
+                if isinstance(irrep, Offset)
                 else irrep
                 for irrep in state.base
             )
