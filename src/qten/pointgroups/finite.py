@@ -11,8 +11,7 @@ build irrep projectors and polynomial sector bases.
 Repository usage
 ----------------
 Named crystallographic groups are usually constructed through
-[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup] or
-[`named_pointgroup()`][qten.pointgroups._registry.named_pointgroup]. Use this
+[`pointgroup()`][qten.pointgroups.pointgroup]. Use this
 module directly when assembling a custom finite group from exact matrices.
 """
 

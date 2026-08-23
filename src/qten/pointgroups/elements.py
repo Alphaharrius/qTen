@@ -14,7 +14,7 @@ Repository usage
 ----------------
 Use this module for explicit point-group construction and algebra. Higher-level
 query-string construction is available through
-[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], multi-generator
+[`pointgroup()`][qten.pointgroups.pointgroup], multi-generator
 groups live in [`qten.pointgroups.finite`][qten.pointgroups.finite], and
 tensor/Hilbert-space projection helpers live in
 [`qten.pointgroups.ops`][qten.pointgroups.ops].

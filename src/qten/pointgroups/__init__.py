@@ -11,7 +11,7 @@ Two rules decide spin and geometry:
    on the single-group helpers, or `fixpoint_at` on a `PointGroupOpr`. Joint
    projection has no `fixpoint=`; center each operator first.
 
-[`pointgroup`][qten.pointgroups._pointgroups.pointgroup] chooses the object
+[`pointgroup`][qten.pointgroups.pointgroup] chooses the object
 from the query, not from whether the group is abelian.
 
 How to construct
@@ -105,7 +105,7 @@ Dispatch
 
 Core exports
 ------------
-[`pointgroup`][qten.pointgroups._pointgroups.pointgroup] parses a compact query
+[`pointgroup`][qten.pointgroups.pointgroup] parses a compact query
 or named symbol.
 [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] is one
 linear operation (`irrep` on the model, `rotation3` in \(O(3)\)).
