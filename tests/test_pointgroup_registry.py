@@ -433,6 +433,42 @@ def test_plane_cut_keeps_faithful_c4v():
     assert pointgroup("4mm", plane=(0, 0, 1)).order == 8
 
 
+@pytest.mark.parametrize("normal", [(0, 0, 1), (0, 0, -1), (0, 0, 2)])
+def test_c2_coordinate_plane_tuple_matches_named_xy(normal):
+    named = pointgroup("2", plane="xy")
+    vector = pointgroup("2", plane=normal)
+    named_c2 = next(
+        element for element in named.elements() if element.group_order() == 2
+    )
+    vector_c2 = next(
+        element for element in vector.elements() if element.group_order() == 2
+    )
+    assert sy.simplify(named_c2.irrep + sy.eye(2)) == sy.zeros(2)
+    assert sy.simplify(vector_c2.irrep - named_c2.irrep) == sy.zeros(2)
+    assert named_c2.rotation3 is not None
+    assert vector_c2.rotation3 is not None
+    assert sy.simplify(vector_c2.rotation3 - named_c2.rotation3) == sy.zeros(3)
+    assert sy.simplify(named_c2.rotation3 - sy.diag(-1, -1, 1)) == sy.zeros(3)
+
+
+def test_catalog_skip_live_still_realizes_ordinary_tables():
+    import inspect
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "retrieve_pointgroup_catalog.py"
+    )
+    spec = importlib.util.spec_from_file_location("retrieve_pointgroup_catalog", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = inspect.getsource(module.check_self)
+    assert source.index("_check_ordinary_realizes_group") < source.index("if not live")
+
+
 def test_plane_vector_rejects_non_faithful_4m():
     with pytest.raises(ValueError, match="faithfully"):
         pointgroup("4/m", plane=(0, 0, 1))

@@ -358,6 +358,35 @@ def _group_with_projected_classes(
     )
 
 
+def _coordinate_plane_spec(normal: tuple[float, ...]) -> tuple[str, int] | None:
+    """Map an axis-aligned normal onto a packaged plane name and orientation.
+
+    The sign is ``+1`` when the normal points along the positive coordinate
+    axis of that plane and ``-1`` when it is flipped. Flipped cuts still use
+    the packaged 2D embedding (so C2 on ``xy`` stays C2z) and then conjugate
+    by a 2D flip so chiral characters follow the reversed normal.
+    """
+    if len(normal) != 3:
+        return None
+    values = [
+        sy.nsimplify(sy.sympify(component), tolerance=1e-12) for component in normal
+    ]
+    nonzero = [index for index, value in enumerate(values) if value != 0]
+    if len(nonzero) != 1:
+        return None
+    axis = nonzero[0]
+    name = {0: "yz", 1: "xz", 2: "xy"}[axis]
+    sign = 1 if values[axis] > 0 else -1
+    return name, sign
+
+
+def _plane_flip_matrix(plane: str) -> sy.ImmutableDenseMatrix:
+    """2D conjugation that reverses the out-of-plane axis."""
+    if plane not in {"xy", "xz", "yz"}:
+        raise ValueError(f"Unsupported coordinate plane {plane!r}.")
+    return sy.ImmutableDenseMatrix([[1, 0], [0, -1]])
+
+
 def _hashable_axis(value: object) -> str | tuple[float, ...] | None:
     if value is None:
         return None
@@ -386,6 +415,14 @@ def named_pointgroup(
     """
 
     symbol, axis_names = _split_named_query(query)
+    if isinstance(plane, tuple):
+        spec = _coordinate_plane_spec(plane)
+        if spec is not None:
+            named_plane, sign = spec
+            group = named_pointgroup(query, named_plane, None, spin)
+            if sign < 0:
+                return group.reoriented_by(_plane_flip_matrix(named_plane))
+            return group
     if isinstance(plane, str):
         if axis_names != "xyz" and axis_names != plane:
             raise ValueError(

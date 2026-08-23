@@ -389,8 +389,6 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
                 raise SystemExit(
                     f"{record['symbol']} spatial and rotation3 generators differ in length."
                 )
-        if not live:
-            continue
         if record.get("dim", 3) == 3:
             group = _group_from_3d(record)
         else:
@@ -409,6 +407,8 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
                 spin="electron",
             )
         _check_ordinary_realizes_group(group, record)
+        if not live:
+            continue
         live_table = compute_spinor_irreps(group)
         packaged_rows = [
             [parse_class_character(value) for value in row["characters"]]

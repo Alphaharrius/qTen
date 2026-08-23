@@ -133,6 +133,30 @@ def test_2d_c2_is_rotation_about_z():
     _assert_spinor_symmetrize(group, center)
 
 
+def test_2d_reoriented_by_conjugates_rotation3():
+    from qten.phys.spin import _embed_in_cartesian_xyz
+    from qten.pointgroups.finite import _matrix_key
+
+    group = pointgroup("C4v", plane="xy")
+    rotation = sy.ImmutableDenseMatrix([[0, -1], [1, 0]])
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    reoriented = group.reoriented_by(rotation)
+    embedded = _embed_in_cartesian_xyz(rotation, ("x", "y"))
+    embedded_inv = _embed_in_cartesian_xyz(inverse, ("x", "y"))
+    for element in group.elements():
+        image = sy.ImmutableDenseMatrix(sy.simplify(rotation @ element.irrep @ inverse))
+        expected = sy.ImmutableDenseMatrix(
+            sy.simplify(embedded @ element.rotation3 @ embedded_inv)
+        )
+        match = next(
+            other
+            for other in reoriented.elements()
+            if _matrix_key(other.irrep) == _matrix_key(image)
+        )
+        assert match.rotation3 is not None
+        assert _matrix_key(match.rotation3) == _matrix_key(expected)
+
+
 def test_c4v_xy_lift_is_rotation_about_z():
     group = pointgroup("C4v", plane="xy")
     assert group.axes == sy.symbols("x y")

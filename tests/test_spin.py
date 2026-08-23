@@ -862,6 +862,87 @@ def test_point_group_matmul_rejects_spin_labels():
         opr @ U1Basis.new(_site(), "up")
 
 
+def test_c3v_spinor_element_characters_are_orthonormal_projectors():
+    group = pointgroup("3m")
+    table = group.spinor_table()
+    assert table["irreps"]["spinor_1"]["characters"] == [1, -1, 0]
+    assert table["irreps"]["spinor_2"]["characters"] == [1, -1, 0]
+
+    rows = [group.spinor_irrep_characters_by_element(name) for name in table["irreps"]]
+    assert rows[0] != rows[1]
+    for i, left in enumerate(rows):
+        assert len(left) == group.order
+        for j, right in enumerate(rows):
+            overlap = sum(a.conjugate() * b for a, b in zip(left, right)) / group.order
+            expected = 1.0 if i == j else 0.0
+            assert abs(overlap - expected) < 1e-8
+
+    e_basis = group.irrep_basis(1, "E")
+    space = HilbertSpace.new(
+        [U1Basis.new(basis, Spin.up) for basis in e_basis]
+        + [U1Basis.new(basis, Spin.down) for basis in e_basis]
+    )
+    assert space.dim == 4
+    representations = [
+        spinful_hilbert_opr_repr(PointGroupOpr(element), space).data
+        for element in group.elements()
+    ]
+    projectors = []
+    for irrep_name, irrep_data in table["irreps"].items():
+        characters = group.spinor_irrep_characters_by_element(irrep_name)
+        projector = sum(
+            (
+                character.conjugate() * representation
+                for character, representation in zip(characters, representations)
+            ),
+            torch.zeros_like(representations[0]),
+        )
+        projector *= int(irrep_data["dim"]) / group.order
+        projectors.append(projector)
+        assert torch.allclose(projector @ projector, projector, rtol=0, atol=1e-12)
+
+    seed = qten.Tensor(
+        data=torch.eye(space.dim, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(space.dim)),
+    )
+    projected = Q.point_group_column_symmetrize(group, seed, full_sector=True)
+    assert projected.data.shape == (4, 4)
+    gram = projected.data.conj().T @ projected.data
+    assert torch.allclose(gram, torch.eye(4, dtype=gram.dtype), rtol=0, atol=1e-11)
+
+
+def test_point_group_basis_tensor_spin_c6v_e1_is_closed():
+    c6v = pointgroup("6mm")
+    e1 = c6v.irrep_basis(1, "E1")
+    assert len(e1) == 2
+    space = HilbertSpace.new(
+        [U1Basis.new(basis, Spin.up) for basis in e1]
+        + [U1Basis.new(basis, Spin.down) for basis in e1]
+    )
+    c6 = next(element for element in c6v.elements() if element.group_order() == 6)
+    representation = hilbert_repr(PointGroupOpr(c6), space)
+    identity = torch.eye(space.dim, dtype=representation.data.dtype)
+    assert torch.allclose(
+        representation.data.conj().T @ representation.data,
+        identity,
+        rtol=0,
+        atol=1e-12,
+    )
+    # C6 mixes the two orbital partners; the orbital block is dense.
+    orbital = representation.data[:2, :2]
+    assert int((orbital.abs() > 1e-8).sum().item()) == 4
+
+
+def test_spinful_hilbert_repr_rejects_mixed_spin_label_styles():
+    site = _site()
+    mixed = HilbertSpace.new([U1Basis.new(site, Spin.up), U1Basis.new(site, "down")])
+    with pytest.raises(ValueError, match="mix"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), mixed)
+    collided = HilbertSpace.new([U1Basis.new(site, Spin.up), U1Basis.new(site, "up")])
+    with pytest.raises(ValueError, match="collapse|mix"):
+        spinful_hilbert_opr_repr(_c2z().fixpoint_at(site), collided)
+
+
 def test_string_up_down_labels_are_spinful():
     site = _site()
     space = HilbertSpace.new([U1Basis.new(site, "up"), U1Basis.new(site, "down")])

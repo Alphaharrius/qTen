@@ -56,6 +56,17 @@ def _character_expr(value: Any) -> sy.Expr:
     return sy.sympify(value)
 
 
+def _character_rows_close(
+    left: list[complex], right: list[complex], *, atol: float = 1e-6
+) -> bool:
+    if len(left) != len(right):
+        return False
+    return all(
+        abs(complex(first) - complex(second)) <= atol
+        for first, second in zip(left, right)
+    )
+
+
 def _as_int(value: sy.Expr) -> int | None:
     simplified = sy.simplify(value)
     if simplified.is_integer:
@@ -674,7 +685,11 @@ class FinitePointGroup:
         return compute_spinor_irreps(self)
 
     def spinor_irrep_characters_by_element(self, irrep: str) -> tuple[complex, ...]:
-        """Return projective spinor characters in generated-element order."""
+        """Return projective spinor characters in generated-element order.
+
+        Class-wise spinor rows zero non-ω-regular classes. Projectors use the
+        hat-table section on each generated element instead.
+        """
         table = self.spinor_table()
         if not table:
             raise ValueError(
@@ -685,12 +700,7 @@ class FinitePointGroup:
             raise ValueError(
                 f"Unknown spinor irrep '{irrep}' for point group {self.symbol}."
             )
-
-        from ._characters import parse_class_character
-
         labels = table.get("class_labels")
-        encoded_characters = irrep_table[irrep]["characters"]
-        characters = tuple(parse_class_character(value) for value in encoded_characters)
         if not labels:
             raise ValueError(f"Spinor table for {self.symbol} is missing class labels.")
         if self.irreps and labels != list(self.irreps["class_labels"]):
@@ -698,18 +708,59 @@ class FinitePointGroup:
                 "Spinor class labels must match the ordinary class labels "
                 f"for {self.symbol}."
             )
-        if len(characters) != len(labels):
+        characters = self._spinor_element_characters()[irrep]
+        if len(characters) != self.order:
             raise ValueError(
-                f"Spinor character row length for '{irrep}' does not match "
-                "class labels."
+                f"Spinor characters for '{irrep}' do not match the group order."
             )
-        if table.get("source") == "qten-computed" or (
-            self.irreps is None or self.irreps.get("source") == "qten-computed"
+        return characters
+
+    @lru_cache
+    def _spinor_element_characters(self) -> dict[str, tuple[complex, ...]]:
+        """Element-wise spinor χ, computed live when the packaged table omits it."""
+        from ._characters import compute_spinor_irreps, parse_class_character
+
+        table = self.spinor_table()
+        irrep_table = table["irreps"]
+        if all(
+            row.get("characters_by_element") is not None for row in irrep_table.values()
         ):
-            class_by_element = self._generated_class_indices()
-        else:
-            class_by_element = self._class_label_index_by_element()
-        return tuple(characters[class_index] for class_index in class_by_element)
+            return {
+                name: tuple(
+                    parse_class_character(value)
+                    for value in row["characters_by_element"]
+                )
+                for name, row in irrep_table.items()
+            }
+
+        live = compute_spinor_irreps(self)
+        live_irreps = live["irreps"]
+        result: dict[str, tuple[complex, ...]] = {}
+        for name, packaged in irrep_table.items():
+            packaged_class = [
+                parse_class_character(value) for value in packaged["characters"]
+            ]
+            matches = [
+                row
+                for row in live_irreps.values()
+                if _character_rows_close(
+                    packaged_class,
+                    [parse_class_character(value) for value in row["characters"]],
+                )
+            ]
+            if len(matches) == 1:
+                encoded = matches[0]["characters_by_element"]
+            elif name in live_irreps:
+                # Identical class-wise rows (e.g. 3m spinor_1 / spinor_2)
+                # cannot be matched by class averages.
+                encoded = live_irreps[name]["characters_by_element"]
+            else:
+                raise ValueError(
+                    "Cannot recover element-wise spinor characters for "
+                    f"'{name}' in {self.symbol}."
+                )
+            result[name] = tuple(parse_class_character(value) for value in encoded)
+        return result
 
     def reoriented_by(self, rotation: sy.Matrix) -> "FinitePointGroup":
         r"""
@@ -732,10 +783,17 @@ class FinitePointGroup:
         ) -> sy.ImmutableDenseMatrix | None:
             if generator.rotation3 is None:
                 return None
-            if dim != 3:
-                return generator.rotation3
+            if dim == 3:
+                return sy.ImmutableDenseMatrix(
+                    sy.simplify(matrix @ generator.rotation3 @ inverse)
+                )
+            from ..phys.spin import _embed_in_cartesian_xyz
+
+            axis_names = tuple(getattr(axis, "name", str(axis)) for axis in self.axes)
+            embedded = _embed_in_cartesian_xyz(matrix, axis_names)
+            embedded_inv = _embed_in_cartesian_xyz(inverse, axis_names)
             return sy.ImmutableDenseMatrix(
-                sy.simplify(matrix @ generator.rotation3 @ inverse)
+                sy.simplify(embedded @ generator.rotation3 @ embedded_inv)
             )
 
         new_generators = tuple(

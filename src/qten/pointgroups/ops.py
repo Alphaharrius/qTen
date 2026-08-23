@@ -495,6 +495,29 @@ def _validate_spinful_space(space: HilbertSpace) -> None:
             f"basis state; found {count} in {psi}"
         )
 
+    styles: set[str] = set()
+    seen_keys: dict[tuple[tuple[Any, ...], Spin], U1Basis] = {}
+    for psi in space.elements():
+        for rep in psi.base:
+            if type(rep) is Spin:
+                styles.add("spin")
+            elif type(rep) is str and rep in {"up", "down"}:
+                styles.add("string")
+        nons, spin, _coef = _split_spin_basis(psi)
+        key = (nons, spin)
+        previous = seen_keys.get(key)
+        if previous is not None:
+            raise ValueError(
+                "Spinful labels collapse to the same (orbital, spin) key; "
+                f"{previous} and {psi} both map to {key}."
+            )
+        seen_keys[key] = psi
+    if len(styles) > 1:
+        raise ValueError(
+            "A spinful Hilbert space cannot mix Spin objects with leftover "
+            '"up"/"down" strings.'
+        )
+
 
 def _transform_nons_spin_irreps(
     opr: PointGroupOpr,
@@ -502,35 +525,47 @@ def _transform_nons_spin_irreps(
     *,
     space: HilbertSpace | None = None,
     fold_offsets: bool = False,
-) -> tuple[sy.Expr, tuple[Any, ...]]:
-    """Apply the orbital/spatial part of `opr` to non-spin irreps."""
-    new_coef: sy.Expr = sy.Integer(1)
-    new_base: list[Any] = []
+) -> list[tuple[sy.Expr, tuple[Any, ...]]]:
+    """Apply the orbital/spatial part of `opr` to non-spin irreps.
+
+    A multidimensional [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
+    image is expanded in the labels already present in `space`. Standalone
+    transforms (no `space`) keep the raw geometric image as one term.
+    """
     canonicalize = space is not None and _contains_point_group_basis(space)
+    terms: list[tuple[sy.Expr, list[Any]]] = [(sy.Integer(1), [])]
     for rep in nons:
+        expansions: list[tuple[sy.Expr, Any]]
         if type(rep) is PointGroupBasis:
-            transformed = _transform_point_group_basis_direct(opr, rep)
-            new_coef *= transformed.coef
             if canonicalize:
                 assert space is not None
-                canonical = _canonicalize_point_group_basis(transformed.base, space)
-                new_coef *= canonical.coef
-                new_base.append(canonical.base)
+                image_rep = sy.ImmutableDenseMatrix(
+                    opr.g.euclidean_repr(rep.order) @ rep.rep
+                )
+                expansions = _expand_point_group_image(image_rep, rep, space)
             else:
-                new_base.append(transformed.base)
+                transformed = _transform_point_group_basis_direct(opr, rep)
+                expansions = [(transformed.coef, transformed.base)]
         elif opr.allows(rep):
             ret = opr(rep)
             if isinstance(ret, Multiple):
-                new_coef *= ret.coef
-                new_base.append(ret.base)
+                expansions = [(ret.coef, ret.base)]
             else:
-                new_base.append(ret)
+                expansions = [(sy.Integer(1), ret)]
         else:
-            new_base.append(rep)
-    orbital = tuple(new_base)
-    if fold_offsets:
-        orbital = _fold_offset_irreps(orbital)
-    return sy.simplify(new_coef), orbital
+            expansions = [(sy.Integer(1), rep)]
+        terms = [
+            (sy.simplify(coef * extra_coef), prefix + [extra])
+            for coef, prefix in terms
+            for extra_coef, extra in expansions
+        ]
+    result: list[tuple[sy.Expr, tuple[Any, ...]]] = []
+    for coef, parts in terms:
+        orbital = tuple(parts)
+        if fold_offsets:
+            orbital = _fold_offset_irreps(orbital)
+        result.append((sy.simplify(coef), orbital))
+    return result
 
 
 def _fold_offset_irreps(nons: tuple[Any, ...]) -> tuple[Any, ...]:
@@ -567,17 +602,18 @@ def spinful_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Span:
     mixing generally produces a superposition.
     """
     nons, spin, psi_coef = _split_spin_basis(psi)
-    spatial_coef, new_nons = _transform_nons_spin_irreps(opr, nons)
+    orbital_terms = _transform_nons_spin_irreps(opr, nons)
     # Standalone transform keeps the raw geometric image. The Hilbert-space
     # representation can fold unit-cell labels for local/Γ-point matching;
     # nonzero-momentum Bloch translation phases are not represented.
 
     terms: list[U1Basis] = []
-    for amp, spin_out in expand_spin(opr, spin):
-        coef = sy.simplify(psi_coef * spatial_coef * amp)
-        if coef == 0:
-            continue
-        terms.append(U1Basis(coef, new_nons + (spin_out,)))
+    for spatial_coef, new_nons in orbital_terms:
+        for amp, spin_out in expand_spin(opr, spin):
+            coef = sy.simplify(psi_coef * spatial_coef * amp)
+            if coef == 0:
+                continue
+            terms.append(U1Basis(coef, new_nons + (spin_out,)))
 
     if not terms:
         raise RuntimeError(f"spinful image of {psi} vanished")
@@ -646,30 +682,33 @@ def spinful_hilbert_opr_repr(
         parsed.append((nons, spin, numeric_coef, j))
 
     # Cache orbital images of unique non-spin labels
-    nons_image: dict[tuple[Any, ...], tuple[complex, tuple[Any, ...]]] = {}
+    nons_image: dict[tuple[Any, ...], list[tuple[complex, tuple[Any, ...]]]] = {}
     for nons, _, _, _ in parsed:
         if nons in nons_image:
             continue
-        spatial_coef, new_nons = _transform_nons_spin_irreps(
+        spatial_terms = _transform_nons_spin_irreps(
             opr, nons, space=space, fold_offsets=fold_offsets
         )
-        nons_image[nons] = (complex(sy.N(spatial_coef)), new_nons)
+        nons_image[nons] = [
+            (complex(sy.N(spatial_coef)), new_nons)
+            for spatial_coef, new_nons in spatial_terms
+        ]
 
     for nons, spin_in, psi_coef, j in parsed:
-        spatial_coef, new_nons = nons_image[nons]
         s_in = spin_index[spin_in]
-        for s_out, spin_out in enumerate(spin_list):
-            amp = u[s_out, s_in]
-            if amp.abs().item() == 0.0:
-                continue
-            key = (new_nons, spin_out)
-            if key not in index_of:
-                raise ValueError(
-                    f"Spinful image ({new_nons}, {spin_out}) is not in space "
-                    f"{space}. Space is not closed under {opr}."
-                )
-            i, target_coef = index_of[key]
-            data[i, j] += (target_coef.conjugate() * spatial_coef * psi_coef) * amp
+        for spatial_coef, new_nons in nons_image[nons]:
+            for s_out, spin_out in enumerate(spin_list):
+                amp = u[s_out, s_in]
+                if amp.abs().item() == 0.0:
+                    continue
+                key = (new_nons, spin_out)
+                if key not in index_of:
+                    raise ValueError(
+                        f"Spinful image ({new_nons}, {spin_out}) is not in space "
+                        f"{space}. Space is not closed under {opr}."
+                    )
+                i, target_coef = index_of[key]
+                data[i, j] += (target_coef.conjugate() * spatial_coef * psi_coef) * amp
 
     return Tensor(data=data, dims=(space, space))
 
@@ -744,30 +783,102 @@ def _contains_point_group_basis(space: HilbertSpace) -> bool:
     )
 
 
+def _same_point_group_sector(left: PointGroupBasis, right: PointGroupBasis) -> bool:
+    return (
+        left.axes == right.axes
+        and left.order == right.order
+        and left.group == right.group
+        and left.irrep == right.irrep
+        and left.irrep_dim == right.irrep_dim
+        and left.copy_index == right.copy_index
+    )
+
+
+def _vector_scale(image: sy.Matrix, target: sy.Matrix) -> sy.Expr | None:
+    if len(image) != len(target):
+        return None
+    scale = None
+    for image_entry, target_entry in zip(image, target):
+        if target_entry != 0:
+            entry_scale = sy.simplify(image_entry / target_entry)
+            if scale is None:
+                scale = entry_scale
+            elif sy.simplify(entry_scale - scale) != 0:
+                return None
+        elif sy.simplify(image_entry) != 0:
+            return None
+    return sy.Integer(0) if scale is None else scale
+
+
 def _point_group_basis_scale(
     candidate: PointGroupBasis, target: PointGroupBasis
 ) -> sy.Expr | None:
-    if (
-        candidate.axes != target.axes
-        or candidate.order != target.order
-        or candidate.group != target.group
-        or candidate.irrep != target.irrep
-        or candidate.irrep_dim != target.irrep_dim
-        or candidate.copy_index != target.copy_index
-    ):
+    if not _same_point_group_sector(candidate, target):
         return None
+    return _vector_scale(candidate.rep, target.rep)
 
-    scale = None
-    for candidate_entry, target_entry in zip(candidate.rep, target.rep):
-        if target_entry != 0:
-            entry_scale = sy.simplify(candidate_entry / target_entry)
-            scale = entry_scale if scale is None else scale
-            if sy.simplify(entry_scale - scale) != 0:
-                return None
-        elif sy.simplify(candidate_entry) != 0:
-            return None
 
-    return scale
+def _partner_point_group_bases(
+    template: PointGroupBasis, space: HilbertSpace
+) -> list[PointGroupBasis]:
+    partners: list[PointGroupBasis] = []
+    seen: set[tuple[Any, ...]] = set()
+    for psi in space.elements():
+        for candidate in psi.base:
+            if type(candidate) is not PointGroupBasis:
+                continue
+            if not _same_point_group_sector(template, candidate):
+                continue
+            key = tuple(candidate.rep)
+            if key in seen:
+                continue
+            seen.add(key)
+            partners.append(candidate)
+    return partners
+
+
+def _expand_point_group_image(
+    image_rep: sy.ImmutableDenseMatrix,
+    template: PointGroupBasis,
+    space: HilbertSpace,
+) -> list[tuple[sy.Expr, PointGroupBasis]]:
+    """Expand a Euclidean image in the stored partners of `template`."""
+    partners = _partner_point_group_bases(template, space)
+    if not partners:
+        raise ValueError(
+            f"Transformed basis of {template.irrep} is not represented in {space}."
+        )
+    for partner in partners:
+        scale = _vector_scale(image_rep, partner.rep)
+        if scale is not None:
+            return [(sy.simplify(scale), partner)]
+
+    matrix = sy.Matrix.hstack(*[sy.Matrix(partner.rep) for partner in partners])
+    target = sy.Matrix(image_rep)
+    try:
+        coeffs = matrix.solve_least_squares(target)
+    except Exception as exc:
+        raise ValueError(
+            f"Transformed basis of {template.irrep} is not in the span of "
+            f"{template.irrep} in {space}."
+        ) from exc
+    residual = matrix * coeffs - target
+    if any(
+        sy.simplify(entry) != 0 and abs(complex(sy.N(entry))) > 1e-8
+        for entry in residual
+    ):
+        raise ValueError(
+            f"Transformed basis of {template.irrep} is not in the span of "
+            f"{template.irrep} in {space}."
+        )
+    terms = [
+        (sy.simplify(coeff), partner)
+        for coeff, partner in zip(coeffs, partners)
+        if sy.simplify(coeff) != 0
+    ]
+    if not terms:
+        raise ValueError(f"Transformed basis of {template.irrep} vanished in {space}.")
+    return terms
 
 
 def _canonicalize_point_group_basis(
@@ -841,16 +952,20 @@ def hilbert_repr(
         device=torch_device,
     )
 
+    fold_offsets = _space_uses_fractional_offsets(space)
     for source in space.elements():
-        transformed = _internal_transform_basis(opr, source, space)
-        target = ray_to_basis.get(transformed.rays())
-        if target is None:
-            raise ValueError("opr does not preserve the ray structure of space.")
-
-        i = space.structure[target]
+        images = _transform_nons_spin_irreps(
+            opr, source.base, space=space, fold_offsets=fold_offsets
+        )
         j = space.structure[source]
-        matrix_element = sy.simplify(sy.conjugate(target.coef) * transformed.coef)
-        data[i, j] += complex(sy.N(matrix_element))
+        for spatial_coef, new_base in images:
+            constructed = U1Basis(sy.simplify(source.coef * spatial_coef), new_base)
+            target = ray_to_basis.get(constructed.rays())
+            if target is None:
+                raise ValueError("opr does not preserve the ray structure of space.")
+            i = space.structure[target]
+            matrix_element = sy.simplify(sy.conjugate(target.coef) * constructed.coef)
+            data[i, j] += complex(sy.N(matrix_element))
 
     return Tensor(data=data, dims=(space, space))
 

@@ -373,6 +373,11 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
             "characters": [
                 _encode_class_character(value) for value in class_characters
             ],
+            # Class averages vanish on non-ω-regular classes. Projectors need
+            # the hat-table section on each generated element.
+            "characters_by_element": [
+                _encode_class_character(complex(value)) for value in row
+            ],
         }
 
     multiplicities = (

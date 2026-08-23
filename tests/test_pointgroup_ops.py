@@ -257,6 +257,22 @@ def test_point_group_column_symmetrize_full_sector_expands_mixed_column():
     assert w_sym.data.shape == (2, 2)
 
 
+def test_c6v_e1_spinless_hilbert_repr_is_dense_and_unitary():
+    c6v = pointgroup("6mm")
+    e1 = c6v.irrep_basis(1, "E1")
+    space = HilbertSpace.new([_state(basis) for basis in e1])
+    c6 = next(element for element in c6v.elements() if element.group_order() == 6)
+    representation = _hilbert_opr_repr(PointGroupOpr(c6), space)
+    identity = torch.eye(space.dim, dtype=representation.data.dtype)
+    assert torch.allclose(
+        representation.data.conj().T @ representation.data,
+        identity,
+        rtol=0,
+        atol=1e-12,
+    )
+    assert int((representation.data.abs() > 1e-8).sum().item()) == 4
+
+
 def test_point_group_column_symmetrize_accepts_point_group_basis_rows():
     x, y = sy.symbols("x y")
     c4v = pointgroup("C4v-xy")

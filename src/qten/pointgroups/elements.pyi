@@ -23,8 +23,8 @@ _T = TypeVar("_T")
 class PointGroupElement(Opr):
     irrep: sy.ImmutableDenseMatrix
     axes: tuple[sy.Symbol, ...]
-    rotation3: sy.ImmutableDenseMatrix | None
-    spin: str
+    rotation3: sy.ImmutableDenseMatrix | None = None
+    spin: str = "electron"
 
     def with_irrep(
         self,
