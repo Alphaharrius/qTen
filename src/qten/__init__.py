@@ -116,5 +116,6 @@ from . import plottings as plottings
 from . import pointgroups as pointgroups
 from . import precision as precision
 from . import symbolics as symbolics
+from . import topology as topology
 from . import utils as utils
 from . import validations as validations
