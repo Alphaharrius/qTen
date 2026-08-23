@@ -1,6 +1,6 @@
 import sympy as sy
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable
 from .basis import PointGroupBasis as PointGroupBasis
 from .elements import PointGroupElement as PointGroupElement
 
