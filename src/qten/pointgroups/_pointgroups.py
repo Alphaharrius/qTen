@@ -18,6 +18,7 @@ a custom symbolic representation is needed.
 """
 
 import re
+from typing import Literal
 
 import sympy as sy
 
@@ -143,7 +144,7 @@ def pointgroup(
     *,
     plane: str | tuple[float, ...] | None = None,
     axis: tuple[float, ...] | None = None,
-    spin: str = "electron",
+    spin: Literal["trivial", "electron"] = "electron",
 ) -> PointGroupElement | FinitePointGroup:
     r"""
     Build a point-group object from a compact query string.
@@ -216,7 +217,7 @@ def pointgroup(
         plane normal.
     axis : tuple[float, ...] | None, optional
         Reorient a 3D named group so its standard z-axis maps to this vector.
-    spin : str, default "electron"
+    spin : Literal["trivial", "electron"], default "electron"
         Define-time spin policy. `"electron"` lifts `rotation3`; `"trivial"`
         uses `u(g)=I`.
 
