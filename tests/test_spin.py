@@ -94,8 +94,8 @@ def test_su2_rejects_non_so3_inputs():
         su2_from_so3(ImmutableDenseMatrix([[1, 1, 0], [0, 1, 0], [0, 0, 1]]))
 
 
-def test_su2_of_affine_c4_xy_uses_stored_c4z():
-    planar = pointgroup("c4-xy:xy")
+def test_su2_of_named_c4_xy_uses_stored_c4z():
+    planar = pointgroup("4", plane="xy").generators[0]
     c4z = su2_from_so3(ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]]))
     assert sy.simplify(su2_of_point_group(planar) - c4z) == (
         ImmutableDenseMatrix.zeros(2)

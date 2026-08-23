@@ -1310,7 +1310,7 @@ def test_bandtransform_notebook_cb_c4_symmetry_reproducer():
         shape=(64, 64),
     )
 
-    c4 = pointgroup("c4-xy:xy")
+    c4 = pointgroup("4", plane="xy").generators[0]
 
     a1, a2 = square.basis_vectors()
     R_a1 = FuncOpr(Offset, lambda r: r + a1)
@@ -1345,7 +1345,7 @@ def test_bandtransform_notebook_cb_c4_symmetry_about_block_center():
         shape=(64, 64),
     )
 
-    c4 = pointgroup("c4-xy:xy")
+    c4 = pointgroup("4", plane="xy").generators[0]
 
     a1, a2 = square.basis_vectors()
     R_a1 = FuncOpr(Offset, lambda r: r + a1)
@@ -1376,15 +1376,19 @@ def test_bandtransform_notebook_cb_c4_symmetry_about_block_center():
     assert C_b.allclose(C_rot)
 
 
-def test_affine_query_c3_xy_and_inverse_orientation():
-    t = pointgroup("c3-xy:xy")
-    t_inv = pointgroup("c3-xy:yx")
+def _element_of_order(group, order):
+    return next(element for element in group.elements() if element.group_order() == order)
+
+
+def test_named_c3_xy_and_flipped_plane_are_inverses():
+    t = pointgroup("3", plane="xy").generators[0]
+    t_inv = pointgroup("3", plane=(0, 0, -1)).generators[0]
 
     assert t.axes == sy.symbols("x y")
     assert t.irrep * t_inv.irrep == ImmutableDenseMatrix.eye(2)
 
 
-def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
+def test_named_c6_rotates_honeycomb_a_to_b_sublattice():
     triangular = ImmutableDenseMatrix(
         [
             [sy.sqrt(3) / 2, 0],
@@ -1401,14 +1405,14 @@ def test_affine_query_c6_rotates_honeycomb_a_to_b_sublattice():
         shape=(12, 12),
     )
 
-    c6 = pointgroup("c6-xy:xy")
+    c6 = _element_of_order(pointgroup("6", plane="xy"), 6)
     rotated = (PointGroupOpr(g=c6) @ honeycomb.at("a")).fractional()
 
     assert rotated.rep.applyfunc(sy.simplify) == honeycomb.unit_cell["b"].rep
 
 
-def test_affine_query_c3_xyz_on_yz_plane():
-    t = pointgroup("c3-xyz:yz")
+def test_named_c3_about_x():
+    t = pointgroup("3", axis=(1, 0, 0)).generators[0]
     x, y, z = sy.symbols("x y z")
 
     assert t.axes == (x, y, z)
@@ -1417,37 +1421,34 @@ def test_affine_query_c3_xyz_on_yz_plane():
     assert t.irrep[0, 2] == 0
 
 
-def test_affine_query_cyclic_forbids_1d_rotation():
-    try:
-        pointgroup("c3-x:x")
-        assert False, "Expected ValueError for 1D cyclic rotation."
-    except ValueError:
-        pass
+def test_named_cyclic_forbids_1d_plane():
+    with pytest.raises(ValueError, match="preserve the selected axes"):
+        pointgroup("3", plane="x")
 
 
-def test_affine_query_mirror_2d_fixed_axis():
-    t = pointgroup("m-xy:x")
+def test_named_mirror_2d_xy():
+    t = pointgroup("m", plane="xy").generators[0]
     expected = ImmutableDenseMatrix([[1, 0], [0, -1]])
     assert t.irrep == expected
 
 
-def test_affine_query_c6_2d_and_3d_examples():
-    t2 = pointgroup("c6-xy:xy")
-    assert t2.irrep.shape == (2, 2)
+def test_named_c6_2d_plane_and_3d_axis():
+    planar = pointgroup("6", plane="xy")
+    assert all(generator.irrep.shape == (2, 2) for generator in planar.generators)
 
-    t3 = pointgroup("c6-xyz:yz")
-    assert t3.irrep.shape == (3, 3)
-    assert t3.irrep[0, 0] == 1
-    assert t3.irrep[0, 1] == 0
-    assert t3.irrep[0, 2] == 0
+    about_x = _element_of_order(pointgroup("6", axis=(1, 0, 0)), 6)
+    assert about_x.irrep.shape == (3, 3)
+    assert about_x.irrep[0, 0] == 1
+    assert about_x.irrep[0, 1] == 0
+    assert about_x.irrep[0, 2] == 0
 
 
-def test_affine_query_mirror_1d_2d_3d_examples():
-    t1 = pointgroup("m-x:x")
+def test_named_mirror_1d_2d_3d():
+    t1 = pointgroup("m", plane="x").generators[0]
     assert t1.irrep == ImmutableDenseMatrix([[-1]])
 
-    t2 = pointgroup("m-xy:y")
-    assert t2.irrep == ImmutableDenseMatrix([[-1, 0], [0, 1]])
+    t2 = pointgroup("m", plane="xy").generators[0]
+    assert t2.irrep == ImmutableDenseMatrix([[1, 0], [0, -1]])
 
-    t3 = pointgroup("m-xyz:yz")
-    assert t3.irrep == ImmutableDenseMatrix([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    t3 = pointgroup("m").generators[0]
+    assert t3.irrep == ImmutableDenseMatrix([[1, 0, 0], [0, -1, 0], [0, 0, 1]])

@@ -24,11 +24,11 @@ as `c4-xy:xy` return one
 ```python
 from qten.pointgroups import pointgroup
 
-td = pointgroup("-43m")                 # 3D Td; rotation3 is the spatial matrix
+td = pointgroup("Td")                   # tetrahedral; rotation3 is the spatial matrix
 c4v = pointgroup("C4v", plane="xy")     # 2x2 spatial, 3D C4v kept for spin
-c3v = pointgroup("3m", axis=(1, 1, 1))  # still 3D; C3 about [111]
-mirror = pointgroup("m", plane="x")     # 1D spatial [[-1]], rotation3 = σ_yz
-c4 = pointgroup("c4-xy:xy")             # single cyclic generator
+c3v = pointgroup("C3v", axis=(1, 1, 1)) # still 3D; C3 about [111]
+mirror = pointgroup("Cs", plane="x")    # 1D spatial [[-1]], rotation3 = σ_yz
+c4 = pointgroup("C4", plane="xy")       # fourfold in xy
 flavor = pointgroup("C4v", spin="trivial")  # u(g)=I; define-time only
 ```
 

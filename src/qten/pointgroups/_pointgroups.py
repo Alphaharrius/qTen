@@ -239,12 +239,12 @@ def pointgroup(
     ```python
     from qten.pointgroups import pointgroup
 
-    rotation = pointgroup("c6-xy:xy")          # 60-degree rotation in xy
-    inverse = pointgroup("c6-xy:yx")           # inverse orientation
-    mirror = pointgroup("m-xyz:yz")            # mirror about the yz-plane
-    td = pointgroup("-43m")                    # 3D named group
+    rotation = pointgroup("C6", plane="xy")         # sixfold in xy
+    inverse = pointgroup("C6", plane=(0, 0, -1))    # opposite orientation
+    mirror = pointgroup("Cs", plane="x")            # 1D spatial, σ_yz spin
+    td = pointgroup("Td")                      # tetrahedral
     c4v = pointgroup("C4v", plane="xy")        # 2D spatial, 3D spin
-    c3v = pointgroup("3m", axis=(1, 1, 1))     # C3 about [111]
+    c3v = pointgroup("C3v", axis=(1, 1, 1))    # C3 about [111]
     flavor = pointgroup("C4v", spin="trivial") # u(g)=I
     ```
     """

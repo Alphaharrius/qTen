@@ -110,8 +110,8 @@ def test_1d_mirror_lifts_c2_about_x_not_z():
     _assert_spinor_symmetrize(group, center)
 
 
-def test_1d_affine_mirror_stores_rotation3():
-    mirror = pointgroup("m-x:x")
+def test_1d_mirror_element_stores_rotation3():
+    mirror = pointgroup("m", plane="x").generators[0]
     assert mirror.irrep.shape == (1, 1)
     u = _assert_lift_of_rotation3(mirror)
     _assert_hilbert_is_u(mirror, _center(1), u)

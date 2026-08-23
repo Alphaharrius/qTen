@@ -27,7 +27,15 @@ from qten.pointgroups.finite import _matrix_key
 from qten.phys import su2_of_point_group
 
 
-def test_existing_affine_pointgroup_queries_return_point_group_element():
+def test_named_c4_returns_finite_point_group():
+    c4 = pointgroup("4", plane="xy")
+
+    assert isinstance(c4, FinitePointGroup)
+    assert c4.axes == sy.symbols("x y")
+    assert c4.order == 4
+
+
+def test_legacy_affine_query_still_returns_element():
     c4 = pointgroup("c4-xy:xy")
 
     assert isinstance(c4, PointGroupElement)
@@ -261,8 +269,8 @@ def test_affine_wrapper_transforms_point_group_basis_through_linear_part():
 
 def test_manual_c4_and_registry_c4_share_polynomial_basis_but_not_sector_basis():
     x, y = sy.symbols("x y")
-    manual_c4 = pointgroup("c4-xy:xy")
-    c4v = pointgroup("C4v-xy")
+    manual_c4 = pointgroup("4", plane="xy").generators[0]
+    c4v = pointgroup("C4v", plane="xy")
 
     assert isinstance(manual_c4, PointGroupElement)
     assert isinstance(c4v, FinitePointGroup)
