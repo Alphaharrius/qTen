@@ -333,7 +333,7 @@ def test_finite_spinful_projection_resolves_tetrahedral_orbital_multiplets():
     sectors = [
         label.irrep_of(SpinorIrrepSector) for label in projected.dims[1].elements()
     ]
-    assert {sector.source for sector in sectors} == {"spgrep"}
+    assert {sector.source for sector in sectors} == {"qten-su2-principal-v1"}
     counts: dict[str, int] = {}
     dimensions: dict[str, int] = {}
     for sector in sectors:

@@ -1,42 +1,40 @@
 # Point-Group Data Provenance
 
-The normalized point-group generator data in `point_group_data.json`
-was generated from pymatgen-core `v2026.5.18`:
+The catalog in `point_group_data.json` has one record shape for
+ordinary and spinor characters: generators plus class-wise χ.
+
+## Ordinary irreducible representations
+
+3D generators come from pymatgen-core `v2026.5.18`:
 
 - https://raw.githubusercontent.com/materialsproject/pymatgen-core/v2026.5.18/src/pymatgen/symmetry/symm_data.json
+
+Ordinary `irreps` are Bilbao class tables:
+
 - https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=<point-group-number>&sg=<representative-space-group>
 
-The runtime JSON is normalized into one qten-owned record per
-crystallographic point group. Each record contains:
-
-- `symbol`
-- `aliases`
-- `crystal_system`
-- `source_encoding`
-- `generators`
-- `irreps` from Bilbao character tables
-
-Schoenflies aliases are added by qten for convenient lookup.
-Preserve pymatgen attribution and license terms when redistributing this data.
+Linear characters are lift-independent, so the Bilbao scrape is the
+correct source. Schoenflies aliases are added by qten.
 
 ## Spinor irreducible representations
 
-`double_point_group_data.json` is generated offline from the packaged
-crystallographic generators by `scripts/retrieve_double_pointgroup_data.py`
-using spgrep 0.6.0:
+`spinor_irreps` uses the same `class_labels` / `{name: {dim, characters}}`
+shape. The numbers are computed from QTen's principal SU(2) lift
+`qten-su2-principal-v1` of each element's `rotation3`. They are not
+copied from Bilbao double-group pages (those tables have no U(g), so a
+section cannot be aligned).
+
+2D and 1D records add `dim`, `frame`, and paired `spatial` / `rotation3`
+generators. Spin still uses the stored 3D rotation, never a padded 2D
+matrix.
+
+## spgrep
+
+spgrep is a development-only checker (`--check-spgrep`): after η-aligning
+its SU(2) section to QTen's lift, class averages are compared. spgrep
+numbers are never written into this JSON.
 
 - https://github.com/spglib/spgrep
-
-spgrep enumerates the projective spinor irreducible representations and their
-factor systems from each standard crystallographic lattice and spatial group.
-The generator converts spgrep's operation-wise SU(2) section to QTen's
-`qten-su2-principal-v1` convention and stores per-operation characters. No
-Bilbao double-group tables or labels are copied into this cache.
-
-spgrep is a build-time development dependency only. Runtime table lookup does
-not import spgrep. The cache records the spgrep version, source-data SHA-256,
-generator SHA-256 values, factor systems, and character rounding precision so
-regeneration can be checked deterministically.
 
 @article{spgrep,
     doi = {10.21105/joss.05269},

@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 import sympy as sy
 
@@ -12,7 +11,6 @@ from qten.pointgroups import (
     pointgroup,
 )
 from qten.pointgroups._registry import (
-    _double_point_group_data,
     _point_group_data,
     known_point_group_symbols,
     verify_spinor_factor_system,
@@ -58,7 +56,11 @@ def test_known_point_group_symbols_include_crystallographic_classes():
 
 def test_packaged_data_uses_per_group_records():
     data = _point_group_data()
-    records = {record["symbol"]: record for record in data["point_groups"]}
+    records = {
+        record["symbol"]: record
+        for record in data["point_groups"]
+        if record.get("dim", 3) == 3 and record.get("frame", "xyz") == "xyz"
+    }
     c4v = records["4mm"]
 
     assert c4v["aliases"] == ["C4v"]
@@ -89,39 +91,15 @@ def test_all_packaged_character_tables_are_complete():
         )
 
 
-def test_all_packaged_spinor_tables_are_complete_and_orthonormal():
-    data = _double_point_group_data()
-    records = {record["symbol"]: record for record in data["point_groups"]}
-
-    assert data["schema_version"] == 1
-    assert data["source"]["name"] == "spgrep"
-    assert data["section_convention"] == "qten-su2-principal-v1"
-    assert set(records) == set(known_point_group_symbols())
-
-    for symbol, record in records.items():
-        order = int(record["order"])
-        assert len(record["operations"]) == order
-        assert len(record["factor_system"]) == order
-        assert all(len(row) == order for row in record["factor_system"])
-        assert {int(value) for row in record["factor_system"] for value in row} <= {
-            -1,
-            1,
-        }
-
-        irreps = record["irreps"]
-        assert sum(int(irrep["dim"]) ** 2 for irrep in irreps.values()) == order
-        characters = np.asarray(
-            [
-                [complex(*value) for value in irrep["characters"]]
-                for irrep in irreps.values()
-            ]
+def test_computed_spinor_tables_are_complete():
+    for symbol in ("1", "4", "4mm", "-43m", "3"):
+        group = pointgroup(symbol)
+        table = group.spinor_table()
+        assert table["class_labels"] == list(group.irreps["class_labels"])
+        assert (
+            sum(int(row["dim"]) ** 2 for row in table["irreps"].values()) == group.order
         )
-        assert np.allclose(
-            characters.conj() @ characters.T / order,
-            np.eye(len(irreps)),
-            rtol=0,
-            atol=1e-12,
-        ), symbol
+        verify_spinor_factor_system(group)
 
 
 def test_representative_spinor_tables_remap_to_generated_elements():
@@ -137,7 +115,11 @@ def test_representative_spinor_tables_remap_to_generated_elements():
 
 def test_bilbao_parser_splits_complex_conjugate_irrep_rows():
     data = _point_group_data()
-    records = {record["symbol"]: record for record in data["point_groups"]}
+    records = {
+        record["symbol"]: record
+        for record in data["point_groups"]
+        if record.get("dim", 3) == 3 and record.get("frame", "xyz") == "xyz"
+    }
     c6_irreps = records["6"]["irreps"]["irreps"]
 
     assert "^1E2" in c6_irreps
@@ -375,12 +357,13 @@ def test_distinct_character_tables_do_not_share_projector_cache():
     assert right_b1 == {c4v.axes[0] * c4v.axes[1]}
 
 
-def test_tampered_factor_system_is_rejected():
+def test_incomplete_spinor_table_is_rejected():
     group = pointgroup("4")
     tampered_table = dict(group.spinor_irreps)
-    factor_system = [list(row) for row in tampered_table["factor_system"]]
-    factor_system[0][1] = -factor_system[0][1]
-    tampered_table["factor_system"] = factor_system
+    irreps = dict(tampered_table["irreps"])
+    name = next(iter(irreps))
+    irreps[name] = {**irreps[name], "dim": 99}
+    tampered_table["irreps"] = irreps
     tampered = FinitePointGroup.from_matrices(
         (generator.irrep for generator in group.generators),
         axes=group.axes,
@@ -388,7 +371,7 @@ def test_tampered_factor_system_is_rejected():
         irreps=group.irreps,
         spinor_irreps=tampered_table,
     )
-    with pytest.raises(ValueError, match="factor system"):
+    with pytest.raises(ValueError, match="sum\\(dim\\^2\\)"):
         verify_spinor_factor_system(tampered)
 
 

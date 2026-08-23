@@ -168,6 +168,33 @@ class PointGroupElement(Opr):
     Ordered coordinate symbols on which `irrep` acts. Their order fixes the
     ambient coordinate basis for all derived polynomial representations.
     """
+    rotation3: sy.ImmutableDenseMatrix | None = None
+    """
+    The same physical operation as a Cartesian O(3) matrix, used to lift
+    spin-1/2. Three-dimensional groups may leave this unset and use `irrep`.
+    Lower-dimensional groups must set it at construction; it is not inferred
+    by padding `irrep` at lift time.
+    """
+    spin: str = "electron"
+    """
+    Spin policy fixed at construction. ``"electron"`` uses the SU(2) lift of
+    `rotation3`. ``"trivial"`` uses ``u(g)=I``.
+    """
+
+    def with_irrep(
+        self,
+        irrep: sy.ImmutableDenseMatrix,
+        axes: Tuple[sy.Symbol, ...] | None = None,
+        *,
+        rotation3: sy.ImmutableDenseMatrix | None | object = ...,
+    ) -> "PointGroupElement":
+        """Return a copy with a new spatial matrix, keeping spin metadata."""
+        return PointGroupElement(
+            irrep=irrep,
+            axes=self.axes if axes is None else axes,
+            rotation3=self.rotation3 if rotation3 is ... else rotation3,
+            spin=self.spin,
+        )
 
     @lru_cache
     def _full_indices(self, order: int):
@@ -355,9 +382,12 @@ class PointGroupElement(Opr):
         `axes`, so `self @ self.inv()` and `self.inv() @ self` both represent
         the identity map on that coordinate system.
         """
-        return PointGroupElement(
-            irrep=sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
-            axes=self.axes,
+        rotation3 = None
+        if self.rotation3 is not None:
+            rotation3 = sy.ImmutableDenseMatrix(sy.simplify(self.rotation3.inv()))
+        return self.with_irrep(
+            sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
+            rotation3=rotation3,
         )
 
     @lru_cache
@@ -476,11 +506,31 @@ def _(left: PointGroupElement, right: PointGroupElement) -> PointGroupElement:
     _require_unique_axes(right.axes, role="right")
 
     merged = _merged_axes(left.axes, right.axes)
+    if left.spin != right.spin:
+        raise ValueError(
+            "Cannot compose point-group elements with different spin policies "
+            f"{left.spin!r} and {right.spin!r}."
+        )
     left_irrep = _embed_irrep_to_axes(left.irrep, left.axes, merged)
     right_irrep = _embed_irrep_to_axes(right.irrep, right.axes, merged)
+    rotation3 = None
+    if left.rotation3 is not None or right.rotation3 is not None:
+        left_rot = (
+            left.rotation3
+            if left.rotation3 is not None
+            else sy.ImmutableDenseMatrix.eye(3)
+        )
+        right_rot = (
+            right.rotation3
+            if right.rotation3 is not None
+            else sy.ImmutableDenseMatrix.eye(3)
+        )
+        rotation3 = sy.ImmutableDenseMatrix(sy.simplify(left_rot @ right_rot))
     return PointGroupElement(
         irrep=sy.ImmutableDenseMatrix(sy.simplify(left_irrep @ right_irrep)),
         axes=merged,
+        rotation3=rotation3,
+        spin=left.spin,
     )
 
 
@@ -631,9 +681,7 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
         change = B_new.inv() @ B_old
         new_irrep = change @ irrep @ change.inv()
         return PointGroupOpr._from_parts(
-            g=PointGroupElement(
-                irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes
-            ),
+            g=self.g.with_irrep(sy.ImmutableDenseMatrix(new_irrep)),
             offset=self.offset.rebase(new_base),
         )
 
@@ -681,7 +729,7 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
             space=t.offset.space,
         )
         return PointGroupOpr._from_parts(
-            g=PointGroupElement(irrep=irrep, axes=t.g.axes),
+            g=t.g.with_irrep(irrep),
             offset=fixed_offset,
         )
 

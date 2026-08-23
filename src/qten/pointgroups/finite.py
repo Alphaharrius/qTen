@@ -28,13 +28,14 @@ from .elements import PointGroupElement
 from .basis import PointGroupBasis
 
 
-def _matrix_key(matrix: sy.ImmutableDenseMatrix) -> tuple[sy.Expr, ...]:
-    return tuple(sy.simplify(entry) for entry in matrix)
+def _matrix_key(matrix: sy.ImmutableDenseMatrix) -> tuple[float, ...]:
+    """Identify a matrix by rounded numerical entries.
 
-
-def _numeric_matrix_key(matrix: sy.Matrix, *, digits: int = 6) -> tuple[float, ...]:
-    """Hashable numeric key for matching Cartesian operations without simplify."""
-    return tuple(round(float(sy.N(entry)), digits) for entry in matrix)
+    Reoriented generators can have several exact sympy forms for the same
+    rotation; a numeric key keeps group closure from treating them as new
+    elements.
+    """
+    return tuple(round(complex(sy.N(entry, 20)).real, 8) for entry in matrix)
 
 
 def _character_expr(value: Any) -> sy.Expr:
@@ -56,44 +57,6 @@ def _as_int(value: sy.Expr) -> int | None:
     if simplified.is_integer:
         return int(simplified)
     return None
-
-
-def _factor_system_from_lifts(
-    operations: tuple[sy.ImmutableDenseMatrix, ...] | list[sy.ImmutableDenseMatrix],
-    axes: tuple[sy.Symbol, ...],
-) -> list[list[int]]:
-    """Build ω(g,h) from the current SU(2) section of `operations`."""
-    from ..phys.spin import su2_of_point_group
-
-    lifts = []
-    for operation in operations:
-        lift = su2_of_point_group(PointGroupElement(irrep=operation, axes=axes))
-        lifts.append([[complex(sy.N(lift[i, j])) for j in range(2)] for i in range(2)])
-    index = {_matrix_key(operation): i for i, operation in enumerate(operations)}
-    order = len(operations)
-    factor_system = [[1] * order for _ in range(order)]
-    for i, left in enumerate(operations):
-        for j, right in enumerate(operations):
-            product_key = _matrix_key(
-                sy.ImmutableDenseMatrix(sy.simplify(left @ right))
-            )
-            k = index[product_key]
-            lhs = [
-                [
-                    lifts[i][row][0] * lifts[j][0][col]
-                    + lifts[i][row][1] * lifts[j][1][col]
-                    for col in range(2)
-                ]
-                for row in range(2)
-            ]
-            overlap = (
-                lhs[0][0] * lifts[k][0][0].conjugate()
-                + lhs[0][1] * lifts[k][0][1].conjugate()
-                + lhs[1][0] * lifts[k][1][0].conjugate()
-                + lhs[1][1] * lifts[k][1][1].conjugate()
-            ) / 2
-            factor_system[i][j] = 1 if overlap.real >= 0 else -1
-    return factor_system
 
 
 def _freeze_table(value: Any) -> Any:
@@ -149,15 +112,19 @@ class FinitePointGroup:
         `multiplicities`, and per-irrep character rows. Included in equality
         and hashing so table-dependent caches cannot collide.
     spinor_irreps : dict[str, Any] | None
-        Optional packaged operation-wise projective spinor character data.
-        Included in equality and hashing.
+        Optional class-wise projective spinor character data, same shape as
+        `irreps`. Included in equality and hashing.
+    spin : str
+        Construction-time spin policy. ``"electron"`` (default) uses the
+        SU(2) lift; ``"trivial"`` uses ``u(g)=I``.
 
     Notes
     -----
     Character-table labels are aligned to generated conjugacy classes by matrix
-    invariants (order, determinant, trace, and common mirror geometry). Methods
-    that need irrep data raise `ValueError` when `irreps` is absent or cannot be
-    aligned to the generated group.
+    invariants (order, determinant, trace, and common mirror geometry). Ordinary
+    and spinor tables are computed from the generated group when they are not
+    packaged. Alignment raises `ValueError` when a packaged table cannot be
+    matched to the generated conjugacy classes.
     """
 
     generators: tuple[PointGroupElement, ...]
@@ -167,6 +134,7 @@ class FinitePointGroup:
     spinor_irreps: dict[str, Any] | None = field(
         default=None, compare=False, hash=False
     )
+    spin: str = "electron"
 
     def __post_init__(self) -> None:
         if not self.generators:
@@ -176,6 +144,10 @@ class FinitePointGroup:
         dim = len(self.axes)
         if any(generator.irrep.shape != (dim, dim) for generator in self.generators):
             raise ValueError("Generator matrix shape must match the axis dimension.")
+        if self.spin not in {"electron", "trivial"}:
+            raise ValueError("spin must be 'electron' or 'trivial'.")
+        if any(generator.spin != self.spin for generator in self.generators):
+            raise ValueError("All generators must share the group's spin policy.")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, FinitePointGroup):
@@ -186,6 +158,7 @@ class FinitePointGroup:
             and self.symbol == other.symbol
             and self.irreps == other.irreps
             and self.spinor_irreps == other.spinor_irreps
+            and self.spin == other.spin
         )
 
     def __hash__(self) -> int:
@@ -196,6 +169,7 @@ class FinitePointGroup:
                 self.symbol,
                 _freeze_table(self.irreps),
                 _freeze_table(self.spinor_irreps),
+                self.spin,
             )
         )
 
@@ -208,6 +182,8 @@ class FinitePointGroup:
         symbol: str | None = None,
         irreps: dict[str, Any] | None = None,
         spinor_irreps: dict[str, Any] | None = None,
+        rotation3s: Iterable[sy.ImmutableDenseMatrix | None] | None = None,
+        spin: str = "electron",
     ) -> "FinitePointGroup":
         """
         Build a finite point group from exact generator matrices.
@@ -223,7 +199,12 @@ class FinitePointGroup:
         irreps : dict[str, Any] | None, optional
             Optional packaged character-table payload.
         spinor_irreps : dict[str, Any] | None, optional
-            Optional packaged operation-wise projective spinor character data.
+            Optional class-wise projective spinor character data.
+        rotation3s : Iterable[sy.ImmutableDenseMatrix | None] | None, optional
+            Optional Cartesian O(3) matrix for each generator, used when the
+            spatial matrices are not already 3D.
+        spin : str, optional
+            Construction-time spin policy.
 
         Returns
         -------
@@ -233,8 +214,21 @@ class FinitePointGroup:
             wrappers.
         """
 
+        matrix_list = tuple(matrices)
+        if rotation3s is None:
+            if len(axes) == 3:
+                rotation_list = matrix_list
+            else:
+                rotation_list = (None,) * len(matrix_list)
+        else:
+            rotation_list = tuple(rotation3s)
+            if len(rotation_list) != len(matrix_list):
+                raise ValueError("rotation3s must contain one matrix per generator.")
+        if spin not in {"electron", "trivial"}:
+            raise ValueError("spin must be 'electron' or 'trivial'.")
         generators = tuple(
-            PointGroupElement(irrep=matrix, axes=axes) for matrix in matrices
+            PointGroupElement(irrep=matrix, axes=axes, rotation3=rotation3, spin=spin)
+            for matrix, rotation3 in zip(matrix_list, rotation_list)
         )
         return cls(
             generators=generators,
@@ -242,6 +236,7 @@ class FinitePointGroup:
             symbol=symbol,
             irreps=irreps,
             spinor_irreps=spinor_irreps,
+            spin=spin,
         )
 
     @lru_cache
@@ -267,8 +262,14 @@ class FinitePointGroup:
         """
 
         dim = len(self.axes)
+        rotation3 = None
+        if any(generator.rotation3 is not None for generator in self.generators):
+            rotation3 = sy.ImmutableDenseMatrix.eye(3)
         identity = PointGroupElement(
-            irrep=sy.ImmutableDenseMatrix.eye(dim), axes=self.axes
+            irrep=sy.ImmutableDenseMatrix.eye(dim),
+            axes=self.axes,
+            rotation3=rotation3,
+            spin=self.spin,
         )
         elements = [identity]
         seen = {_matrix_key(identity.irrep)}
@@ -446,10 +447,30 @@ class FinitePointGroup:
             return False
         return det_int == 1 and self._label_sense_matches(label, matrix)
 
+    def _generated_class_indices(self) -> tuple[int, ...]:
+        """Map each element to its generated conjugacy-class index."""
+        class_by_element = [0] * self.order
+        for class_index, members in enumerate(self.conjugacy_classes()):
+            for element_index in members:
+                class_by_element[element_index] = class_index
+        return tuple(class_by_element)
+
+    @lru_cache
+    def ordinary_table(self) -> dict[str, Any]:
+        """Return ordinary irreps, computing them when no table is packaged."""
+        if self.irreps:
+            return self.irreps
+        from ._characters import compute_ordinary_irreps
+
+        return compute_ordinary_irreps(self)
+
     @lru_cache
     def _class_label_index_by_element(self) -> tuple[int, ...]:
         """Map each generated element index to irreps.class_labels index."""
 
+        table = self.ordinary_table()
+        if table.get("source") == "qten-computed":
+            return self._generated_class_indices()
         if not self.irreps:
             raise ValueError(f"No character-table data is available for {self.symbol}.")
         labels = tuple(self.irreps["class_labels"])
@@ -586,13 +607,12 @@ class FinitePointGroup:
             If the irrep is unknown or character-table data is incomplete.
         """
 
-        if not self.irreps:
-            raise ValueError(f"No character-table data is available for {self.symbol}.")
-        irrep_table = self.irreps["irreps"]
+        table = self.ordinary_table()
+        irrep_table = table["irreps"]
         if irrep not in irrep_table:
             raise ValueError(f"Unknown irrep '{irrep}' for point group {self.symbol}.")
 
-        labels = self.irreps["class_labels"]
+        labels = table["class_labels"]
         characters = tuple(
             _character_expr(character) for character in irrep_table[irrep]["characters"]
         )
@@ -604,67 +624,63 @@ class FinitePointGroup:
         class_by_element = self._class_label_index_by_element()
         return tuple(characters[class_index] for class_index in class_by_element)
 
+    @lru_cache
+    def spinor_table(self) -> dict[str, Any]:
+        """Return class-wise spinor data, computing it from the SU(2) lift if needed."""
+        if self.spin != "electron":
+            raise ValueError(
+                f"Point group {self.symbol} was defined with spin={self.spin!r}."
+            )
+        if self.spinor_irreps:
+            return self.spinor_irreps
+        from ._characters import compute_spinor_irreps
+
+        return compute_spinor_irreps(self)
+
     def spinor_irrep_characters_by_element(self, irrep: str) -> tuple[complex, ...]:
         """Return projective spinor characters in generated-element order."""
-        if not self.spinor_irreps:
+        table = self.spinor_table()
+        if not table:
             raise ValueError(
                 f"No spinor character-table data is available for {self.symbol}."
             )
-        irrep_table = self.spinor_irreps["irreps"]
+        irrep_table = table["irreps"]
         if irrep not in irrep_table:
             raise ValueError(
                 f"Unknown spinor irrep '{irrep}' for point group {self.symbol}."
             )
 
-        operation_index = self._spinor_operation_index()
+        from ._characters import parse_class_character
+
+        labels = table.get("class_labels")
         encoded_characters = irrep_table[irrep]["characters"]
-        if len(encoded_characters) != len(operation_index):
+        characters = tuple(parse_class_character(value) for value in encoded_characters)
+        if not labels:
+            raise ValueError(f"Spinor table for {self.symbol} is missing class labels.")
+        if self.irreps and labels != list(self.irreps["class_labels"]):
             raise ValueError(
-                f"Spinor character row length for '{irrep}' does not match operations."
+                "Spinor class labels must match the ordinary class labels "
+                f"for {self.symbol}."
             )
-        characters = tuple(
-            complex(float(value[0]), float(value[1])) for value in encoded_characters
-        )
-
-        ordered: list[complex] = []
-        for element in self.elements():
-            key = _numeric_matrix_key(element.irrep)
-            if key not in operation_index:
-                raise ValueError(
-                    "Spinor table operations do not match generated point-group "
-                    f"elements for {self.symbol}."
-                )
-            ordered.append(characters[operation_index[key]])
-        if len(ordered) != len(operation_index):
+        if len(characters) != len(labels):
             raise ValueError(
-                f"Spinor table order does not match point group {self.symbol}."
+                f"Spinor character row length for '{irrep}' does not match "
+                "class labels."
             )
-        return tuple(ordered)
-
-    @lru_cache
-    def _spinor_operation_index(self) -> dict[tuple[float, ...], int]:
-        if not self.spinor_irreps:
-            raise ValueError(
-                f"No spinor character-table data is available for {self.symbol}."
-            )
-        operation_index = {
-            _numeric_matrix_key(sy.ImmutableDenseMatrix(operation)): index
-            for index, operation in enumerate(self.spinor_irreps["operations"])
-        }
-        if len(operation_index) != len(self.spinor_irreps["operations"]):
-            raise ValueError(
-                f"Spinor table contains duplicate operations for {self.symbol}."
-            )
-        return operation_index
+        if table.get("source") == "qten-computed" or (
+            self.irreps is None or self.irreps.get("source") == "qten-computed"
+        ):
+            class_by_element = self._generated_class_indices()
+        else:
+            class_by_element = self._class_label_index_by_element()
+        return tuple(characters[class_index] for class_index in class_by_element)
 
     def reoriented_by(self, rotation: sy.Matrix) -> "FinitePointGroup":
         r"""
         Return the same abstract group with every matrix conjugated by `rotation`.
 
-        Ordinary characters are class functions and are reused. Spinor characters
-        are operation-wise: each value is multiplied by the section sign
-        \(\eta(g)=\pm 1\) comparing \(V u(g) V^\dagger\) to the runtime lift of
-        \(g'=R g R^{-1}\).
+        Ordinary characters are class functions and are reused. Spinor
+        characters are recomputed from the reoriented SU(2) lifts.
         """
         matrix = sy.ImmutableDenseMatrix(sy.simplify(rotation))
         dim = len(self.axes)
@@ -673,12 +689,26 @@ class FinitePointGroup:
                 f"Reorientation matrix must be {dim}x{dim}, got {matrix.shape}."
             )
         inverse = sy.ImmutableDenseMatrix(sy.simplify(matrix.inv()))
+
+        def _reoriented_rotation3(
+            generator: PointGroupElement,
+        ) -> sy.ImmutableDenseMatrix | None:
+            if generator.rotation3 is None:
+                return None
+            if dim != 3:
+                return generator.rotation3
+            return sy.ImmutableDenseMatrix(
+                sy.simplify(matrix @ generator.rotation3 @ inverse)
+            )
+
         new_generators = tuple(
             PointGroupElement(
                 irrep=sy.ImmutableDenseMatrix(
                     sy.simplify(matrix @ generator.irrep @ inverse)
                 ),
                 axes=self.axes,
+                rotation3=_reoriented_rotation3(generator),
+                spin=self.spin,
             )
             for generator in self.generators
         )
@@ -687,69 +717,9 @@ class FinitePointGroup:
             axes=self.axes,
             symbol=self.symbol,
             irreps=self.irreps,
-            spinor_irreps=self._reoriented_spinor_irreps(matrix, inverse),
+            spinor_irreps=None,
+            spin=self.spin,
         )
-
-    def _reoriented_spinor_irreps(
-        self,
-        rotation: sy.ImmutableDenseMatrix,
-        inverse: sy.ImmutableDenseMatrix,
-    ) -> dict[str, Any] | None:
-        if self.spinor_irreps is None:
-            return None
-        if len(self.axes) != 3:
-            raise ValueError("Spinor reorientation requires three-dimensional axes.")
-
-        from ..phys.spin import proper_rotation_matrix, su2_from_so3, su2_of_point_group
-
-        orthogonality = sy.ImmutableDenseMatrix(
-            sy.simplify(rotation.T @ rotation - sy.eye(3))
-        )
-        if any(entry != 0 for entry in orthogonality):
-            raise ValueError("Spinor reorientation requires an orthogonal rotation.")
-
-        cover = su2_from_so3(proper_rotation_matrix(rotation))
-        old_operations = tuple(
-            sy.ImmutableDenseMatrix(operation)
-            for operation in self.spinor_irreps["operations"]
-        )
-        new_operations: list[sy.ImmutableDenseMatrix] = []
-        section_signs: list[int] = []
-        for old_operation in old_operations:
-            new_operation = sy.ImmutableDenseMatrix(
-                sy.simplify(rotation @ old_operation @ inverse)
-            )
-            new_operations.append(new_operation)
-            old_element = PointGroupElement(irrep=old_operation, axes=self.axes)
-            new_element = PointGroupElement(irrep=new_operation, axes=self.axes)
-            conjugated = cover @ su2_of_point_group(old_element) @ cover.H
-            new_lift = su2_of_point_group(new_element)
-            overlap = complex(sy.N((new_lift.H @ conjugated).trace() / 2))
-            sign = 1 if overlap.real >= 0 else -1
-            if abs(abs(overlap) - 1) > 1e-8:
-                raise ValueError(
-                    "Reoriented SU(2) lifts are not related by a sign for "
-                    f"{self.symbol}."
-                )
-            section_signs.append(sign)
-
-        irreps: dict[str, Any] = {}
-        for name, data in self.spinor_irreps["irreps"].items():
-            irreps[name] = {
-                "dim": data["dim"],
-                "characters": [
-                    [sign * float(value[0]), sign * float(value[1])]
-                    for sign, value in zip(section_signs, data["characters"])
-                ],
-            }
-
-        payload = dict(self.spinor_irreps)
-        payload.pop("generator_sha256", None)
-        payload["operations"] = tuple(new_operations)
-        payload["irreps"] = irreps
-        payload["factor_system"] = _factor_system_from_lifts(new_operations, self.axes)
-        payload["order"] = len(new_operations)
-        return payload
 
     @lru_cache
     def trivial_projector(self, order: int) -> sy.ImmutableDenseMatrix:

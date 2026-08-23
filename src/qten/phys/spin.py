@@ -3,21 +3,24 @@ Spin-1/2 irrep labels and SU(2) lifts of spatial point-group rotations.
 
 [`Spin`][qten.phys.spin.Spin] is a typed U(1) irrep for use inside
 [`U1Basis`][qten.symbolics.hilbert_space.U1Basis], replacing ad-hoc
-`"up"` / `"down"` strings. Crystal rotations act on spin through the
-spin-1/2 cover \(u(g)\\in SU(2)\) of the proper part of \(R(g)\\in O(3)\).
+`"up"` / `"down"` strings. Putting `Spin.up` or `Spin.down` on a basis
+state is what makes a Hilbert space spinful; see
+[`qten.phys`][qten.phys] and [`qten.pointgroups`][qten.pointgroups] for the
+constructor-level workflow.
 
-Because a generic \(SU(2)\) matrix maps one spin state to a superposition,
-the single-outcome operator contract `PointGroupOpr @ Spin -> Spin` cannot
-express the full action. Use
-[`expand_spin`][qten.phys.spin.expand_spin] together with the spinful Hilbert
-representation in [`qten.pointgroups.ops`][qten.pointgroups.ops].
+Crystal rotations act on spin through the spin-1/2 cover \(u(g)\\in SU(2)\)
+of the proper part of the stored 3D rotation \(R(g)\\in O(3)\). Because a
+generic \(SU(2)\) matrix maps one spin state to a superposition, the
+single-outcome contract `PointGroupOpr @ Spin -> Spin` cannot express the
+full action. Use [`expand_spin`][qten.phys.spin.expand_spin] together with
+[`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, ClassVar, Tuple
+from typing import TYPE_CHECKING, ClassVar, Literal, Tuple
 
 import sympy as sy
 
@@ -78,6 +81,23 @@ class Spin(Operable):
 
 Spin.up = Spin(_HALF)
 Spin.down = Spin(-_HALF)
+
+
+@dataclass(frozen=True)
+class SpinAction:
+    """Internal spin policy for a point operation. Not a user-facing setter."""
+
+    kind: Literal["electron", "trivial"] = "electron"
+
+    @classmethod
+    def of(cls, g: "PointGroupElement | PointGroupOpr") -> "SpinAction":
+        from ..pointgroups.elements import PointGroupOpr
+
+        element = g.g if isinstance(g, PointGroupOpr) else g
+        kind = getattr(element, "spin", "electron")
+        if kind not in {"electron", "trivial"}:
+            raise ValueError(f"Unknown spin policy {kind!r}.")
+        return cls(kind=kind)
 
 
 # mypy does not model multimethod's dynamic .register API.
@@ -383,7 +403,16 @@ def _canonical_cartesian_rotation(
     from ..pointgroups.elements import PointGroupOpr
 
     element = g.g if isinstance(g, PointGroupOpr) else g
+    if element.rotation3 is not None:
+        return sy.ImmutableDenseMatrix(element.rotation3)
+
     axis_names = tuple(getattr(axis, "name", str(axis)) for axis in element.axes)
+    if len(axis_names) != 3:
+        raise ValueError(
+            "Spin-1/2 lifts require a 3D rotation stored at construction "
+            "(set plane= or axis= when defining the point group). Padding a "
+            f"{len(axis_names)}D spatial matrix is not a spin definition."
+        )
 
     matrix = sy.ImmutableDenseMatrix(element.irrep)
     if isinstance(g, PointGroupOpr):
@@ -402,6 +431,8 @@ def su2_of_point_group(
     g: "PointGroupElement | PointGroupOpr",
 ) -> sy.ImmutableDenseMatrix:
     """Return the SU(2) factor in the canonical Cartesian spin frame."""
+    if SpinAction.of(g).kind == "trivial":
+        return sy.ImmutableDenseMatrix.eye(2)
     cartesian = _canonical_cartesian_rotation(g)
     return su2_from_so3(proper_rotation_matrix(cartesian))
 

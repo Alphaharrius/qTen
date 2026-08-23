@@ -23,7 +23,16 @@ _T = TypeVar("_T")
 class PointGroupElement(Opr):
     irrep: sy.ImmutableDenseMatrix
     axes: tuple[sy.Symbol, ...]
+    rotation3: sy.ImmutableDenseMatrix | None
+    spin: str
 
+    def with_irrep(
+        self,
+        irrep: sy.ImmutableDenseMatrix,
+        axes: tuple[sy.Symbol, ...] | None = None,
+        *,
+        rotation3: sy.ImmutableDenseMatrix | None | object = ...,
+    ) -> PointGroupElement: ...
     def _full_indices(self, order: int): ...
     def _commute_indices(self, order: int): ...
     def euclidean_basis(self, order: int) -> sy.ImmutableDenseMatrix: ...

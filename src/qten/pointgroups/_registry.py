@@ -10,15 +10,12 @@ Hermann-Mauguin symbols or Schoenflies aliases.
 from __future__ import annotations
 
 import json
-import hashlib
 from functools import lru_cache
 from importlib import resources
-from typing import Any, Sequence
+from typing import Any
 
-import numpy as np
 import sympy as sy
 
-from ..phys.spin import SU2_SECTION_CONVENTION, principal_su2_from_rows
 from .finite import FinitePointGroup
 
 
@@ -41,34 +38,21 @@ def _point_group_data() -> dict[str, Any]:
 
 
 @lru_cache
-def _double_point_group_data() -> dict[str, Any]:
-    data_path = resources.files("qten.pointgroups.data").joinpath(
-        "double_point_group_data.json"
-    )
-    data = json.loads(data_path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1:
-        raise ValueError("Unsupported double-point-group data schema.")
-    if data.get("section_convention") != SU2_SECTION_CONVENTION:
-        raise ValueError("Double-point-group data uses an incompatible SU(2) section.")
-    return data
-
-
-@lru_cache
 def _records_by_symbol() -> dict[str, dict[str, Any]]:
     data = _point_group_data()
-    return {record["symbol"]: record for record in data["point_groups"]}
-
-
-@lru_cache
-def _double_records_by_symbol() -> dict[str, dict[str, Any]]:
-    data = _double_point_group_data()
-    return {record["symbol"]: record for record in data["point_groups"]}
+    return {
+        record["symbol"]: record
+        for record in data["point_groups"]
+        if record.get("dim", 3) == 3 and record.get("frame", "xyz") == "xyz"
+    }
 
 
 @lru_cache
 def _alias_map() -> dict[str, str]:
     aliases: dict[str, str] = {}
     for record in _point_group_data()["point_groups"]:
+        if record.get("dim", 3) != 3 or record.get("frame", "xyz") != "xyz":
+            continue
         for alias in record["aliases"]:
             aliases[alias] = record["symbol"]
     return aliases
@@ -159,228 +143,274 @@ def _cartesianize_generator(
     return sy.ImmutableDenseMatrix(sy.simplify(basis @ matrix @ basis.inv()))
 
 
-def _numpy_o3(matrix: sy.Matrix) -> np.ndarray:
-    """Real 3x3 matrix as float64, for numeric products and lifts."""
-    return np.array(
-        [[float(sy.N(matrix[row, col])) for col in range(3)] for row in range(3)],
-        dtype=np.float64,
-    )
+def _embedded_record(symbol: str, dim: int, frame: str) -> dict[str, Any] | None:
+    for record in _point_group_data()["point_groups"]:
+        if (
+            record["symbol"] == symbol
+            and record.get("dim") == dim
+            and record.get("frame") == frame
+        ):
+            return record
+    return None
 
 
-def _o3_key(rotation: np.ndarray, *, digits: int = 6) -> tuple[float, ...]:
-    return tuple(round(float(entry), digits) for entry in rotation.reshape(-1))
+def _as_matrix(value: Any) -> sy.ImmutableDenseMatrix:
+    rows = [
+        [sy.sympify(entry) if isinstance(entry, str) else entry for entry in row]
+        for row in value
+    ]
+    return sy.ImmutableDenseMatrix(rows)
 
 
-def _su2_numpy_from_cartesian(matrix: sy.ImmutableDenseMatrix) -> np.ndarray:
-    """Numeric principal-branch SU(2) lift of a Cartesian O(3) matrix."""
-    return np.array(
-        principal_su2_from_rows(_numpy_o3(matrix).tolist()), dtype=np.complex128
-    )
-
-
-def _check_numeric_factor_system(
-    rotations: Sequence[np.ndarray],
-    lifts: np.ndarray,
-    factor_system: Sequence[Sequence[int]],
-    *,
-    symbol: str,
-    integer: bool,
-) -> None:
-    r"""Check \(U(g)U(h)=\omega(g,h)U(gh)\) with numeric 2x2 arithmetic."""
-    order = len(rotations)
-    if lifts.shape != (order, 2, 2):
-        raise ValueError(f"Spinor lift stack has the wrong shape for {symbol}.")
-    if len(factor_system) != order or any(len(row) != order for row in factor_system):
-        raise ValueError(f"Spinor factor system has the wrong shape for {symbol}.")
-
-    if integer:
-        index = {
-            tuple(int(entry) for entry in rotation.reshape(-1)): i
-            for i, rotation in enumerate(rotations)
-        }
-    else:
-        index = {_o3_key(rotation): i for i, rotation in enumerate(rotations)}
-    if len(index) != order:
-        raise ValueError(f"Spinor table contains duplicate operations for {symbol}.")
-
-    omega = np.asarray(factor_system, dtype=np.int8)
-    if set(int(value) for value in omega.reshape(-1)) - {-1, 1}:
-        raise ValueError(f"Spinor factor is not ±1 for {symbol}.")
-
-    for i, left in enumerate(rotations):
-        for j, right in enumerate(rotations):
-            product = left @ right
-            key = (
-                tuple(int(entry) for entry in product.reshape(-1))
-                if integer
-                else _o3_key(product)
+def _group_from_record(record: dict[str, Any], spin: str) -> FinitePointGroup:
+    generators = record["generators"]
+    dim = int(record.get("dim", 3))
+    frame = str(record.get("frame", "xyz"))
+    if isinstance(generators, dict):
+        spatial = tuple(_as_matrix(matrix) for matrix in generators["spatial"])
+        rotation3s = tuple(_as_matrix(matrix) for matrix in generators["rotation3"])
+        if len(spatial) != len(rotation3s):
+            raise ValueError(
+                f"spatial and rotation3 generators are out of order for {record['symbol']}."
             )
-            if key not in index:
-                raise ValueError(
-                    f"Spinor factor system product is missing for {symbol}."
-                )
-            expected = int(omega[i, j]) * lifts[index[key]]
-            if not np.allclose(lifts[i] @ lifts[j], expected, rtol=0.0, atol=1e-8):
-                raise ValueError(
-                    "Spinor factor system does not match the current SU(2) lift "
-                    f"for {symbol}."
-                )
+        group = FinitePointGroup.from_matrices(
+            matrices=spatial,
+            axes=_axis_symbols(frame),
+            symbol=record["symbol"],
+            irreps=record.get("irreps"),
+            rotation3s=rotation3s,
+            spin=spin,
+        )
+    else:
+        crystal = record.get("crystal_system", "")
+        cartesian = tuple(
+            _cartesianize_generator(_as_matrix(matrix), crystal)
+            for matrix in generators
+        )
+        group = FinitePointGroup.from_matrices(
+            matrices=cartesian,
+            axes=_axis_symbols("xyz") if dim == 3 else _axis_symbols(frame),
+            symbol=record["symbol"],
+            irreps=record.get("irreps"),
+            spin=spin,
+        )
+    packaged = record.get("spinor_irreps") if spin == "electron" else None
+    return _attach_spinor_table(group, packaged=packaged)
 
 
 def verify_spinor_factor_system(group: FinitePointGroup) -> None:
     r"""
-    Check that a group's spinor table matches the current SU(2) lift.
-
-    Packaged tables are verified from crystallographic integer products, so the
-    pair loop never builds symbolic \(gh\). Custom tables use numeric Cartesian
-    keys. In both cases \(U(g)\) is the numeric principal-branch lift.
+    Check that the group's SU(2) section is consistent and its spinor table
+    is a complete set of projective irreps of \(G\).
     """
-    table = group.spinor_irreps
+    from ._characters import factor_system_and_lifts
+
+    factor_system_and_lifts(group)
+    table = group.spinor_table()
+    irreps = table["irreps"]
+    order = group.order
+    if sum(int(row["dim"]) ** 2 for row in irreps.values()) != order:
+        raise ValueError(
+            f"Spinor irrep dimensions do not satisfy sum(dim^2)=|G| for {group.symbol}."
+        )
+    for irrep_name in irreps:
+        characters = group.spinor_irrep_characters_by_element(irrep_name)
+        if len(characters) != order:
+            raise ValueError(
+                f"Spinor characters for '{irrep_name}' do not match the group order."
+            )
+
+
+def _rotation_mapping_z_to(axis: tuple[float, ...]) -> sy.ImmutableDenseMatrix:
+    """Return a proper rotation that maps the Cartesian z-axis to `axis`."""
+    target = sy.ImmutableDenseMatrix(
+        [sy.nsimplify(sy.sympify(component), tolerance=1e-12) for component in axis]
+    )
+    norm = sy.sqrt(sum(component**2 for component in target))
+    if norm == 0:
+        raise ValueError("axis must be a nonzero vector.")
+    target = sy.ImmutableDenseMatrix(sy.simplify(target / norm))
+    z_axis = sy.ImmutableDenseMatrix([0, 0, 1])
+    cosine = sy.simplify(z_axis.dot(target))
+    if cosine == 1:
+        return sy.ImmutableDenseMatrix.eye(3)
+    if cosine == -1:
+        return sy.ImmutableDenseMatrix([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+    helper = (
+        sy.ImmutableDenseMatrix([1, 0, 0])
+        if abs(complex(sy.N(target[0]))) < 0.9
+        else sy.ImmutableDenseMatrix([0, 1, 0])
+    )
+    first = helper.cross(target)
+    first = sy.ImmutableDenseMatrix(sy.simplify(first / first.norm()))
+    second = sy.ImmutableDenseMatrix(sy.simplify(target.cross(first)))
+    return sy.ImmutableDenseMatrix(sy.simplify(first.row_join(second).row_join(target)))
+
+
+def _plane_onb(
+    normal: tuple[float, ...],
+) -> tuple[sy.ImmutableDenseMatrix, sy.ImmutableDenseMatrix]:
+    nvec = sy.ImmutableDenseMatrix(
+        [sy.nsimplify(sy.sympify(component), tolerance=1e-12) for component in normal]
+    )
+    nvec = sy.ImmutableDenseMatrix(
+        sy.simplify(nvec / sy.sqrt(sum(nvec[i] ** 2 for i in range(3))))
+    )
+    helper = (
+        sy.ImmutableDenseMatrix([1, 0, 0])
+        if abs(complex(sy.N(nvec[0]))) < 0.9
+        else sy.ImmutableDenseMatrix([0, 1, 0])
+    )
+    first = nvec.cross(helper)
+    first = sy.ImmutableDenseMatrix(sy.simplify(first / first.norm()))
+    second = nvec.cross(first)
+    second = sy.ImmutableDenseMatrix(sy.simplify(second / second.norm()))
+    return first, second
+
+
+def _project_matrix_to_plane(
+    matrix: sy.ImmutableDenseMatrix,
+    first: sy.ImmutableDenseMatrix,
+    second: sy.ImmutableDenseMatrix,
+) -> sy.ImmutableDenseMatrix:
+    basis = first.row_join(second)
+    return sy.ImmutableDenseMatrix(sy.simplify(basis.T @ matrix @ basis))
+
+
+def _attach_spinor_table(
+    group: FinitePointGroup,
+    packaged: dict[str, Any] | None = None,
+) -> FinitePointGroup:
+    if group.spin != "electron":
+        return group
+    table = packaged if packaged is not None else group.spinor_irreps
     if table is None:
-        raise ValueError(
-            f"No spinor character-table data is available for {group.symbol}."
-        )
+        from ._characters import compute_spinor_irreps
 
-    operations = tuple(
-        sy.ImmutableDenseMatrix(operation) for operation in table["operations"]
+        table = compute_spinor_irreps(group)
+    if table is group.spinor_irreps:
+        return group
+    return FinitePointGroup(
+        generators=group.generators,
+        axes=group.axes,
+        symbol=group.symbol,
+        irreps=group.irreps,
+        spinor_irreps=table,
+        spin=group.spin,
     )
-    symbol = group.symbol or "<anonymous>"
-    cartesian = [_numpy_o3(matrix) for matrix in operations]
-    operation_keys = {_o3_key(rotation) for rotation in cartesian}
-    if len(operation_keys) != len(operations):
-        raise ValueError(f"Spinor table contains duplicate operations for {symbol}.")
-    element_keys = {_o3_key(_numpy_o3(element.irrep)) for element in group.elements()}
-    if element_keys != operation_keys:
-        raise ValueError(
-            "Spinor table operations do not match generated point-group "
-            f"elements for {symbol}."
-        )
 
-    lifts = np.stack([_su2_numpy_from_cartesian(matrix) for matrix in operations])
-    source = (
-        _double_records_by_symbol().get(group.symbol)
-        if group.symbol is not None
-        else None
-    )
-    if (
-        source is not None
-        and len(source.get("operations", ())) == len(operations)
-        and source.get("factor_system") == table.get("factor_system")
-    ):
-        cryst = [np.asarray(operation, dtype=int) for operation in source["operations"]]
-        _check_numeric_factor_system(
-            cryst,
-            lifts,
-            source["factor_system"],
-            symbol=symbol,
-            integer=True,
-        )
-        return
 
-    _check_numeric_factor_system(
-        cartesian,
-        lifts,
-        table["factor_system"],
-        symbol=symbol,
-        integer=False,
-    )
+def _hashable_axis(value: object) -> str | tuple[float, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return tuple(float(sy.N(component)) for component in value)  # type: ignore[arg-type]
 
 
 @lru_cache
-def _verified_spinor_table(symbol: str) -> dict[str, Any] | None:
-    """Cartesian spinor table for `symbol`, checked once against the current lift."""
-    record = _records_by_symbol()[symbol]
-    table = _spinor_table(record, "xyz")
-    if table is None:
-        return None
-    source = _double_records_by_symbol()[symbol]
-    cryst = [np.asarray(operation, dtype=int) for operation in source["operations"]]
-    lifts = np.stack(
-        [_su2_numpy_from_cartesian(operation) for operation in table["operations"]]
-    )
-    _check_numeric_factor_system(
-        cryst,
-        lifts,
-        source["factor_system"],
-        symbol=symbol,
-        integer=True,
-    )
-    return table
-
-
-def _spinor_table(record: dict[str, Any], axis_names: str) -> dict[str, Any] | None:
-    """Return a verified spinor table in QTen's Cartesian matrix convention."""
-    if axis_names != "xyz":
-        return None
-    table = _double_records_by_symbol().get(record["symbol"])
-    if table is None:
-        return None
-
-    generator_bytes = json.dumps(
-        record["generators"], separators=(",", ":"), sort_keys=True
-    ).encode()
-    fingerprint = hashlib.sha256(generator_bytes).hexdigest()
-    if table.get("generator_sha256") != fingerprint:
-        raise ValueError(
-            f"Spinor table generator fingerprint is stale for {record['symbol']}."
-        )
-
-    normalized = dict(table)
-    normalized["operations"] = tuple(
-        _cartesianize_generator(
-            sy.ImmutableDenseMatrix(operation), record["crystal_system"]
-        )
-        for operation in table["operations"]
-    )
-    return normalized
-
-
-@lru_cache
-def named_pointgroup(query: str) -> FinitePointGroup:
+def named_pointgroup(
+    query: str,
+    plane: str | tuple[float, ...] | None = None,
+    axis: tuple[float, ...] | None = None,
+    spin: str = "electron",
+) -> FinitePointGroup:
     """
     Build a finite point group from packaged generator data.
 
     The query accepts canonical Hermann-Mauguin symbols such as ``"4mm"`` and
-    Schoenflies aliases such as ``"C4v"``. A trailing axis suffix may be used to
-    project standard 3D matrices onto invariant coordinate subspaces, e.g.
-    ``"C4v-xy"``.
-
-    Parameters
-    ----------
-    query : str
-        Named crystallographic point-group query, optionally with an axis
-        suffix such as ``"C4v-xy"``.
-
-    Returns
-    -------
-    FinitePointGroup
-        Finite group generated by the packaged matrices projected onto the
-        selected axes, including packaged character-table data when available.
-
-    Raises
-    ------
-    ValueError
-        If the symbol is unknown, the axis suffix is invalid, or a generator
-        does not preserve the selected axes.
+    Schoenflies aliases such as ``"C4v"``. A trailing axis suffix such as
+    ``"C4v-xy"`` is an alias for ``plane="xy"``: spatial matrices become 2D
+    while the 3D rotations used for spin are kept.
     """
 
     symbol, axis_names = _split_named_query(query)
+    if isinstance(plane, str):
+        if axis_names != "xyz" and axis_names != plane:
+            raise ValueError(
+                f"Query '{query}' already selects axes {axis_names!r}, "
+                f"which conflicts with plane={plane!r}."
+            )
+        axis_names = plane
     record = _records_by_symbol()[symbol]
-
-    matrices = tuple(
-        _project_generator(
-            _cartesianize_generator(
-                sy.ImmutableDenseMatrix(generator), record["crystal_system"]
-            ),
-            axis_names,
+    packaged = record.get("spinor_irreps") if spin == "electron" else None
+    cartesian = tuple(
+        _cartesianize_generator(
+            sy.ImmutableDenseMatrix(generator), record["crystal_system"]
         )
         for generator in record["generators"]
     )
-    spinor_irreps = _verified_spinor_table(symbol) if axis_names == "xyz" else None
-    return FinitePointGroup.from_matrices(
-        matrices=matrices,
+    xyz_axes = _axis_symbols("xyz")
+
+    if axis is not None:
+        if axis_names != "xyz" or plane is not None:
+            raise ValueError("axis= applies to a 3D named group without a plane cut.")
+        group = FinitePointGroup.from_matrices(
+            matrices=cartesian,
+            axes=xyz_axes,
+            symbol=symbol,
+            irreps=record.get("irreps"),
+            spin=spin,
+        )
+        return group.reoriented_by(_rotation_mapping_z_to(axis))
+
+    if isinstance(plane, tuple):
+        group = FinitePointGroup.from_matrices(
+            matrices=cartesian,
+            axes=xyz_axes,
+            symbol=symbol,
+            irreps=record.get("irreps"),
+            spin=spin,
+        )
+        group = group.reoriented_by(_rotation_mapping_z_to(plane))
+        first, second = _plane_onb(plane)
+        spatial = []
+        rotations = []
+        normal = sy.ImmutableDenseMatrix(list(plane))
+        normal = sy.ImmutableDenseMatrix(
+            sy.simplify(normal / sy.sqrt(sum(normal[i] ** 2 for i in range(3))))
+        )
+        for generator in group.generators:
+            image = sy.ImmutableDenseMatrix(sy.simplify(generator.irrep @ normal))
+            parallel = sy.simplify(image.cross(normal).norm()) == 0
+            if not parallel:
+                raise ValueError(
+                    f"Generator of {symbol} does not preserve the plane with "
+                    f"normal {plane}."
+                )
+            spatial.append(_project_matrix_to_plane(generator.irrep, first, second))
+            rotations.append(generator.irrep)
+        cut = FinitePointGroup.from_matrices(
+            matrices=spatial,
+            axes=_axis_symbols("xy"),
+            symbol=symbol,
+            irreps=record.get("irreps"),
+            rotation3s=rotations,
+            spin=spin,
+        )
+        return cut
+
+    if axis_names == "xyz":
+        group = FinitePointGroup.from_matrices(
+            matrices=cartesian,
+            axes=xyz_axes,
+            symbol=symbol,
+            irreps=record.get("irreps"),
+            spin=spin,
+        )
+        return _attach_spinor_table(group, packaged=packaged)
+
+    embedded = _embedded_record(symbol, len(axis_names), axis_names)
+    if embedded is not None:
+        return _group_from_record(embedded, spin)
+
+    spatial = tuple(_project_generator(matrix, axis_names) for matrix in cartesian)
+    group = FinitePointGroup.from_matrices(
+        matrices=spatial,
         axes=_axis_symbols(axis_names),
         symbol=symbol,
         irreps=record.get("irreps"),
-        spinor_irreps=spinor_irreps,
+        rotation3s=cartesian,
+        spin=spin,
     )
+    return _attach_spinor_table(group, packaged=packaged)

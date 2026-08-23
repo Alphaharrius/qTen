@@ -475,10 +475,13 @@ def test_full_td_spinful_symmetrize_uses_spinor_character_table():
         label.irrep_of(SpinorIrrepSector) for label in projected.dims[1].elements()
     ]
     assert len({sector.irrep for sector in sectors}) == 1
-    assert all(sector.dim == 2 and sector.source == "spgrep" for sector in sectors)
+    assert all(
+        sector.dim == 2 and sector.source == "qten-su2-principal-v1"
+        for sector in sectors
+    )
 
 
-def test_custom_spinful_finite_group_without_table_is_rejected():
+def test_custom_spinful_finite_group_without_table_computes_spinor_irreps():
     x, y, z = sy.symbols("x y z")
     custom = FinitePointGroup.from_matrices(
         (ImmutableDenseMatrix([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]),),
@@ -493,8 +496,12 @@ def test_custom_spinful_finite_group_without_table_is_rejected():
         data=torch.eye(2, 1, dtype=torch.complex128),
         dims=(space, IndexSpace.linear(1)),
     )
-    with pytest.raises(ValueError, match="No spinor character-table data"):
-        Q.point_group_column_symmetrize(custom, seed, fixpoint=center)
+    projected = Q.point_group_column_symmetrize(custom, seed, fixpoint=center)
+    assert projected.data.shape[0] == 2
+    assert all(
+        isinstance(label.irrep_of(SpinorIrrepSector), SpinorIrrepSector)
+        for label in projected.dims[1].elements()
+    )
 
 
 def test_all_packaged_spinor_tables_resolve_bare_spin_space():

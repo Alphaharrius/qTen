@@ -190,7 +190,7 @@ class SpinorIrrepSector:
     group: str
     irrep: str
     dim: int
-    source: str = "spgrep"
+    source: str = "qten-su2-principal-v1"
 
 
 @dataclass(frozen=True)
@@ -305,20 +305,15 @@ def _finite_point_group_column_symmetrize(
     """
     row_dim, seeds = _column_symmetrize_context(w)
     spinful = contains_spin(row_dim)
-    if spinful:
-        if not group.spinor_irreps:
-            raise ValueError(
-                "No spinor character-table data is available for finite point "
-                f"group {group.symbol}."
-            )
-        irrep_table = group.spinor_irreps["irreps"]
+    use_spinor = spinful and group.spin != "trivial"
+    if use_spinor:
+        table = group.spinor_table()
+        irrep_table = table["irreps"]
+        sector_source = str(table.get("source") or "qten-su2-principal-v1")
     else:
-        if not group.irreps:
-            raise ValueError(
-                "No character-table data is available for finite point group "
-                f"{group.symbol}."
-            )
-        irrep_table = group.irreps["irreps"]
+        table = group.ordinary_table()
+        irrep_table = table["irreps"]
+        sector_source = str(table.get("source") or "bilbao")
     if not irrep_table:
         raise ValueError(
             f"Character-table data contains no irreps for point group {group.symbol}."
@@ -347,12 +342,13 @@ def _finite_point_group_column_symmetrize(
     sector_projectors: list[tuple[Any, Tensor]] = []
     for irrep_name, irrep_data in irrep_table.items():
         dim = int(irrep_data["dim"])
-        if spinful:
+        if use_spinor:
             characters = group.spinor_irrep_characters_by_element(irrep_name)
             sector_label: Any = SpinorIrrepSector(
                 group=group.symbol or "<anonymous>",
                 irrep=irrep_name,
                 dim=dim,
+                source=sector_source,
             )
         else:
             characters = group.irrep_characters_by_element(irrep_name)
@@ -365,7 +361,7 @@ def _finite_point_group_column_symmetrize(
         for character, rep in zip(characters, reps):
             coefficient = (
                 complex(character).conjugate()
-                if spinful
+                if use_spinor
                 else complex(sy.N(sy.conjugate(character)))
             )
             projector = projector + coefficient * rep
@@ -377,7 +373,7 @@ def _finite_point_group_column_symmetrize(
     for j, seed in enumerate(seeds):
         col = w[:, j : j + 1].clone().replace_dim(1, single_col).astype(working_dtype)
         input_norm = abs(col.norm().item())
-        projection_cutoff = tol * input_norm
+        projection_cutoff = max(tol, 1e-8) * input_norm
         candidates: list[tuple[float, Tensor, U1Basis]] = []
         for sector_label, projector in sector_projectors:
             projected = projector @ col
@@ -1016,10 +1012,14 @@ def point_group_column_symmetrize(
     identity.
 
     If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup], this
-    routine dispatches to the non-abelian character-projector path
-    \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\), using the
-    packaged ordinary character table for spinless spaces or the packaged
-    operation-wise projective spinor characters for spinful spaces.
+    routine uses the character projector
+    \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\). Spinless
+    spaces use ordinary irreps (packaged or computed). Spaces that already
+    contain [`Spin`][qten.phys.spin.Spin] use the group's SU(2) section and
+    projective spinor characters, unless the group was defined with
+    `spin="trivial"`. A cyclic [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr]
+    is the abelian special case of the same formula: one-dimensional phase
+    characters with period \(n\) or \(2n\).
 
     The projector is applied to each input column separately. When
     `full_sector` is `True`, every
@@ -1167,13 +1167,16 @@ def _require_joint_oprs_in_group(
     for opr in oprs:
         if opr.g.axes != group.axes:
             raise ValueError(
-                "Joint spinful operators must use the same ordered axes as "
-                f"{group.symbol}."
+                f"Joint operators must use the same ordered axes as {group.symbol}."
+            )
+        if getattr(opr.g, "spin", group.spin) != group.spin:
+            raise ValueError(
+                f"Joint operators must use the same spin policy as {group.symbol}."
             )
         if _matrix_key(opr.g.irrep) not in keys:
             raise ValueError(
-                f"Joint spinful operator {opr.g} is not an element of point "
-                f"group {group.symbol}."
+                f"Joint operator {opr.g} is not an element of the already "
+                f"defined point group {group.symbol}."
             )
 
 
@@ -1237,13 +1240,13 @@ def joint_point_group_column_symmetrize(
         return point_group_column_symmetrize(oprs[0], w, full_sector=full_sector)
     row_dim, seeds = _column_symmetrize_context(w)
     spinful = contains_spin(row_dim)
-    if spinful:
-        if group is None:
-            raise ValueError(
-                "Joint spinful projection requires group= the FinitePointGroup "
-                "that contains every operator."
-            )
+    if group is not None:
         _require_joint_oprs_in_group(oprs, group)
+    elif spinful:
+        raise ValueError(
+            "Joint spinful projection requires group= the FinitePointGroup "
+            "that contains every operator."
+        )
 
     single_col = IndexSpace.linear(1)
     joint_sector_bases = None if spinful else _joint_phase_basis(oprs)
