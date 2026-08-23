@@ -8,12 +8,14 @@ state is what makes a Hilbert space spinful; see
 [`qten.phys`][qten.phys] and [`qten.pointgroups`][qten.pointgroups] for the
 constructor-level workflow.
 
-Crystal rotations act on spin through the spin-1/2 cover \(u(g)\\in SU(2)\)
-of the proper part of the stored 3D rotation \(R(g)\\in O(3)\). Because a
+Crystal rotations act on spin through the spin-1/2 cover \(u(g)\in SU(2)\)
+of the proper part of the stored 3D rotation \(R(g)\in O(3)\). Because a
 generic \(SU(2)\) matrix maps one spin state to a superposition, the
 single-outcome contract `PointGroupOpr @ Spin -> Spin` cannot express the
 full action and raises. Use [`expand_spin`][qten.phys.spin.expand_spin]
-together with [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
+together with [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr]. The lift
+is named [`SU2_SECTION_CONVENTION`][qten.phys.spin.SU2_SECTION_CONVENTION]
+(`qten-su2-principal-v1`).
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ _HALF = sy.Rational(1, 2)
 _SPIN_MS = (_HALF, -_HALF)
 _CARTESIAN_AXES = ("x", "y", "z")
 _ROTATION_TOL = 1e-10
+#: Pinned name of QTen's principal SU(2) lift of each element's `rotation3`.
 SU2_SECTION_CONVENTION = "qten-su2-principal-v1"
 
 
@@ -85,7 +88,11 @@ Spin.down = Spin(-_HALF)
 
 @dataclass(frozen=True)
 class SpinAction:
-    """Internal spin policy for a point operation. Not a user-facing setter."""
+    """Internal spin policy for a point operation.
+
+    Not a user-facing setter and not part of the `qten.phys` export list.
+    Read `element.spin` instead.
+    """
 
     kind: Literal["electron", "trivial"] = "electron"
 
@@ -185,7 +192,13 @@ def _matrix_cache_key(M: sy.Matrix) -> tuple:
 
 
 def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
-    """Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows."""
+    """Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows.
+
+    Numeric helper used by the inexact-matrix path of
+    [`su2_from_so3`][qten.phys.spin.su2_from_so3]. Prefer
+    [`su2_of_point_group`][qten.phys.spin.su2_of_point_group] at the
+    point-group API.
+    """
     r = [list(row) for row in rotation]
     det = (
         r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
@@ -430,7 +443,25 @@ def _canonical_cartesian_rotation(
 def su2_of_point_group(
     g: "PointGroupElement | PointGroupOpr",
 ) -> sy.ImmutableDenseMatrix:
-    """Return the SU(2) factor in the canonical Cartesian spin frame."""
+    r"""
+    Return the SU(2) factor of a point operation in the Cartesian spin frame.
+
+    Uses the stored `rotation3` (or the 3D `irrep` when that is already
+    Cartesian). A group built with `spin="trivial"` returns \(I\). A 1D or
+    2D element with no `rotation3` raises: the lift is not a padded copy of
+    the spatial matrix.
+
+    Parameters
+    ----------
+    g : PointGroupElement | PointGroupOpr
+        Point operation whose stored 3D rotation is lifted.
+
+    Returns
+    -------
+    sy.ImmutableDenseMatrix
+        \(2\times 2\) SU(2) matrix, or the identity when the spin policy is
+        trivial.
+    """
     if SpinAction.of(g).kind == "trivial":
         return sy.ImmutableDenseMatrix.eye(2)
     cartesian = _canonical_cartesian_rotation(g)
@@ -450,6 +481,13 @@ def expand_spin(
 ) -> Tuple[Tuple[sy.Expr, Spin], ...]:
     r"""
     Expand \(u(g)|s\rangle\) in the \(\{|\uparrow\rangle,|\downarrow\rangle\}\) basis.
+
+    Parameters
+    ----------
+    g : PointGroupElement | PointGroupOpr
+        Point operation whose SU(2) factor is applied.
+    spin : Spin
+        Input spin-1/2 label.
 
     Returns
     -------
@@ -473,7 +511,8 @@ def as_spin(rep: object) -> Spin | None:
 
     Accepts [`Spin`][qten.phys.spin.Spin] and the leftover strings ``"up"`` /
     ``"down"`` so old bases still count as spinful instead of silently
-    selecting ordinary projectors.
+    selecting ordinary projectors. The string ``"spin-up"`` is not a spin
+    label.
     """
     if type(rep) is Spin:
         return rep

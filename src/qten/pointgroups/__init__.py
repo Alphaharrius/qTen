@@ -7,8 +7,9 @@ Two rules decide spin and geometry:
    [`Spin`][qten.phys.spin.Spin], projection uses the SU(2) lift. If it does
    not, the group is ordinary. There is no `.with_spin`.
 2. Geometry is written in the constructor. `plane=` / `axis=` / `spin=` belong
-   on that one `pointgroup(...)` call. Afterwards only `fixpoint=` moves the
-   origin.
+   on that one `pointgroup(...)` call. Move the origin later with `fixpoint=`
+   on the single-group helpers, or `fixpoint_at` on a `PointGroupOpr`. Joint
+   projection has no `fixpoint=`; center each operator first.
 
 [`pointgroup`][qten.pointgroups._pointgroups.pointgroup] chooses the object
 from the query, not from whether the group is abelian.
@@ -50,6 +51,7 @@ from qten.pointgroups import (
 )
 from qten.symbolics import U1Basis
 
+# diamond, C_R, seed, center, and space come from the surrounding model
 A_up = U1Basis.new(diamond.at("A"), Spin.up)
 td = pointgroup("-43m")
 C_sym = point_group_operator_symmetrize(td, C_R, fixpoint=center)
@@ -100,6 +102,9 @@ label projected columns.
 [`SymmetryDegeneracy`][qten.pointgroups.sectors.SymmetryDegeneracy] tags repeated
 copies of the same sector.
 [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr] assembles \(D(g)\).
+[`spinful_hilbert_opr_repr`][qten.pointgroups.ops.spinful_hilbert_opr_repr] /
+[`spinful_transform_basis`][qten.pointgroups.ops.spinful_transform_basis]
+are the spinful fast path used by that assembler.
 [`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize]
 projects columns.
 [`point_group_operator_symmetrize`][qten.pointgroups.ops.point_group_operator_symmetrize]

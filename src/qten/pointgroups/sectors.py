@@ -23,7 +23,7 @@ class FiniteIrrepSector:
 
 @dataclass(frozen=True)
 class SpinorIrrepSector:
-    """Label for a finite double-valued point-group symmetry sector."""
+    """Label for a projective spinor irrep sector of a finite point group."""
 
     group: str
     irrep: str

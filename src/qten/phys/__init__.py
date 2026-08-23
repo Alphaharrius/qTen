@@ -25,7 +25,7 @@ from qten.phys import Spin, su2_of_point_group
 from qten.pointgroups import pointgroup
 from qten.symbolics import U1Basis
 
-psi = U1Basis.new(site, Spin.up)   # this space is spinful
+psi = U1Basis.new(site, Spin.up)   # this basis state is spinful
 g = pointgroup("C4v", plane="xy")  # geometry is fixed here
 u = su2_of_point_group(g.elements()[1])  # 2x2 SU(2) factor
 ```

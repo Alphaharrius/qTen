@@ -96,9 +96,10 @@ class FinitePointGroup:
     more exact generators as
     [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] objects on
     a shared ordered axis tuple. Closing under composition yields the full group
-    of linear actions. When packaged character-table data is attached through
-    `irreps`, the group can project homogeneous polynomials onto irreducible
-    sectors.
+    of linear actions. Ordinary and spinor class tables come from the packaged
+    catalog when present; otherwise they are computed from the generated group.
+    With those tables the group can project homogeneous polynomials onto
+    irreducible sectors.
 
     Mathematical meaning
     --------------------

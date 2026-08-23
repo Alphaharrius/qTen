@@ -412,6 +412,29 @@ def named_pointgroup(
     ``"C4v-xy"`` is an alias for ``plane="xy"``: spatial matrices become 2D
     while the 3D rotations used for spin are kept. A named group that is not
     faithful on the requested plane raises ``ValueError``.
+
+    Parameters
+    ----------
+    query : str
+        Hermann-Mauguin or Schoenflies symbol, optionally with a trailing
+        axis suffix such as ``"C4v-xy"``.
+    plane : str | tuple[float, ...] | None, optional
+        Construction-time plane. A string such as ``"xy"`` reduces spatial
+        matrices while keeping the 3D rotations for spin. A vector is the
+        plane normal.
+    axis : tuple[float, ...] | None, optional
+        Reorient a 3D named group so its standard z-axis maps to this vector.
+        Cannot be combined with a plane cut.
+    spin : str, default ``"electron"``
+        Define-time spin policy. ``"electron"`` lifts ``rotation3``;
+        ``"trivial"`` uses ``u(g)=I``.
+
+    Returns
+    -------
+    FinitePointGroup
+        Finite group generated from the packaged matrices, with ordinary
+        Bilbao characters and (for ``spin="electron"``) QTen spinor
+        characters.
     """
 
     symbol, axis_names = _split_named_query(query)

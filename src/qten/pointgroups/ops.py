@@ -1,15 +1,16 @@
-"""
+r"""
 Point-group operations on symbolic bases and tensors.
 
 This module combines point-group transforms with QTen Hilbert spaces and
-tensors. The helpers compute joint abelian eigen-bases, project columns into
-abelian phase sectors or finite-group irrep sectors, and assemble
-representation tensors for point-group actions.
+tensors. The helpers assemble \(D(g)\) (including the SU(2) factor on a
+spinful space), twirl operators by conjugation, and project columns into
+abelian phase sectors, ordinary finite-group irreps, or projective spinor
+irreps.
 
 Repository usage
 ----------------
-Use [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis]
-and the related projection helpers when an existing
+Use [`hilbert_repr()`][qten.pointgroups.ops.hilbert_repr] and the related
+projection helpers when an existing
 [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement],
 [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr], or
 [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] should act on
@@ -98,7 +99,7 @@ def _phase_basis(opr: PointGroupOpr, phase: sy.Expr) -> PointGroupBasis:
     for key, basis in table.items():
         if _same_phase(key, phase):
             return cast(PointGroupBasis, basis)
-    raise ValueError(f"Failed to find an PointGroupBasis for phase={phase}.")
+    raise ValueError(f"Failed to find a PointGroupBasis for phase={phase}.")
 
 
 def _attach_basis_label(seed: U1Basis | None, basis: PointGroupBasis) -> U1Basis:
@@ -192,14 +193,41 @@ def point_group_operator_symmetrize(
 
     This computes
     \(A_G = |G|^{-1}\sum_g D(g) A D(g)^\dagger\). Unlike character
-    projection of state vectors, conjugation averaging is valid for spin-1/2
-    without double-group character tables: the sign ambiguity of each SU(2)
-    lift cancels between \(D(g)\) and \(D(g)^\dagger\).
+    projection of state vectors, conjugation averaging does not need ordinary
+    or spinor characters: the sign ambiguity of each SU(2) lift cancels
+    between \(D(g)\) and \(D(g)^\dagger\).
 
     The two matrix dimensions of `operator` must describe the same
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]. That space
     must be closed under every point-group operation; otherwise representation
     assembly raises `ValueError`.
+
+    Parameters
+    ----------
+    group : FinitePointGroup
+        Finite point group whose elements generate the average.
+    operator : Tensor
+        Rank-2 tensor whose two dimensions are the same ordered
+        [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace].
+    fixpoint : Offset | None, optional
+        Desired invariant point. When set, each group element is wrapped as
+        a `PointGroupOpr` and recentered with `fixpoint_at` before `D(g)`
+        is assembled.
+    rebase_fixpoint : bool, default False
+        Forwarded to
+        [`PointGroupOpr.fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
+        as `rebase`.
+
+    Returns
+    -------
+    Tensor
+        The conjugation-averaged operator on the same Hilbert space.
+
+    Raises
+    ------
+    ValueError
+        If `operator` is not a square Hilbert-space tensor, or if some
+        `D(g)` is not numerically unitary.
     """
     if operator.rank() != 2:
         raise ValueError("operator must be a rank-2 Hilbert-space tensor.")
@@ -613,6 +641,22 @@ def spinful_hilbert_opr_repr(
     translations match the stored unit-cell basis. This is a local/Γ-point
     representation; nonzero-momentum Bloch phases require an explicit
     momentum-dependent representation and are not inserted here.
+
+    Parameters
+    ----------
+    opr : PointGroupOpr
+        Point operation, including any affine center already set on it.
+    space : HilbertSpace
+        Spinful Hilbert space. Every basis state must carry exactly one
+        [`Spin`][qten.phys.spin.Spin] label, and the space must be closed
+        under `opr`.
+    device : Optional[Device], optional
+        Device for the returned tensor.
+
+    Returns
+    -------
+    Tensor
+        Square tensor of \(D_{\mathrm{orb}}(g)\otimes u(g)\) on `space`.
     """
     _validate_spinful_space(space)
     precision = get_precision_config()
@@ -716,7 +760,11 @@ def get_direct_transform(
     `space`. Instead it explicitly constructs the transformed output
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and returns a one-hot mapping matrix with dims `(space, out_space)`.
 
-    When a basis state contains an [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] irrep, that irrep is transformed directly in the Euclidean polynomial basis.
+    Spinful Hilbert spaces are rejected: a generic SU(2) factor maps one
+    basis state to a superposition, which this one-to-one mapping cannot
+    express. Use [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr] instead.
+
+    When a basis state contains a [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] irrep, that irrep is transformed directly in the Euclidean polynomial basis.
     In particular, no eigen-phase is factored out. For example, a basis
     function `x` rotated by `C4` is mapped to `y` in the output space rather
     than left as `x` with a phase in the tensor data.
@@ -735,6 +783,11 @@ def get_direct_transform(
     Tensor
         Rank-2 tensor with dimensions `(space, out_space)` and only `1`
         numerical entries at the mapped basis positions.
+
+    Raises
+    ------
+    NotImplementedError
+        If any basis state in `space` carries a spin-1/2 label.
     """
     transformed = {psi: _ext_transform_basis(opr, psi) for psi in space.elements()}
     out_space = space.map(lambda psi: transformed[psi])
@@ -899,7 +952,25 @@ def hilbert_repr(
     the unit cell, [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
     polynomials are canonicalized onto labels already present in `space`, and
     [`Spin`][qten.phys.spin.Spin] is expanded by the SU(2) lift. The same
-    assembler is used for spinless and spinful spaces.
+    assembler is used for spinless and spinful spaces. This function has no
+    `fixpoint=`; recenter `opr` with
+    [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
+    first.
+
+    Parameters
+    ----------
+    opr : PointGroupOpr
+        Point operation, including any affine center already set on it.
+    space : HilbertSpace
+        Ordered basis. Must be closed under `opr`.
+    device : Optional[Device], optional
+        Device for the returned tensor.
+
+    Returns
+    -------
+    Tensor
+        Square tensor of \(D(g)\) on `space`. On a spinful space this is
+        \(D_{\mathrm{orb}}(g)\otimes u(g)\).
     """
     _validate_hilbert_basis(space)
     if contains_spin(space):
@@ -1083,10 +1154,7 @@ def point_group_column_symmetrize(
     [`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector].
     This function builds the full operator representation `G` on the ambient
     Hilbert space `w.dims[0]` and applies the projector
-    \(P_\omega = \frac{1}{N}\sum_{k=0}^{N-1}\omega^{-k}G^k\),
-
-    which is the rendered form of the code-level convention
-    `P_omega = (1/N) * sum_{k=0}^{N-1} omega^(-k) G^k`.
+    \(P_\omega = \frac{1}{N}\sum_{k=0}^{N-1}\omega^{-k}G^k\).
     Here \(N=n\) for spinless spaces and \(N=2n\) for spinful spaces; \(2n\)
     need not be the minimal order for operations whose proper spin factor is
     identity.
@@ -1105,11 +1173,12 @@ def point_group_column_symmetrize(
     `full_sector` is `True`, every
     nonzero projected sector component is returned. When `full_sector` is
     `False`, only the dominant nonzero sector component of each input column is
-    kept, so the output column count does not exceed the input count.     Returned columns carry a sector label:
+    kept, so the output column count does not exceed the input count.
+    Returned columns carry a sector label:
     [`FiniteIrrepSector`][qten.pointgroups.sectors.FiniteIrrepSector] for ordinary
     finite-group irreps,
-    [`SpinorIrrepSector`][qten.pointgroups.sectors.SpinorIrrepSector] for packaged
-    spinor irreps, or
+    [`SpinorIrrepSector`][qten.pointgroups.sectors.SpinorIrrepSector] for
+    projective spinor irreps, or
     [`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector] /
     [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for abelian
     phase sectors.
@@ -1131,6 +1200,14 @@ def point_group_column_symmetrize(
         If `True`, return every nonzero sector component of each input column.
         If `False`, keep only the largest nonzero sector component per input
         column.
+    fixpoint : Offset | None, optional
+        Desired invariant point. When set, each group element is wrapped as
+        a `PointGroupOpr` and recentered with `fixpoint_at` before `D(g)`
+        is assembled.
+    rebase_fixpoint : bool, default False
+        Forwarded to
+        [`PointGroupOpr.fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
+        as `rebase`.
 
     Returns
     -------
@@ -1281,6 +1358,10 @@ def joint_point_group_column_symmetrize(
     [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for the
     corresponding joint phase sector. Spinful columns carry one
     [`JointSpinfulPhaseSector`][qten.pointgroups.sectors.JointSpinfulPhaseSector].
+
+    This helper has no `fixpoint=` argument. Center each operator with
+    [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
+    before calling it.
 
     Parameters
     ----------

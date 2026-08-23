@@ -226,16 +226,17 @@ class U1Basis(
         ```python
         from sympy import ImmutableDenseMatrix
         from qten.geometries import AffineSpace, Offset
+        from qten.phys import Spin
         from qten.symbolics import U1Basis
 
         space = AffineSpace(ImmutableDenseMatrix.eye(1))
         r0 = Offset(ImmutableDenseMatrix([0]), space)
         r1 = Offset(ImmutableDenseMatrix([1]), space)
-        psi = U1Basis.new(r0, "spin-up")
+        psi = U1Basis.new(r0, Spin.up)
         out = psi.replace(r1)
 
         assert out.irrep_of(Offset) == r1
-        assert out.irrep_of(str) == "spin-up"
+        assert out.irrep_of(Spin) == Spin.up
         ```
         """
         target_type = type(irrep)
@@ -269,14 +270,15 @@ class U1Basis(
         ```python
         from sympy import ImmutableDenseMatrix
         from qten.geometries import AffineSpace, Offset
+        from qten.phys import Spin
         from qten.symbolics import U1Basis
 
         space = AffineSpace(ImmutableDenseMatrix.eye(1))
         r0 = Offset(ImmutableDenseMatrix([0]), space)
-        psi = U1Basis.new(r0, "spin-up")
+        psi = U1Basis.new(r0, Spin.up)
         local_label = psi.without(Offset)
 
-        assert local_label.irrep_of(str) == "spin-up"
+        assert local_label.irrep_of(Spin) == Spin.up
         ```
         """
         if not T:
@@ -316,14 +318,15 @@ class U1Basis(
         ```python
         from sympy import ImmutableDenseMatrix
         from qten.geometries import AffineSpace, Offset
+        from qten.phys import Spin
         from qten.symbolics import U1Basis
 
         space = AffineSpace(ImmutableDenseMatrix.eye(1))
         r0 = Offset(ImmutableDenseMatrix([0]), space)
-        psi = U1Basis.new(r0, "spin-up")
+        psi = U1Basis.new(r0, Spin.up)
 
         assert psi.irrep_of(Offset) == r0
-        assert psi.irrep_of(str) == "spin-up"
+        assert psi.irrep_of(Spin) == Spin.up
         ```
 
         Notes
