@@ -223,7 +223,11 @@ def _group_multiplication_table(group: FinitePointGroup) -> np.ndarray:
     table = np.empty((order, order), dtype=int)
     for i, left in enumerate(elements):
         for j, right in enumerate(elements):
-            table[i, j] = index[_matrix_key((left @ right).irrep)]
+            table[i, j] = index[
+                _matrix_key(
+                    sy.ImmutableDenseMatrix(sy.simplify(left.irrep @ right.irrep))
+                )
+            ]
     return table
 
 
