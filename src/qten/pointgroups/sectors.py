@@ -1,0 +1,54 @@
+"""
+Labels for projected point-group symmetry sectors.
+
+These tags mark Hilbert-space columns after
+[`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize]
+and the joint helpers. They are not group objects and do not live in
+[`ops`][qten.pointgroups.ops].
+"""
+
+from dataclasses import dataclass
+
+import sympy as sy
+
+
+@dataclass(frozen=True)
+class FiniteIrrepSector:
+    """Label for a finite-group non-abelian symmetry sector."""
+
+    group: str
+    irrep: str
+    dim: int
+
+
+@dataclass(frozen=True)
+class SpinorIrrepSector:
+    """Label for a finite double-valued point-group symmetry sector."""
+
+    group: str
+    irrep: str
+    dim: int
+    source: str = "qten-su2-principal-v1"
+
+
+@dataclass(frozen=True)
+class SpinfulPhaseSector:
+    r"""Label for an abelian spinorial sector with phase \(\omega^{2n}=1\)."""
+
+    phase: sy.Expr
+    spatial_order: int
+
+
+@dataclass(frozen=True)
+class JointSpinfulPhaseSector:
+    r"""Label for simultaneous spinorial phases of a commuting family."""
+
+    phases: tuple[sy.Expr, ...]
+    spatial_orders: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class SymmetryDegeneracy:
+    """Typed copy index for repeated symmetry-sector labels."""
+
+    index: int

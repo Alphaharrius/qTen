@@ -18,7 +18,6 @@ symbolic Hilbert-space data. Group definitions live in
 [`qten.pointgroups.finite`][qten.pointgroups.finite].
 """
 
-from dataclasses import dataclass
 from itertools import product
 from math import prod
 from typing import Any, Optional, Sequence, Tuple, cast
@@ -32,6 +31,13 @@ from .elements import (
     PointGroupOpr,
 )
 from .finite import FinitePointGroup, _matrix_key
+from .sectors import (
+    FiniteIrrepSector,
+    JointSpinfulPhaseSector,
+    SpinorIrrepSector,
+    SpinfulPhaseSector,
+    SymmetryDegeneracy,
+)
 from ..geometries import Lattice, Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
 from ..phys.spin import Spin, as_spin, contains_spin, expand_spin, su2_numeric
@@ -172,48 +178,6 @@ def _svd_independent_columns(
     return [
         Tensor(data=u[:, i : i + 1], dims=(row_dim, single_col)) for i in range(rank)
     ]
-
-
-@dataclass(frozen=True)
-class FiniteIrrepSector:
-    """Label for a finite-group non-abelian symmetry sector."""
-
-    group: str
-    irrep: str
-    dim: int
-
-
-@dataclass(frozen=True)
-class SpinorIrrepSector:
-    """Label for a finite double-valued point-group symmetry sector."""
-
-    group: str
-    irrep: str
-    dim: int
-    source: str = "qten-su2-principal-v1"
-
-
-@dataclass(frozen=True)
-class SpinfulPhaseSector:
-    r"""Label for an abelian spinorial sector with phase \(\omega^{2n}=1\)."""
-
-    phase: sy.Expr
-    spatial_order: int
-
-
-@dataclass(frozen=True)
-class JointSpinfulPhaseSector:
-    r"""Label for simultaneous spinorial phases of a commuting family."""
-
-    phases: tuple[sy.Expr, ...]
-    spatial_orders: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class SymmetryDegeneracy:
-    """Typed copy index for repeated symmetry-sector labels."""
-
-    index: int
 
 
 def point_group_operator_symmetrize(
@@ -1116,7 +1080,7 @@ def point_group_column_symmetrize(
     spinless symmetry sector is labeled by a phase \(\omega^n = 1\). For a
     spin-1/2 representation, this routine uses the safe common period
     \(N=2n\), because a \(2\pi\) proper spin rotation is \(-I\), and labels it by
-    [`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector].
+    [`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector].
     This function builds the full operator representation `G` on the ambient
     Hilbert space `w.dims[0]` and applies the projector
     \(P_\omega = \frac{1}{N}\sum_{k=0}^{N-1}\omega^{-k}G^k\),
@@ -1142,11 +1106,11 @@ def point_group_column_symmetrize(
     nonzero projected sector component is returned. When `full_sector` is
     `False`, only the dominant nonzero sector component of each input column is
     kept, so the output column count does not exceed the input count.     Returned columns carry a sector label:
-    [`FiniteIrrepSector`][qten.pointgroups.ops.FiniteIrrepSector] for ordinary
+    [`FiniteIrrepSector`][qten.pointgroups.sectors.FiniteIrrepSector] for ordinary
     finite-group irreps,
-    [`SpinorIrrepSector`][qten.pointgroups.ops.SpinorIrrepSector] for packaged
+    [`SpinorIrrepSector`][qten.pointgroups.sectors.SpinorIrrepSector] for packaged
     spinor irreps, or
-    [`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector] /
+    [`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector] /
     [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for abelian
     phase sectors.
 
@@ -1316,7 +1280,7 @@ def joint_point_group_column_symmetrize(
     each input column is kept. Spinless columns carry a representative common
     [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] for the
     corresponding joint phase sector. Spinful columns carry one
-    [`JointSpinfulPhaseSector`][qten.pointgroups.ops.JointSpinfulPhaseSector].
+    [`JointSpinfulPhaseSector`][qten.pointgroups.sectors.JointSpinfulPhaseSector].
 
     Parameters
     ----------

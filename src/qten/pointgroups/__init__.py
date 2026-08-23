@@ -92,12 +92,12 @@ and `fixpoint_at`.
 of generators, with ordinary / spinor class tables.
 [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] labels polynomial
 sectors.
-[`FiniteIrrepSector`][qten.pointgroups.ops.FiniteIrrepSector] /
-[`SpinorIrrepSector`][qten.pointgroups.ops.SpinorIrrepSector] /
-[`SpinfulPhaseSector`][qten.pointgroups.ops.SpinfulPhaseSector] /
-[`JointSpinfulPhaseSector`][qten.pointgroups.ops.JointSpinfulPhaseSector]
+[`FiniteIrrepSector`][qten.pointgroups.sectors.FiniteIrrepSector] /
+[`SpinorIrrepSector`][qten.pointgroups.sectors.SpinorIrrepSector] /
+[`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector] /
+[`JointSpinfulPhaseSector`][qten.pointgroups.sectors.JointSpinfulPhaseSector]
 label projected columns.
-[`SymmetryDegeneracy`][qten.pointgroups.ops.SymmetryDegeneracy] tags repeated
+[`SymmetryDegeneracy`][qten.pointgroups.sectors.SymmetryDegeneracy] tags repeated
 copies of the same sector.
 [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr] assembles \(D(g)\).
 [`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize]
@@ -117,12 +117,14 @@ from .elements import (
 )
 from .basis import PointGroupBasis as PointGroupBasis
 from .finite import FinitePointGroup as FinitePointGroup
-from .ops import (
+from .sectors import (
     FiniteIrrepSector as FiniteIrrepSector,
     JointSpinfulPhaseSector as JointSpinfulPhaseSector,
     SpinorIrrepSector as SpinorIrrepSector,
     SpinfulPhaseSector as SpinfulPhaseSector,
     SymmetryDegeneracy as SymmetryDegeneracy,
+)
+from .ops import (
     get_direct_transform as get_direct_transform,
     hilbert_repr as hilbert_repr,
     joint_point_group_basis as joint_point_group_basis,
