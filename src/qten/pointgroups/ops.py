@@ -192,10 +192,14 @@ def point_group_operator_symmetrize(
     Average an operator over a finite point group by unitary conjugation.
 
     This computes
-    \(A_G = |G|^{-1}\sum_g D(g) A D(g)^\dagger\). Unlike character
-    projection of state vectors, conjugation averaging does not need ordinary
-    or spinor characters: the sign ambiguity of each SU(2) lift cancels
-    between \(D(g)\) and \(D(g)^\dagger\).
+    \[
+    A_G = |G|^{-1}\sum_{g\in G} D(g)\,A\,D(g)^\dagger.
+    \]
+    The average commutes with every \(D(h)\). Unlike character projection of
+    state vectors, conjugation averaging does not need ordinary or spinor
+    characters: if a lift is replaced by \(\eta(g)u(g)\) with
+    \(\eta(g)\in\{\pm 1\}\), the same factor appears in \(D(g)\) and
+    \(D(g)^\dagger\) and cancels.
 
     The two matrix dimensions of `operator` must describe the same
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace]. That space
@@ -588,6 +592,11 @@ def spinful_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Span:
     r"""
     Apply \(D_{\mathrm{orb}}(g)\otimes u(g)\) to a single basis state.
 
+    On a product label \(|\mathrm{orb},s\rangle\),
+    \[
+    D(g)|\mathrm{orb},s\rangle
+    =\sum_{s'}u(g)_{s's}\,|g\cdot\mathrm{orb},\,s'\rangle.
+    \]
     Spatial irreps that `opr` allows are transformed as usual. The
     [`Spin`][qten.phys.spin.Spin] irrep is expanded with the SU(2) factor.
     Returns a [`U1Span`][qten.symbolics.hilbert_space.U1Span] because spin
@@ -630,7 +639,8 @@ def spinful_hilbert_opr_repr(
     r"""
     Matrix of \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\) on a spinful Hilbert space.
 
-    Fast path: compute the SU(2) factor once, cache the orbital image of each
+    Columns of \(u(g)\) are ordered \((\uparrow,\downarrow)\). Fast path:
+    compute the SU(2) factor once, cache the orbital image of each
     distinct non-spin irrep tuple, and scatter numerical amplitudes into a dense
     matrix. This avoids per-basis SymPy Gram assembly used by the earlier
     prototype and is suitable for full finite-group symmetrization.
@@ -947,13 +957,18 @@ def hilbert_repr(
     r"""
     Assemble the Hilbert-space representation \(D(g)\) of a point operation.
 
-    Each basis irrep is transformed on its own: lattice
+    Spinless spaces use \(D(g)=D_{\mathrm{orb}}(g)\). Spinful spaces use
+    \[
+    D(g)\,|\mathrm{orb},s\rangle
+    =\sum_{s'}u(g)_{s's}\,|g\cdot\mathrm{orb},\,s'\rangle,
+    \]
+    i.e. \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\). Each basis irrep is
+    transformed on its own: lattice
     [`Offset`][qten.geometries.spatials.Offset] labels may be folded back into
     the unit cell, [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
     polynomials are canonicalized onto labels already present in `space`, and
-    [`Spin`][qten.phys.spin.Spin] is expanded by the SU(2) lift. The same
-    assembler is used for spinless and spinful spaces. This function has no
-    `fixpoint=`; recenter `opr` with
+    [`Spin`][qten.phys.spin.Spin] is expanded by the SU(2) lift. This
+    function has no `fixpoint=`; recenter `opr` with
     [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
     first.
 
@@ -1147,27 +1162,29 @@ def point_group_column_symmetrize(
     r"""
     Symmetrize the columns of `w` by projecting each one onto symmetry sectors.
 
-    For a finite-order abelian operator `opr` of order \(n\), each exact
-    spinless symmetry sector is labeled by a phase \(\omega^n = 1\). For a
-    spin-1/2 representation, this routine uses the safe common period
-    \(N=2n\), because a \(2\pi\) proper spin rotation is \(-I\), and labels it by
+    For a finite-order abelian operator `opr` of spatial order \(n\), each
+    exact spinless sector is labeled by a root of unity \(\zeta^n=1\). For
+    spin-1/2 the safe common period is \(N=2n\), because a \(2\pi\) proper
+    spin rotation is \(-I\), and the sector is a
     [`SpinfulPhaseSector`][qten.pointgroups.sectors.SpinfulPhaseSector].
-    This function builds the full operator representation `G` on the ambient
-    Hilbert space `w.dims[0]` and applies the projector
-    \(P_\omega = \frac{1}{N}\sum_{k=0}^{N-1}\omega^{-k}G^k\).
-    Here \(N=n\) for spinless spaces and \(N=2n\) for spinful spaces; \(2n\)
-    need not be the minimal order for operations whose proper spin factor is
-    identity.
+    The projector on \(G=D(g)\) is
+    \[
+    P_\zeta=\frac{1}{N}\sum_{k=0}^{N-1}\zeta^{-k}G^k,\qquad\zeta^N=1,
+    \]
+    with \(N=n\) spinless and \(N=2n\) spinful. The period \(2n\) need not
+    be minimal when the proper spin factor is already the identity.
 
-    If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup], this
-    routine uses the character projector
-    \(P^\mu = \frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^* D(g)\). Spinless
-    spaces use ordinary irreps (packaged or computed). Spaces that already
+    If `opr` is a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup],
+    this routine uses
+    \[
+    P^\mu=\frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^*D(g).
+    \]
+    Spinless spaces use ordinary (linear) \(\chi\). Spaces that already
     contain [`Spin`][qten.phys.spin.Spin] use the group's SU(2) section and
-    projective spinor characters, unless the group was defined with
-    `spin="trivial"`. A cyclic [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr]
-    is the abelian special case of the same formula: one-dimensional phase
-    characters with period \(n\) or \(2n\).
+    element-wise projective \(\chi\), unless the group was defined with
+    `spin="trivial"`. A cyclic
+    [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] is the
+    abelian special case: one-dimensional characters \(\zeta^k\).
 
     The projector is applied to each input column separately. When
     `full_sector` is `True`, every
@@ -1344,13 +1361,15 @@ def joint_point_group_column_symmetrize(
     *,
     group: FinitePointGroup | None = None,
 ) -> Tensor:
-    """
+    r"""
     Symmetrize columns of `w` into simultaneous sectors of abelian operators.
 
     The operators in `oprs` are expected to commute on `w.dims[0]`. For each
-    operator, this builds the same sector projectors as
-    [`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize], then projects each column onto every joint
-    sector in the Cartesian product of those sector decompositions.
+    operator this builds the same \(P_\zeta\) as
+    [`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize].
+    A joint sector is the product projector
+    \(P_{\zeta_1}\cdots P_{\zeta_m}\) over the Cartesian product of those
+    roots of unity.
 
     When `full_sector` is `True`, every nonzero joint-sector component is
     returned. When `False`, only the dominant nonzero joint-sector component of

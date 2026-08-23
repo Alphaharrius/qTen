@@ -16,9 +16,17 @@ code later asks [`contains_spin`][qten.phys.spin.contains_spin]; you do not
 call `.with_spin` on the group.
 
 Electron spin always lives in \(\mathbb{C}^2\). The spatial model can be 1D,
-2D, or 3D. The map from a point operation to spin is the SU(2) lift of that
-operation's stored 3D rotation `rotation3`, not a padded copy of the small
-spatial matrix.
+2D, or 3D. The map from a point operation \(g\) to spin is the principal
+\(SU(2)\) lift of the stored 3D rotation \(R(g)\in O(3)\), not a padded copy
+of the small spatial matrix. Improper isometries first drop inversion,
+\(R_+(g)=(\det R(g))\,R(g)\in SO(3)\), because spatial inversion does not
+act on spin-1/2. Then
+\[
+u(g)=\cos(\theta/2)\,I-i\sin(\theta/2)\,\hat n\cdot\boldsymbol\sigma,
+\]
+where \(R_+(g)\) has axis \(\hat n\) and angle \(\theta\in[0,\pi]\). The
+cover is two-to-one: \(u\) and \(-u\) determine the same \(R_+\). QTen
+takes the principal branch \(\operatorname{Re}\operatorname{tr}u\ge 0\).
 
 ```python
 from qten.phys import Spin, su2_of_point_group

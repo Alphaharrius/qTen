@@ -1,7 +1,17 @@
-"""Projective character tables from a group's own SU(2) section.
+r"""Projective character tables from a group's own SU(2) section.
 
 Ordinary Bilbao class tables stay packaged. Spinor characters are computed
-from QTen's principal lift so they match ``D(g) = D_orb(g) ⊗ u(g)``.
+from QTen's principal lift so they match
+\(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\).
+
+The lifts define a 2-cocycle
+\(u(g)u(h)=\omega(g,h)\,u(gh)\), \(\omega(g,h)\in\{\pm 1\}\). The hat group
+of order \(2|G|\) is the central extension with product
+\((\eta,g)(\zeta,h)=(\eta\zeta\,\omega(g,h),\,gh)\). Linear irreps of the
+hat group with \(\chi(-1)=-\chi(1)\) are the projective spinor irreps of
+\(G\). A conjugacy class of \(G\) is \(\omega\)-regular when \(\chi\) is
+constant on it; otherwise the class average is written as \(0\) and
+projectors use the element-wise hat-table section instead.
 """
 
 from __future__ import annotations
@@ -234,7 +244,11 @@ def _group_multiplication_table(group: FinitePointGroup) -> np.ndarray:
 def factor_system_and_lifts(
     group: FinitePointGroup,
 ) -> tuple[np.ndarray, list[list[list[complex]]]]:
-    """Return ω(g, h) and the numeric SU(2) lifts in ``elements()`` order."""
+    r"""Return \(\omega(g,h)\) and the numeric SU(2) lifts in ``elements()`` order.
+
+    The integer matrix satisfies
+    \(u(g_i)u(g_j)=\omega_{ij}\,u(g_i g_j)\) with \(\omega_{ij}\in\{\pm 1\}\).
+    """
     elements = group.elements()
     lifts = [su2_numeric(element) for element in elements]
     mult = _group_multiplication_table(group)
@@ -284,7 +298,13 @@ def _encode_class_character(value: complex) -> int | float | list[float]:
 
 
 def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
-    """Build a class-wise spinor table from the group's own SU(2) section."""
+    r"""Build a class-wise spinor table from the group's own SU(2) section.
+
+    Linear characters of the hat group with \(\chi(-1)=-\dim\) are kept as
+    projective irreps of \(G\). Each packaged class entry is the average of
+    those values, or \(0\) if the class is not \(\omega\)-regular.
+    `characters_by_element` stores the hat-table section used by projectors.
+    """
     elements = group.elements()
     if not elements:
         raise ValueError("Cannot compute spinor irreps of an empty group.")
@@ -394,7 +414,12 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
 
 
 def compute_ordinary_irreps(group: FinitePointGroup) -> dict[str, Any]:
-    """Build a class-wise ordinary table from the generated group."""
+    r"""Build a class-wise ordinary table from the generated group.
+
+    Linear characters of \(G\) from the class algebra; they satisfy
+    \(\sum_\mu d_\mu^2=|G|\) and are class functions, so no element-wise
+    section is stored.
+    """
     elements = group.elements()
     if not elements:
         raise ValueError("Cannot compute irreps of an empty group.")

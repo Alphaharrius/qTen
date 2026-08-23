@@ -9,8 +9,18 @@ state is what makes a Hilbert space spinful; see
 constructor-level workflow.
 
 Crystal rotations act on spin through the spin-1/2 cover \(u(g)\in SU(2)\)
-of the proper part of the stored 3D rotation \(R(g)\in O(3)\). Because a
-generic \(SU(2)\) matrix maps one spin state to a superposition, the
+of the proper part of the stored 3D rotation \(R(g)\in O(3)\):
+\[
+R_+(g)=(\det R(g))\,R(g),\qquad
+u(g)=\cos(\theta/2)\,I-i\sin(\theta/2)\,\hat n\cdot\boldsymbol\sigma,
+\]
+with \(\cos\theta=(\operatorname{tr}R_+-1)/2\) and \(\theta\in[0,\pi]\).
+Both signs \(\pm u\) cover the same \(R_+\); the principal branch keeps
+\(\operatorname{Re}\operatorname{tr}u\ge 0\). The chosen section is a
+2-cocycle,
+\(u(g)u(h)=\omega(g,h)\,u(gh)\) with \(\omega(g,h)\in\{\pm 1\}\).
+
+A generic \(SU(2)\) matrix maps one spin state to a superposition, so the
 single-outcome contract `PointGroupOpr @ Spin -> Spin` cannot express the
 full action and raises. Use [`expand_spin`][qten.phys.spin.expand_spin]
 together with [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr]. The lift
@@ -174,10 +184,10 @@ def proper_rotation_matrix(R: sy.Matrix) -> sy.ImmutableDenseMatrix:
     r"""
     Return the proper \(SO(3)\) factor used for the spinor lift.
 
-    For \(\det R = +1\), returns `R`. For improper isometries
-    (\(\det R = -1\)), returns `-R` (det \(+1\)), since spatial inversion
-    does not act on spin-1/2 and any improper \(g\) is inversion composed
-    with a proper rotation.
+    Returns \(R_+=(\det R)\,R\). For \(\det R=+1\) this is \(R\). For an
+    improper isometry (\(\det R=-1\)) it is \(-R\) (now det \(+1\)):
+    \(R=i\circ R_+\) with spatial inversion \(i=-I\), and inversion does
+    not act on spin-1/2, so the lift uses \(R_+\) only.
     """
     M, det_sign = _validated_o3_matrix(R, require_proper=False)
     if det_sign == 1:
@@ -192,10 +202,11 @@ def _matrix_cache_key(M: sy.Matrix) -> tuple:
 
 
 def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
-    """Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows.
+    r"""Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows.
 
-    Numeric helper used by the inexact-matrix path of
-    [`su2_from_so3`][qten.phys.spin.su2_from_so3]. Prefer
+    Same section as [`su2_from_so3`][qten.phys.spin.su2_from_so3]: first form
+    \(R_+=(\det R)\,R\), then the quaternion with \(w=\cos(\theta/2)\ge 0\).
+    Numeric helper for inexact matrices. Prefer
     [`su2_of_point_group`][qten.phys.spin.su2_of_point_group] at the
     point-group API.
     """
@@ -356,9 +367,16 @@ def su2_from_so3(R: sy.Matrix) -> sy.ImmutableDenseMatrix:
     r"""
     Lift an \(SO(3)\) matrix to one \(SU(2)\) factor \(u(R)\).
 
-    Uses the axis-angle form
-    \(u = \cos(\theta/2)\,I - i\sin(\theta/2)\,\hat n\cdot\boldsymbol\sigma\),
-    with a continuous branch at the identity.
+    Writes \(R\) in axis-angle form,
+    \(\cos\theta=(\operatorname{tr}R-1)/2\), \(\theta\in[0,\pi]\), and
+    returns
+    \[
+    u=\cos(\theta/2)\,I-i\sin(\theta/2)\,\hat n\cdot\boldsymbol\sigma.
+    \]
+    Both \(\pm u\) cover the same \(R\). The principal branch is the one
+    continuous from the identity, equivalently
+    \(\operatorname{Re}\operatorname{tr}u\ge 0\). At \(\theta=\pi\) the
+    two signs are equally valid; an axis convention picks one.
 
     Parameters
     ----------
@@ -446,10 +464,12 @@ def su2_of_point_group(
     r"""
     Return the SU(2) factor of a point operation in the Cartesian spin frame.
 
-    Uses the stored `rotation3` (or the 3D `irrep` when that is already
-    Cartesian). A group built with `spin="trivial"` returns \(I\). A 1D or
-    2D element with no `rotation3` raises: the lift is not a padded copy of
-    the spatial matrix.
+    Reads the stored \(R(g)\) (`rotation3`, or the 3D `irrep` when that is
+    already Cartesian) and returns
+    \(u(g)=u\bigl(R_+(g)\bigr)\) with
+    \(R_+=(\det R)\,R\). A group built with `spin="trivial"` returns \(I\).
+    A 1D or 2D element with no `rotation3` raises: the lift is not a padded
+    copy of the spatial matrix.
 
     Parameters
     ----------
@@ -481,6 +501,12 @@ def expand_spin(
 ) -> Tuple[Tuple[sy.Expr, Spin], ...]:
     r"""
     Expand \(u(g)|s\rangle\) in the \(\{|\uparrow\rangle,|\downarrow\rangle\}\) basis.
+
+    Columns of \(u(g)\) are ordered \((\uparrow,\downarrow)\), so
+    \[
+    u(g)|s\rangle=\sum_{s'}u(g)_{s's}\,|s'\rangle
+    \]
+    with only the nonzero amplitudes returned.
 
     Parameters
     ----------

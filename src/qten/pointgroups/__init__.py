@@ -59,13 +59,34 @@ w = point_group_column_symmetrize(td, seed, fixpoint=center)
 D = hilbert_repr(PointGroupOpr(td.elements()[0]).fixpoint_at(center), space)
 ```
 
-On a spinful space, \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\). Finite groups
-use character projectors
-\(P^\mu=\frac{d_\mu}{|G|}\sum_g\chi^\mu(g)^*D(g)\). Ordinary \(\chi\) if the
-space has no `Spin`; projective spinor \(\chi\) if it does (unless the group
-was built with `spin="trivial"`). Cyclic
-[`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] is the abelian
-case of the same formula (period \(n\) or \(2n\)).
+Mathematics
+-----------
+On a spinless space, \(D(g)=D_{\mathrm{orb}}(g)\). On a spinful space
+\[
+D(g)=D_{\mathrm{orb}}(g)\otimes u(g),
+\]
+where \(u(g)\in SU(2)\) is the principal lift of \(R_+(g)=(\det R(g))\,R(g)\).
+The section is a 2-cocycle,
+\(u(g)u(h)=\omega(g,h)\,u(gh)\) with \(\omega(g,h)\in\{\pm 1\}\).
+
+Finite groups use the character projector
+\[
+P^\mu=\frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^*D(g).
+\]
+Ordinary (linear) \(\chi\) if the space has no `Spin`; projective spinor
+\(\chi\) if it does, unless the group was built with `spin="trivial"`.
+Class-wise spinor rows vanish on non-\(\omega\)-regular classes; the
+projector uses the element-wise hat-table section, not those averages.
+
+A cyclic [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] of
+spatial order \(n\) is the abelian case of the same formula,
+\[
+P_\zeta=\frac{1}{N}\sum_{k=0}^{N-1}\zeta^{-k}D(g)^k,\qquad\zeta^N=1,
+\]
+with \(N=n\) spinless and \(N=2n\) spinful (\(u(2\pi)=-I\)). Operator
+twirling needs no \(\chi\):
+\(A_G=|G|^{-1}\sum_g D(g)AD(g)^\dagger\). The sign of each lift cancels
+between \(D(g)\) and \(D(g)^\dagger\).
 
 Joint spinful projection of several operators needs `group=` the same
 already-defined \(G\).
