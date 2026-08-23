@@ -1210,6 +1210,24 @@ class Tensor(
         """
         return mean(self, dim)
 
+    def amin(
+        self, dim: Optional[Union[int, Tuple[int, ...]]] = None
+    ) -> Union[Self, "Tensor"]:
+        """Return minimum values, removing the reduced symbolic axes.
+
+        With ``dim=None``, reduce all axes and return a rank-0 tensor.
+        """
+        return _extreme_reduction(self, dim, torch.amin)
+
+    def amax(
+        self, dim: Optional[Union[int, Tuple[int, ...]]] = None
+    ) -> Union[Self, "Tensor"]:
+        """Return maximum values, removing the reduced symbolic axes.
+
+        With ``dim=None``, reduce all axes and return a rank-0 tensor.
+        """
+        return _extreme_reduction(self, dim, torch.amax)
+
     def norm(
         self,
         ord: Optional[Union[int, float, str]] = None,
@@ -3968,6 +3986,43 @@ def mean(
         for idx, current_dim in enumerate(tensor.dims)
         if idx not in reduced_dims_set
     )
+    return cast(
+        TensorType,
+        _wrap_tensor_result(
+            tensor,
+            data=reduced,
+            dims=new_dims,
+            preserve_strict=False,
+        ),
+    )
+
+
+def _extreme_reduction(
+    tensor: TensorType,
+    dim: Optional[Union[int, Tuple[int, ...]]],
+    operation: Callable[..., torch.Tensor],
+) -> Union[TensorType, Tensor]:
+    if dim is None:
+        reduced = operation(tensor.data)
+        new_dims: Tuple[StateSpace, ...] = ()
+    else:
+        rank_ = tensor.rank()
+        dims_tuple = (dim,) if isinstance(dim, int) else dim
+        normalized_dims: list[int] = []
+        for d in dims_tuple:
+            nd = d + rank_ if d < 0 else d
+            if nd < 0 or nd >= rank_:
+                raise IndexError(f"Dimension index {d} out of range for rank {rank_}")
+            normalized_dims.append(nd)
+
+        reduced = operation(tensor.data, dim=dim)
+        reduced_dims = set(normalized_dims)
+        new_dims = tuple(
+            current_dim
+            for idx, current_dim in enumerate(tensor.dims)
+            if idx not in reduced_dims
+        )
+
     return cast(
         TensorType,
         _wrap_tensor_result(

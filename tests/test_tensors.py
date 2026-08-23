@@ -1474,6 +1474,37 @@ def test_tensor_mean_supports_tuple_dims():
     assert torch.allclose(out.data, data.mean(dim=(0, 2)))
 
 
+@pytest.mark.parametrize(
+    ("method_name", "torch_operation"), (("amin", torch.amin), ("amax", torch.amax))
+)
+def test_tensor_extreme_reductions_preserve_remaining_dims(
+    method_name, torch_operation
+):
+    left = _simple_hilbert("left", 2)
+    mid = _simple_hilbert("mid", 3)
+    right = _simple_hilbert("right", 4)
+    data = torch.randn(left.dim, mid.dim, right.dim, dtype=torch.float64)
+    tensor = Tensor(data=data, dims=(left, mid, right))
+
+    out = getattr(tensor, method_name)((0, -1))
+
+    assert out.dims == (mid,)
+    assert torch.equal(out.data, torch_operation(data, dim=(0, -1)))
+
+
+@pytest.mark.parametrize(("method_name", "expected"), (("amin", -2.0), ("amax", 4.0)))
+def test_tensor_extreme_reductions_without_dim_return_scalar(method_name, expected):
+    space = _simple_hilbert("space", 3)
+    tensor = Tensor(
+        data=torch.tensor([4.0, -2.0, 1.0], dtype=torch.float64), dims=(space,)
+    )
+
+    out = getattr(tensor, method_name)()
+
+    assert out.dims == ()
+    assert out.item() == expected
+
+
 def test_tensor_argmax_reduces_selected_dim():
     left = _simple_hilbert("left", 2)
     mid = _simple_hilbert("mid", 3)

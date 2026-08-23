@@ -27,8 +27,10 @@ Unlike the routines in [`qten.linalg.decompose`][qten.linalg.decompose], these
 functions return a transformed tensor rather than decomposition factors.
 """
 
-from .decompose import eigh
-from .tensors import Tensor, einsum
+from typing import cast
+
+from .decompose import svd
+from .tensors import Tensor
 
 
 def lowdin_orthonormalize(tensor: Tensor, rank_tolerance: float = 1e-10) -> Tensor:
@@ -69,21 +71,20 @@ def lowdin_orthonormalize(tensor: Tensor, rank_tolerance: float = 1e-10) -> Tens
     if rank_tolerance < 0:
         raise ValueError("rank_tolerance must be non-negative.")
 
-    gram = tensor.h(-2, -1) @ tensor
-    eigenvalues, eigenvectors = eigh(gram)
-    minimum_eigenvalue = eigenvalues.data.amin()
-    if minimum_eigenvalue <= rank_tolerance:
+    if tensor.dims[-1].dim > tensor.dims[-2].dim:
+        minimum_gram_eigenvalue = 0.0
         raise RuntimeError(
             "Lowdin orthonormalization encountered linearly dependent columns: "
-            f"minimum Gram eigenvalue={minimum_eigenvalue.item():.6e}."
+            f"minimum Gram eigenvalue={minimum_gram_eigenvalue:.6e}."
         )
 
-    inverse_sqrt_eigenvalues = Tensor(
-        data=eigenvalues.data.rsqrt().to(dtype=eigenvectors.data.dtype),
-        dims=eigenvalues.dims,
-    )
-    scaled_eigenvectors = einsum(
-        "...ij,...j->...ij", eigenvectors, inverse_sqrt_eigenvalues
-    )
-    inverse_sqrt = scaled_eigenvectors @ eigenvectors.h(-2, -1)
-    return tensor @ inverse_sqrt
+    decomposition = svd(tensor, full_matrices=False)
+    minimum_singular_value = cast(float, decomposition.S.amin().item())
+    minimum_gram_eigenvalue = minimum_singular_value**2
+    if minimum_gram_eigenvalue <= rank_tolerance:
+        raise RuntimeError(
+            "Lowdin orthonormalization encountered linearly dependent columns: "
+            f"minimum Gram eigenvalue={minimum_gram_eigenvalue:.6e}."
+        )
+
+    return decomposition.U @ decomposition.Vh

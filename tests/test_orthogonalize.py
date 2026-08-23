@@ -59,3 +59,23 @@ def test_lowdin_orthonormalize_rejects_linearly_dependent_columns():
 
     with pytest.raises(RuntimeError, match="linearly dependent columns"):
         lowdin_orthonormalize(Tensor(data=data, dims=(space, columns)))
+
+
+def test_lowdin_orthonormalize_rejects_more_columns_than_rows():
+    rows = _space("row", 2)
+    columns = _space("col", 3)
+    data = torch.randn(2, 3, dtype=torch.float64)
+
+    with pytest.raises(RuntimeError, match="linearly dependent columns"):
+        lowdin_orthonormalize(Tensor(data=data, dims=(rows, columns)))
+
+
+def test_lowdin_rank_tolerance_retains_gram_eigenvalue_semantics():
+    space = _space("row", 2)
+    columns = _space("col", 2)
+    data = torch.diag(torch.tensor([1.0, 1e-4], dtype=torch.float64))
+    tensor = Tensor(data=data, dims=(space, columns))
+
+    lowdin_orthonormalize(tensor, rank_tolerance=0.9e-8)
+    with pytest.raises(RuntimeError, match="linearly dependent columns"):
+        lowdin_orthonormalize(tensor, rank_tolerance=1.1e-8)
