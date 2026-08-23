@@ -200,7 +200,7 @@ def _group_from_record(record: dict[str, Any], spin: str) -> FinitePointGroup:
 
 def verify_spinor_factor_system(group: FinitePointGroup) -> None:
     r"""
-    Check that the group's SU(2) section is consistent and its spinor table
+    Check that the group's \(SU(2)\) section is consistent and its spinor table
     is a complete set of projective irreps of \(G\).
     """
     from ._characters import factor_system_and_lifts

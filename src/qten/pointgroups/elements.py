@@ -1,10 +1,10 @@
-"""
+r"""
 Symbolic point-group element representations.
 
 This module defines the core single-element objects used by QTen's symmetry
 machinery. [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
 stores an exact linear representation (`irrep` on the model, optional
-`rotation3` in O(3), and a construction-time `spin` policy), derives
+`rotation3` in \(O(3)\), and a construction-time `spin` policy), derives
 Euclidean polynomial bases, and computes symbolic eigen-basis sectors.
 [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] couples that linear
 action with an affine offset. Polynomial sector labels live in
@@ -121,7 +121,7 @@ class PointGroupElement(Opr):
     axes : Tuple[sy.Symbol, ...]
         Ordered coordinate symbols on which `irrep` acts.
     rotation3 : sy.ImmutableDenseMatrix | None, optional
-        The same physical operation as a Cartesian O(3) matrix, used to lift
+        The same physical operation as a Cartesian \(O(3)\) matrix, used to lift
         spin-1/2. Three-dimensional groups may leave this unset and use
         `irrep`. Lower-dimensional groups must set it at construction.
     spin : str, default `"electron"`
@@ -136,7 +136,7 @@ class PointGroupElement(Opr):
     axes : Tuple[sy.Symbol, ...]
         Ordered coordinate symbols on which `irrep` acts.
     rotation3 : sy.ImmutableDenseMatrix | None
-        Stored 3D rotation used for the SU(2) lift, or `None` when `irrep`
+        Stored 3D rotation used for the \(SU(2)\) lift, or `None` when `irrep`
         is already that 3D matrix.
     spin : str
         `"electron"` or `"trivial"`, fixed at construction.
@@ -187,16 +187,16 @@ class PointGroupElement(Opr):
     ambient coordinate basis for all derived polynomial representations.
     """
     rotation3: sy.ImmutableDenseMatrix | None = None
-    """
-    The same physical operation as a Cartesian O(3) matrix, used to lift
+    r"""
+    The same physical operation as a Cartesian \(O(3)\) matrix, used to lift
     spin-1/2. Three-dimensional groups may leave this unset and use `irrep`.
     Lower-dimensional groups must set it at construction; it is not inferred
     by padding `irrep` at lift time.
     """
     spin: str = "electron"
-    """
-    Spin policy fixed at construction. ``"electron"`` uses the SU(2) lift of
-    `rotation3`. ``"trivial"`` uses ``u(g)=I``.
+    r"""
+    Spin policy fixed at construction. ``"electron"`` uses the \(SU(2)\) lift of
+    `rotation3`. ``"trivial"`` uses \(u(g)=I\).
     """
 
     def with_irrep(
@@ -622,7 +622,7 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
     [`fixpoint_at(...)`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at].
     Applying the operator to a [`Spin`][qten.phys.spin.Spin] label or a
     spinful [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] raises: a generic
-    SU(2) factor produces a superposition. Use
+    \(SU(2)\) factor produces a superposition. Use
     [`expand_spin`][qten.phys.spin.expand_spin] or
     [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
     """

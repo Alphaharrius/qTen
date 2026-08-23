@@ -1,4 +1,4 @@
-r"""Projective character tables from a group's own SU(2) section.
+r"""Projective character tables from a group's own \(SU(2)\) section.
 
 Ordinary Bilbao class tables stay packaged. Spinor characters are computed
 from QTen's principal lift so they match
@@ -244,7 +244,7 @@ def _group_multiplication_table(group: FinitePointGroup) -> np.ndarray:
 def factor_system_and_lifts(
     group: FinitePointGroup,
 ) -> tuple[np.ndarray, list[list[list[complex]]]]:
-    r"""Return \(\omega(g,h)\) and the numeric SU(2) lifts in ``elements()`` order.
+    r"""Return \(\omega(g,h)\) and the numeric \(SU(2)\) lifts in ``elements()`` order.
 
     The integer matrix satisfies
     \(u(g_i)u(g_j)=\omega_{ij}\,u(g_i g_j)\) with \(\omega_{ij}\in\{\pm 1\}\).
@@ -298,7 +298,7 @@ def _encode_class_character(value: complex) -> int | float | list[float]:
 
 
 def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
-    r"""Build a class-wise spinor table from the group's own SU(2) section.
+    r"""Build a class-wise spinor table from the group's own \(SU(2)\) section.
 
     Linear characters of the hat group with \(\chi(-1)=-\dim\) are kept as
     projective irreps of \(G\). Each packaged class entry is the average of

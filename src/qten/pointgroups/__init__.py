@@ -4,7 +4,7 @@ Point-group symmetry helpers.
 Two rules decide spin and geometry:
 
 1. Spin follows the Hilbert space. If a basis already carries
-   [`Spin`][qten.phys.spin.Spin], projection uses the SU(2) lift. If it does
+   [`Spin`][qten.phys.spin.Spin], projection uses the \(SU(2)\) lift. If it does
    not, the group is ordinary. There is no `.with_spin`.
 2. Geometry is written in the constructor. `plane=` / `axis=` / `spin=` belong
    on that one `pointgroup(...)` call. Move the origin later with `fixpoint=`

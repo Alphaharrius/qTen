@@ -157,7 +157,7 @@ def pointgroup(
     character table. Named crystallographic queries such as `C4v` or `-43m`
     return a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup]
     with packaged ordinary Bilbao characters. Spinor characters come from
-    QTen's SU(2) lift: packaged for catalog groups, computed live otherwise.
+    QTen's \(SU(2)\) lift: packaged for catalog groups, computed live otherwise.
     Use `plane=` / `axis=` at construction to fix the spatial frame;
     `spin="trivial"` is a define-time exception that sets `u(g)=I`. Hilbert
     spaces that already contain `Spin` use the spinor table.

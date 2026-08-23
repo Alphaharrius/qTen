@@ -2,7 +2,7 @@ r"""
 Point-group operations on symbolic bases and tensors.
 
 This module combines point-group transforms with QTen Hilbert spaces and
-tensors. The helpers assemble \(D(g)\) (including the SU(2) factor on a
+tensors. The helpers assemble \(D(g)\) (including the \(SU(2)\) factor on a
 spinful space), twirl operators by conjugation, and project columns into
 abelian phase sectors, ordinary finite-group irreps, or projective spinor
 irreps.
@@ -598,7 +598,7 @@ def spinful_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Span:
     =\sum_{s'}u(g)_{s's}\,|g\cdot\mathrm{orb},\,s'\rangle.
     \]
     Spatial irreps that `opr` allows are transformed as usual. The
-    [`Spin`][qten.phys.spin.Spin] irrep is expanded with the SU(2) factor.
+    [`Spin`][qten.phys.spin.Spin] irrep is expanded with the \(SU(2)\) factor.
     Returns a [`U1Span`][qten.symbolics.hilbert_space.U1Span] because spin
     mixing generally produces a superposition.
     """
@@ -640,7 +640,7 @@ def spinful_hilbert_opr_repr(
     Matrix of \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\) on a spinful Hilbert space.
 
     Columns of \(u(g)\) are ordered \((\uparrow,\downarrow)\). Fast path:
-    compute the SU(2) factor once, cache the orbital image of each
+    compute the \(SU(2)\) factor once, cache the orbital image of each
     distinct non-spin irrep tuple, and scatter numerical amplitudes into a dense
     matrix. This avoids per-basis SymPy Gram assembly used by the earlier
     prototype and is suitable for full finite-group symmetrization.
@@ -770,7 +770,7 @@ def get_direct_transform(
     `space`. Instead it explicitly constructs the transformed output
     [`HilbertSpace`][qten.symbolics.hilbert_space.HilbertSpace] and returns a one-hot mapping matrix with dims `(space, out_space)`.
 
-    Spinful Hilbert spaces are rejected: a generic SU(2) factor maps one
+    Spinful Hilbert spaces are rejected: a generic \(SU(2)\) factor maps one
     basis state to a superposition, which this one-to-one mapping cannot
     express. Use [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr] instead.
 
@@ -967,7 +967,7 @@ def hilbert_repr(
     [`Offset`][qten.geometries.spatials.Offset] labels may be folded back into
     the unit cell, [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]
     polynomials are canonicalized onto labels already present in `space`, and
-    [`Spin`][qten.phys.spin.Spin] is expanded by the SU(2) lift. This
+    [`Spin`][qten.phys.spin.Spin] is expanded by the \(SU(2)\) lift. This
     function has no `fixpoint=`; recenter `opr` with
     [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
     first.
@@ -1180,7 +1180,7 @@ def point_group_column_symmetrize(
     P^\mu=\frac{d_\mu}{|G|}\sum_{g\in G}\chi^\mu(g)^*D(g).
     \]
     Spinless spaces use ordinary (linear) \(\chi\). Spaces that already
-    contain [`Spin`][qten.phys.spin.Spin] use the group's SU(2) section and
+    contain [`Spin`][qten.phys.spin.Spin] use the group's \(SU(2)\) section and
     element-wise projective \(\chi\), unless the group was defined with
     `spin="trivial"`. A cyclic
     [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] is the

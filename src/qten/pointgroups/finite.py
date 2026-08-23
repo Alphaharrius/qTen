@@ -137,7 +137,7 @@ class FinitePointGroup:
         `irreps`. Included in equality and hashing.
     spin : str
         Construction-time spin policy. ``"electron"`` (default) uses the
-        SU(2) lift; ``"trivial"`` uses ``u(g)=I``.
+        \(SU(2)\) lift; ``"trivial"`` uses \(u(g)=I\).
     class_indices : tuple[int, ...] | None
         Optional map from generated element index to
         `irreps["class_labels"]` index. Set by
@@ -228,7 +228,7 @@ class FinitePointGroup:
         spin: str = "electron",
         class_indices: tuple[int, ...] | None = None,
     ) -> "FinitePointGroup":
-        """
+        r"""
         Build a finite point group from exact generator matrices.
 
         Parameters
@@ -244,7 +244,7 @@ class FinitePointGroup:
         spinor_irreps : dict[str, Any] | None, optional
             Optional class-wise projective spinor character data.
         rotation3s : Iterable[sy.ImmutableDenseMatrix | None] | None, optional
-            Optional Cartesian O(3) matrix for each generator, used when the
+            Optional Cartesian \(O(3)\) matrix for each generator, used when the
             spatial matrices are not already 3D.
         spin : str, optional
             Construction-time spin policy.
@@ -679,7 +679,7 @@ class FinitePointGroup:
 
     @lru_cache
     def spinor_table(self) -> dict[str, Any]:
-        r"""Return class-wise spinor data, computing it from the SU(2) lift if needed.
+        r"""Return class-wise spinor data, computing it from the \(SU(2)\) lift if needed.
 
         Each row is a projective irrep of \(G\) for the principal section
         \(u\). Class entries are averages of the hat-table characters; they
@@ -699,7 +699,7 @@ class FinitePointGroup:
         r"""Return projective spinor characters in generated-element order.
 
         Class-wise packaged rows set \(\chi=0\) on non-\(\omega\)-regular
-        classes, where \(\omega(g,h)\) is the 2-cocycle of the SU(2) section.
+        classes, where \(\omega(g,h)\) is the 2-cocycle of the \(SU(2)\) section.
         Projectors need the value on each generated element, taken from the
         hat-group character table of the double cover of order \(2|G|\).
         """

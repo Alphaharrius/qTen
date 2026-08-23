@@ -1,5 +1,5 @@
 r"""
-Spin-1/2 irrep labels and SU(2) lifts of spatial point-group rotations.
+Spin-1/2 irrep labels and \(SU(2)\) lifts of spatial point-group rotations.
 
 [`Spin`][qten.phys.spin.Spin] is a typed U(1) irrep for use inside
 [`U1Basis`][qten.symbolics.hilbert_space.U1Basis], replacing ad-hoc
@@ -46,7 +46,7 @@ _HALF = sy.Rational(1, 2)
 _SPIN_MS = (_HALF, -_HALF)
 _CARTESIAN_AXES = ("x", "y", "z")
 _ROTATION_TOL = 1e-10
-#: Pinned name of QTen's principal SU(2) lift of each element's `rotation3`.
+#: Pinned name of QTen's principal \(SU(2)\) lift of each element's `rotation3`.
 SU2_SECTION_CONVENTION = "qten-su2-principal-v1"
 
 
@@ -202,7 +202,7 @@ def _matrix_cache_key(M: sy.Matrix) -> tuple:
 
 
 def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
-    r"""Principal-branch SU(2) lift of a real 3x3 O(3) matrix given as rows.
+    r"""Principal-branch \(SU(2)\) lift of a real \(3\times 3\) \(O(3)\) matrix given as rows.
 
     Same section as [`su2_from_so3`][qten.phys.spin.su2_from_so3]: first form
     \(R_+=(\det R)\,R\), then the quaternion with \(w=\cos(\theta/2)\ge 0\).
@@ -462,7 +462,7 @@ def su2_of_point_group(
     g: "PointGroupElement | PointGroupOpr",
 ) -> sy.ImmutableDenseMatrix:
     r"""
-    Return the SU(2) factor of a point operation in the Cartesian spin frame.
+    Return the \(SU(2)\) factor of a point operation in the Cartesian spin frame.
 
     Reads the stored \(R(g)\) (`rotation3`, or the 3D `irrep` when that is
     already Cartesian) and returns
@@ -479,7 +479,7 @@ def su2_of_point_group(
     Returns
     -------
     sy.ImmutableDenseMatrix
-        \(2\times 2\) SU(2) matrix, or the identity when the spin policy is
+        \(2\times 2\) \(SU(2)\) matrix, or the identity when the spin policy is
         trivial.
     """
     if SpinAction.of(g).kind == "trivial":
@@ -491,7 +491,7 @@ def su2_of_point_group(
 def su2_numeric(
     g: "PointGroupElement | PointGroupOpr",
 ) -> list[list[complex]]:
-    r"""Complex \(2\times 2\) SU(2) factor for fast Hilbert-space assembly."""
+    r"""Complex \(2\times 2\) \(SU(2)\) factor for fast Hilbert-space assembly."""
     u = su2_of_point_group(g)
     return [[complex(sy.N(u[i, j])) for j in range(2)] for i in range(2)]
 
@@ -511,7 +511,7 @@ def expand_spin(
     Parameters
     ----------
     g : PointGroupElement | PointGroupOpr
-        Point operation whose SU(2) factor is applied.
+        Point operation whose \(SU(2)\) factor is applied.
     spin : Spin
         Input spin-1/2 label.
 
