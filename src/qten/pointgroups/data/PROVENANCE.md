@@ -9,12 +9,15 @@ ordinary and spinor characters: generators plus class-wise χ.
 
 - https://raw.githubusercontent.com/materialsproject/pymatgen-core/v2026.5.18/src/pymatgen/symmetry/symm_data.json
 
-Ordinary `irreps` are Bilbao class tables:
+Ordinary `irreps` are a pinned Bilbao class-table cache:
 
 - https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=<point-group-number>&sg=<representative-space-group>
 
-Linear characters are lift-independent, so the Bilbao scrape is the
-correct source. Schoenflies aliases are added by qten.
+Linear characters of the 32 crystallographic point groups do not
+depend on QTen's SU(2) lift, so these names and numbers stay frozen.
+A catalog rebuild only recomputes `spinor_irreps`. `--check` confirms
+that the generated group still realizes the packaged ordinary table.
+Schoenflies aliases are added by qten.
 
 ## Spinor irreducible representations
 

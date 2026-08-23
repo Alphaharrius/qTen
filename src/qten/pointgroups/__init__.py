@@ -74,9 +74,11 @@ Dispatch
   projection after wrapping in `PointGroupOpr`.
 - Named symbols (`4mm`, `C4v`, `-43m`) → finite group, packaged ordinary
   table plus QTen spinor table.
-- `plane="xy"` or suffix `-xy` shrinks spatial matrices only.
-- `axis=(1,1,1)` reorients a 3D group. `plane=(1,1,1)` is a 2D cut of that
-  reoriented group, still with the 3D `rotation3`.
+- `plane="xy"` or suffix `-xy` shrinks spatial matrices only. A group that
+  is not faithful on that plane (for example `4/m`) raises.
+- `axis=(1,1,1)` reorients a 3D group; ordinary class labels follow
+  conjugation. `plane=(1,1,1)` is a 2D cut of that reoriented group, still
+  with the 3D `rotation3`.
 
 Core exports
 ------------

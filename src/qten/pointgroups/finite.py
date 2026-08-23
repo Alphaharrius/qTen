@@ -43,6 +43,10 @@ def _character_expr(value: Any) -> sy.Expr:
         return sy.Integer(value)
     if isinstance(value, float):
         return sy.Rational(str(value))
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return sy.nsimplify(
+            sy.Float(value[0]) + sy.I * sy.Float(value[1]), tolerance=1e-10
+        )
     if isinstance(value, str):
         if value in ("", "·"):
             return sy.Integer(0)
@@ -117,12 +121,20 @@ class FinitePointGroup:
     spin : str
         Construction-time spin policy. ``"electron"`` (default) uses the
         SU(2) lift; ``"trivial"`` uses ``u(g)=I``.
+    class_indices : tuple[int, ...] | None
+        Optional map from generated element index to
+        `irreps["class_labels"]` index. Set by
+        [`reoriented_by`][qten.pointgroups.finite.FinitePointGroup.reoriented_by]
+        so Bilbao characters follow conjugation. Included in equality and
+        hashing so alignment-dependent caches cannot collide.
 
     Notes
     -----
-    Character-table labels are aligned to generated conjugacy classes by matrix
-    invariants (order, determinant, trace, and common mirror geometry). Ordinary
-    and spinor tables are computed from the generated group when they are not
+    Character-table labels on a standard `xyz` group are aligned to generated
+    conjugacy classes by matrix invariants (order, determinant, trace, and
+    common mirror geometry). After a conjugation, the stored `class_indices`
+    are used instead of re-matching geometry in the new frame. Ordinary and
+    spinor tables are computed from the generated group when they are not
     packaged. Alignment raises `ValueError` when a packaged table cannot be
     matched to the generated conjugacy classes.
     """
@@ -135,6 +147,9 @@ class FinitePointGroup:
         default=None, compare=False, hash=False
     )
     spin: str = "electron"
+    class_indices: tuple[int, ...] | None = field(
+        default=None, compare=False, hash=False
+    )
 
     def __post_init__(self) -> None:
         if not self.generators:
@@ -148,6 +163,14 @@ class FinitePointGroup:
             raise ValueError("spin must be 'electron' or 'trivial'.")
         if any(generator.spin != self.spin for generator in self.generators):
             raise ValueError("All generators must share the group's spin policy.")
+        has_rotation3 = [
+            generator.rotation3 is not None for generator in self.generators
+        ]
+        if any(has_rotation3) and not all(has_rotation3):
+            raise ValueError(
+                "All generators must store rotation3, or none of them. "
+                "A missing rotation3 is not the identity."
+            )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, FinitePointGroup):
@@ -159,6 +182,7 @@ class FinitePointGroup:
             and self.irreps == other.irreps
             and self.spinor_irreps == other.spinor_irreps
             and self.spin == other.spin
+            and self.class_indices == other.class_indices
         )
 
     def __hash__(self) -> int:
@@ -170,6 +194,7 @@ class FinitePointGroup:
                 _freeze_table(self.irreps),
                 _freeze_table(self.spinor_irreps),
                 self.spin,
+                self.class_indices,
             )
         )
 
@@ -184,6 +209,7 @@ class FinitePointGroup:
         spinor_irreps: dict[str, Any] | None = None,
         rotation3s: Iterable[sy.ImmutableDenseMatrix | None] | None = None,
         spin: str = "electron",
+        class_indices: tuple[int, ...] | None = None,
     ) -> "FinitePointGroup":
         """
         Build a finite point group from exact generator matrices.
@@ -205,6 +231,8 @@ class FinitePointGroup:
             spatial matrices are not already 3D.
         spin : str, optional
             Construction-time spin policy.
+        class_indices : tuple[int, ...] | None, optional
+            Optional generated-element to character-table class map.
 
         Returns
         -------
@@ -237,6 +265,7 @@ class FinitePointGroup:
             irreps=irreps,
             spinor_irreps=spinor_irreps,
             spin=spin,
+            class_indices=class_indices,
         )
 
     @lru_cache
@@ -468,6 +497,13 @@ class FinitePointGroup:
     def _class_label_index_by_element(self) -> tuple[int, ...]:
         """Map each generated element index to irreps.class_labels index."""
 
+        if self.class_indices is not None:
+            if len(self.class_indices) != self.order:
+                raise ValueError(
+                    "Stored class_indices length does not match the generated "
+                    f"group order for point group {self.symbol}."
+                )
+            return self.class_indices
         table = self.ordinary_table()
         if table.get("source") == "qten-computed":
             return self._generated_class_indices()
@@ -679,8 +715,9 @@ class FinitePointGroup:
         r"""
         Return the same abstract group with every matrix conjugated by `rotation`.
 
-        Ordinary characters are class functions and are reused. Spinor
-        characters are recomputed from the reoriented SU(2) lifts.
+        Ordinary characters are class functions: each conjugated element keeps
+        the Bilbao class index of its preimage. Spinor characters are
+        recomputed from the reoriented SU(2) lifts.
         """
         matrix = sy.ImmutableDenseMatrix(sy.simplify(rotation))
         dim = len(self.axes)
@@ -712,7 +749,7 @@ class FinitePointGroup:
             )
             for generator in self.generators
         )
-        return FinitePointGroup(
+        reoriented = FinitePointGroup(
             generators=new_generators,
             axes=self.axes,
             symbol=self.symbol,
@@ -720,6 +757,47 @@ class FinitePointGroup:
             spinor_irreps=None,
             spin=self.spin,
         )
+        transported = self._transported_class_indices(reoriented, matrix, inverse)
+        if transported is None:
+            return reoriented
+        return FinitePointGroup(
+            generators=reoriented.generators,
+            axes=reoriented.axes,
+            symbol=reoriented.symbol,
+            irreps=reoriented.irreps,
+            spinor_irreps=None,
+            spin=reoriented.spin,
+            class_indices=transported,
+        )
+
+    def _transported_class_indices(
+        self,
+        reoriented: "FinitePointGroup",
+        rotation: sy.ImmutableDenseMatrix,
+        inverse: sy.ImmutableDenseMatrix,
+    ) -> tuple[int, ...] | None:
+        """Copy Bilbao class indices through ``g' = Q g Q^{-1}``."""
+        if not self.irreps:
+            return None
+        old_key_to_class = {
+            _matrix_key(element.irrep): class_index
+            for element, class_index in zip(
+                self.elements(), self._class_label_index_by_element()
+            )
+        }
+        transported: list[int] = []
+        for element in reoriented.elements():
+            preimage = sy.ImmutableDenseMatrix(
+                sy.simplify(inverse @ element.irrep @ rotation)
+            )
+            key = _matrix_key(preimage)
+            if key not in old_key_to_class:
+                raise ValueError(
+                    "Reorientation did not preserve the generated group: "
+                    f"could not recover the preimage of an element of {self.symbol}."
+                )
+            transported.append(old_key_to_class[key])
+        return tuple(transported)
 
     @lru_cache
     def trivial_projector(self, order: int) -> sy.ImmutableDenseMatrix:
@@ -754,7 +832,7 @@ class FinitePointGroup:
         order : int
             Homogeneous polynomial degree used for the Euclidean representation.
         irrep : str
-            Irrep label from the packaged character table.
+            Irrep label from the packaged or computed character table.
 
         Returns
         -------
@@ -768,13 +846,12 @@ class FinitePointGroup:
             If the irrep is unknown or character-table data is incomplete.
         """
 
-        if not self.irreps:
-            raise ValueError(f"No character-table data is available for {self.symbol}.")
-        irrep_table = self.irreps["irreps"]
+        table = self.ordinary_table()
+        irrep_table = table["irreps"]
         if irrep not in irrep_table:
             raise ValueError(f"Unknown irrep '{irrep}' for point group {self.symbol}.")
 
-        labels = self.irreps["class_labels"]
+        labels = table["class_labels"]
         row = irrep_table[irrep]
         characters = tuple(
             _character_expr(character) for character in row["characters"]
@@ -805,7 +882,7 @@ class FinitePointGroup:
         order : int
             Homogeneous polynomial degree for the Euclidean representation.
         irrep : str
-            Irrep label from the packaged character table.
+            Irrep label from the packaged or computed character table.
 
         Returns
         -------
@@ -817,12 +894,13 @@ class FinitePointGroup:
         Raises
         ------
         ValueError
-            If character-table data is missing.
+            If the irrep is unknown or character-table data is incomplete.
         """
 
-        if not self.irreps:
-            raise ValueError(f"No character-table data is available for {self.symbol}.")
-        irrep_data = self.irreps["irreps"][irrep]
+        table = self.ordinary_table()
+        if irrep not in table["irreps"]:
+            raise ValueError(f"Unknown irrep '{irrep}' for point group {self.symbol}.")
+        irrep_data = table["irreps"][irrep]
         irrep_dim = int(irrep_data["dim"])
         projector = self.irrep_projector(order, irrep)
         euclidean_basis = self.generators[0].euclidean_basis(order)

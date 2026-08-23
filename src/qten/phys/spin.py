@@ -12,8 +12,8 @@ Crystal rotations act on spin through the spin-1/2 cover \(u(g)\\in SU(2)\)
 of the proper part of the stored 3D rotation \(R(g)\\in O(3)\). Because a
 generic \(SU(2)\) matrix maps one spin state to a superposition, the
 single-outcome contract `PointGroupOpr @ Spin -> Spin` cannot express the
-full action. Use [`expand_spin`][qten.phys.spin.expand_spin] together with
-[`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
+full action and raises. Use [`expand_spin`][qten.phys.spin.expand_spin]
+together with [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
 """
 
 from __future__ import annotations
@@ -468,6 +468,20 @@ def expand_spin(
     return tuple(out)
 
 
+def as_spin(rep: object) -> Spin | None:
+    """Return a Spin label, or None if `rep` is not a spin-1/2 irrep.
+
+    Accepts [`Spin`][qten.phys.spin.Spin] and the leftover strings ``"up"`` /
+    ``"down"`` so old bases still count as spinful instead of silently
+    selecting ordinary projectors.
+    """
+    if type(rep) is Spin:
+        return rep
+    if type(rep) is str and rep in {"up", "down"}:
+        return Spin.up if rep == "up" else Spin.down
+    return None
+
+
 def contains_spin(space: "HilbertSpace") -> bool:
-    """Return True if any basis state carries a [`Spin`][qten.phys.spin.Spin] irrep."""
-    return any(type(rep) is Spin for psi in space.elements() for rep in psi.base)
+    """Return True if any basis state carries a spin-1/2 irrep."""
+    return any(as_spin(rep) is not None for psi in space.elements() for rep in psi.base)

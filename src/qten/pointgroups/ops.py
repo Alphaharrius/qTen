@@ -34,7 +34,7 @@ from .elements import (
 from .finite import FinitePointGroup, _matrix_key
 from ..geometries import Lattice, Offset
 from ..linalg.tensors import Tensor, cat, eye, mapping_matrix
-from ..phys.spin import Spin, contains_spin, expand_spin, su2_numeric
+from ..phys.spin import Spin, as_spin, contains_spin, expand_spin, su2_numeric
 from ..symbolics import (
     HilbertSpace,
     IndexSpace,
@@ -452,12 +452,13 @@ def _transform_point_group_basis_direct(
 
 def _split_spin_basis(psi: U1Basis) -> tuple[tuple[Any, ...], Spin, sy.Expr]:
     """Split a basis state into (non-spin irreps, Spin, U(1) coef)."""
-    spin_reps = [rep for rep in psi.base if type(rep) is Spin]
+    labeled = [(rep, as_spin(rep)) for rep in psi.base]
+    spin_reps = [spin for _, spin in labeled if spin is not None]
     if len(spin_reps) != 1:
         raise ValueError(
             f"Expected exactly one Spin irrep in {psi}, found {len(spin_reps)}"
         )
-    nons = tuple(rep for rep in psi.base if type(rep) is not Spin)
+    nons = tuple(rep for rep, spin in labeled if spin is None)
     return nons, spin_reps[0], psi.coef
 
 
@@ -483,9 +484,9 @@ def _validate_spinful_space(space: HilbertSpace) -> None:
     """Require one spin-1/2 label and a normalized phase on every basis state."""
     _validate_hilbert_basis(space)
     invalid = [
-        (psi, sum(type(rep) is Spin for rep in psi.base))
+        (psi, sum(as_spin(rep) is not None for rep in psi.base))
         for psi in space.elements()
-        if sum(type(rep) is Spin for rep in psi.base) != 1
+        if sum(as_spin(rep) is not None for rep in psi.base) != 1
     ]
     if invalid:
         psi, count = invalid[0]
@@ -674,7 +675,7 @@ def spinful_hilbert_opr_repr(
 
 
 def _ext_transform_basis(opr: PointGroupOpr, psi: U1Basis) -> U1Basis:
-    if any(type(rep) is Spin for rep in psi.base):
+    if any(as_spin(rep) is not None for rep in psi.base):
         raise NotImplementedError(
             "External one-to-one basis maps cannot express SU(2) spin mixing. "
             "Use spinful_transform_basis / spinful_hilbert_opr_repr instead."
@@ -785,7 +786,7 @@ def _canonicalize_point_group_basis(
 def _internal_transform_basis(
     opr: PointGroupOpr, psi: U1Basis, space: HilbertSpace
 ) -> U1Basis:
-    if any(type(rep) is Spin for rep in psi.base):
+    if any(as_spin(rep) is not None for rep in psi.base):
         raise NotImplementedError(
             "Internal one-to-one basis maps cannot express SU(2) spin mixing. "
             "Use spinful_hilbert_opr_repr / point_group_column_symmetrize on "

@@ -41,7 +41,8 @@ sets \(u(g)=I\) (flavor spin / no SOC). Do not redefine an already built group.
 Spin APIs
 ---------
 - [`Spin`][qten.phys.spin.Spin] — \(m_s=\pm 1/2\) labels `Spin.up` / `Spin.down`
-- [`contains_spin`][qten.phys.spin.contains_spin] — Hilbert space already has `Spin`
+- [`as_spin`][qten.phys.spin.as_spin] — `Spin` or leftover ``"up"`` / ``"down"`` strings
+- [`contains_spin`][qten.phys.spin.contains_spin] — Hilbert space already has a spin-1/2 label
 - [`su2_of_point_group`][qten.phys.spin.su2_of_point_group] — principal lift of `rotation3`
 - [`su2_numeric`][qten.phys.spin.su2_numeric] — the same factor as complex floats
 - [`expand_spin`][qten.phys.spin.expand_spin] — \(u(g)|s\rangle\) in the \(\{\uparrow,\downarrow\}\) basis
@@ -62,6 +63,7 @@ from ._ff_observables import FFObservable as FFObservable
 from .spin import (
     SU2_SECTION_CONVENTION as SU2_SECTION_CONVENTION,
     Spin as Spin,
+    as_spin as as_spin,
     contains_spin as contains_spin,
     expand_spin as expand_spin,
     proper_rotation_matrix as proper_rotation_matrix,

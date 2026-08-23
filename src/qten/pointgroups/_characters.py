@@ -140,12 +140,28 @@ def character_table(mult: np.ndarray) -> tuple[np.ndarray, list[list[int]]]:
     # Left multiplication: (T_r)_{t,s} = N_{r s t} for C_r C_s = sum_t N_rst C_t.
     class_matrices = [structure[index].T.astype(complex) for index in range(n_class)]
     spaces: list[np.ndarray] | None = None
-    for seed in range(8):
-        rng = np.random.default_rng(seed)
-        combo = sum(
-            (complex(rng.normal(), rng.normal()) * matrix for matrix in class_matrices),
-            np.zeros((n_class, n_class), dtype=complex),
+    zero = np.zeros((n_class, n_class), dtype=complex)
+    combos = [
+        sum(
+            (
+                complex(index + 1, (index + 1) * (index + 2)) * matrix
+                for index, matrix in enumerate(class_matrices)
+            ),
+            zero,
         )
+    ]
+    for seed in range(16):
+        rng = np.random.default_rng(seed)
+        combos.append(
+            sum(
+                (
+                    complex(rng.normal(), rng.normal()) * matrix
+                    for matrix in class_matrices
+                ),
+                zero,
+            )
+        )
+    for combo in combos:
         _, vectors = np.linalg.eig(combo)
         candidate = _split_eigenspaces(class_matrices, vectors)
         if len(candidate) == n_class and all(
@@ -207,7 +223,7 @@ def _group_multiplication_table(group: FinitePointGroup) -> np.ndarray:
     table = np.empty((order, order), dtype=int)
     for i, left in enumerate(elements):
         for j, right in enumerate(elements):
-            table[i, j] = index[_matrix_key(left.invoke(right).irrep)]
+            table[i, j] = index[_matrix_key((left @ right).irrep)]
     return table
 
 

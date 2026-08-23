@@ -20,7 +20,7 @@ tensor/Hilbert-space projection helpers live in
 """
 
 from dataclasses import dataclass
-from typing import Dict, Tuple, cast
+from typing import Dict, NoReturn, Tuple, cast
 from collections import OrderedDict
 from itertools import product
 from functools import lru_cache, reduce
@@ -28,7 +28,8 @@ import sympy as sy
 
 from ..abstracts import HasBase, Operable
 from ..geometries import AffineSpace, Momentum, Offset
-from ..symbolics import Opr
+from ..phys.spin import Spin, as_spin
+from ..symbolics import Opr, U1Basis
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
@@ -513,19 +514,16 @@ def _(left: PointGroupElement, right: PointGroupElement) -> PointGroupElement:
         )
     left_irrep = _embed_irrep_to_axes(left.irrep, left.axes, merged)
     right_irrep = _embed_irrep_to_axes(right.irrep, right.axes, merged)
+    if (left.rotation3 is None) != (right.rotation3 is None):
+        raise ValueError(
+            "Cannot compose point-group elements unless both store rotation3 "
+            "or neither does. A missing rotation3 is not the identity."
+        )
     rotation3 = None
-    if left.rotation3 is not None or right.rotation3 is not None:
-        left_rot = (
-            left.rotation3
-            if left.rotation3 is not None
-            else sy.ImmutableDenseMatrix.eye(3)
+    if left.rotation3 is not None and right.rotation3 is not None:
+        rotation3 = sy.ImmutableDenseMatrix(
+            sy.simplify(left.rotation3 @ right.rotation3)
         )
-        right_rot = (
-            right.rotation3
-            if right.rotation3 is not None
-            else sy.ImmutableDenseMatrix.eye(3)
-        )
-        rotation3 = sy.ImmutableDenseMatrix(sy.simplify(left_rot @ right_rot))
     return PointGroupElement(
         irrep=sy.ImmutableDenseMatrix(sy.simplify(left_irrep @ right_irrep)),
         axes=merged,
@@ -862,3 +860,48 @@ def _(t: PointGroupOpr, k: Momentum) -> Momentum:
         Transformed momentum in the same reciprocal lattice space as `k`.
     """
     return _apply_point_group_opr_to_momentum_cached(t, k)
+
+
+def _reject_spinful_matmul(kind: str) -> NoReturn:
+    raise ValueError(
+        f"{kind} @ a spinful label cannot return a single state: a generic "
+        "SU(2) factor maps |s⟩ to a superposition. Use expand_spin, "
+        "spinful_transform_basis, or hilbert_repr."
+    )
+
+
+def _orbital_u1basis(opr: Opr, psi: U1Basis) -> U1Basis:
+    new_coef: sy.Expr = psi.coef
+    new_base: list[object] = []
+    for rep in psi.base:
+        ret = opr(rep) if opr.allows(rep) else rep
+        if isinstance(ret, Multiple):
+            new_coef *= ret.coef
+            new_base.append(ret.base)
+        else:
+            new_base.append(ret)
+    return U1Basis(new_coef, tuple(new_base))
+
+
+@PointGroupElement.register(Spin)
+def _(g: PointGroupElement, spin: Spin) -> Spin:
+    _reject_spinful_matmul("PointGroupElement")
+
+
+@PointGroupOpr.register(Spin)
+def _(opr: PointGroupOpr, spin: Spin) -> Spin:
+    _reject_spinful_matmul("PointGroupOpr")
+
+
+@PointGroupElement.register(U1Basis)
+def _(g: PointGroupElement, psi: U1Basis) -> U1Basis:
+    if any(as_spin(rep) is not None for rep in psi.base):
+        _reject_spinful_matmul("PointGroupElement")
+    return _orbital_u1basis(g, psi)
+
+
+@PointGroupOpr.register(U1Basis)
+def _(opr: PointGroupOpr, psi: U1Basis) -> U1Basis:
+    if any(as_spin(rep) is not None for rep in psi.base):
+        _reject_spinful_matmul("PointGroupOpr")
+    return _orbital_u1basis(opr, psi)

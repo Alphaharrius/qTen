@@ -13,7 +13,14 @@ import torch
 import pytest
 from sympy import ImmutableDenseMatrix
 
-from qten.phys import Spin, expand_spin, su2_from_so3, su2_of_point_group
+from qten.phys import (
+    Spin,
+    as_spin,
+    contains_spin,
+    expand_spin,
+    su2_from_so3,
+    su2_of_point_group,
+)
 from qten.phys.spin import proper_rotation_matrix
 from qten.pointgroups import (
     FinitePointGroup,
@@ -26,6 +33,7 @@ from qten.pointgroups import (
 )
 from qten.pointgroups.ops import (
     _hilbert_opr_repr,
+    hilbert_repr,
     joint_point_group_column_symmetrize,
     spinful_hilbert_opr_repr,
     spinful_transform_basis,
@@ -839,3 +847,65 @@ def test_reoriented_d3d_contains_c3_along_111():
         rtol=0,
         atol=1e-11,
     )
+
+
+def test_point_group_matmul_rejects_spin_labels():
+    opr = _c4z()
+    psi = U1Basis.new(_site(1, 0, 0), Spin.up)
+    with pytest.raises(ValueError, match="superposition"):
+        opr @ Spin.up
+    with pytest.raises(ValueError, match="superposition"):
+        opr.g @ Spin.down
+    with pytest.raises(ValueError, match="superposition"):
+        opr @ psi
+    with pytest.raises(ValueError, match="superposition"):
+        opr @ U1Basis.new(_site(), "up")
+
+
+def test_string_up_down_labels_are_spinful():
+    site = _site()
+    space = HilbertSpace.new([U1Basis.new(site, "up"), U1Basis.new(site, "down")])
+    assert as_spin("up") is Spin.up
+    assert as_spin("down") is Spin.down
+    assert contains_spin(space)
+    D = hilbert_repr(_c2z().fixpoint_at(site), space)
+    eye = torch.eye(2, dtype=D.data.dtype)
+    assert torch.allclose(D.data.conj().T @ D.data, eye, rtol=0, atol=1e-12)
+
+
+def test_missing_rotation3_is_not_identity_in_composition():
+    x, y = sy.symbols("x y")
+    spatial = ImmutableDenseMatrix([[0, -1], [1, 0]])
+    rotation3 = ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    with_r3 = PointGroupElement(irrep=spatial, axes=(x, y), rotation3=rotation3)
+    without = PointGroupElement(irrep=spatial, axes=(x, y))
+    with pytest.raises(ValueError, match="rotation3"):
+        with_r3 @ without
+    with pytest.raises(ValueError, match="rotation3"):
+        FinitePointGroup.from_matrices(
+            (spatial, spatial),
+            axes=(x, y),
+            rotation3s=(rotation3, None),
+        )
+    assert (without @ without).rotation3 is None
+    assert (with_r3 @ with_r3).rotation3 is not None
+
+
+def test_computed_ordinary_table_feeds_irrep_projector():
+    x, y, z = sy.symbols("x y z")
+    group = FinitePointGroup.from_matrices(
+        (ImmutableDenseMatrix([[0, -1, 0], [1, 0, 0], [0, 0, 1]]),),
+        axes=(x, y, z),
+    )
+    assert group.irreps is None
+    table = group.ordinary_table()
+    assert table["source"] == "qten-computed"
+    projectors = [group.irrep_projector(1, name) for name in table["irreps"]]
+    total = sum(projectors[1:], projectors[0])
+    assert sy.simplify(total - sy.eye(total.rows)) == sy.zeros(total.rows)
+    for projector in projectors:
+        assert sy.simplify(projector * projector - projector) == sy.zeros(
+            projector.rows
+        )
+    name = next(iter(table["irreps"]))
+    assert group.irrep_basis(1, name)

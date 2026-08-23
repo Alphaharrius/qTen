@@ -1,9 +1,10 @@
 """Build QTen's point-group catalog: generators, Bilbao χ, and spinor χ.
 
-Ordinary class tables stay the existing Bilbao cache (or are refreshed with
-``--refresh-ordinary``). Spinor class tables are computed from QTen's
-principal SU(2) lift and stored in the same shape as ``irreps``. spgrep is
-used only by ``--check-spgrep``; it is never written into the JSON.
+Ordinary class tables are a pinned Bilbao cache. This script never rewrites
+those names or numbers. Spinor class tables are computed from QTen's
+principal SU(2) lift and stored in the same shape as ``irreps``. ``--check``
+verifies that the generated group still realizes the packaged ordinary table.
+spgrep is used only by ``--check-spgrep``; it is never written into the JSON.
 """
 
 from __future__ import annotations
@@ -18,7 +19,11 @@ import numpy as np
 import sympy as sy
 
 from qten.phys.spin import SU2_SECTION_CONVENTION
-from qten.pointgroups._characters import compute_spinor_irreps, parse_class_character
+from qten.pointgroups._characters import (
+    compute_ordinary_irreps,
+    compute_spinor_irreps,
+    parse_class_character,
+)
 from qten.pointgroups._registry import (
     _cartesianize_generator,
     _project_generator,
@@ -185,13 +190,7 @@ def _one_d_record(parent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def generate(*, refresh_ordinary: bool = False) -> dict[str, Any]:
-    if refresh_ordinary:
-        raise SystemExit(
-            "--refresh-ordinary is not bundled: ordinary Bilbao class tables "
-            "are reused from the packaged catalog. Recompute spinor tables "
-            "with a plain run of this script."
-        )
+def generate() -> dict[str, Any]:
     data = _load_catalog()
     parents = {record["symbol"]: record for record in _three_d_records(data)}
     print("Computing 3D spinor class tables", flush=True)
@@ -224,12 +223,15 @@ def _write_provenance() -> None:
                 "",
                 "- https://raw.githubusercontent.com/materialsproject/pymatgen-core/v2026.5.18/src/pymatgen/symmetry/symm_data.json",
                 "",
-                "Ordinary `irreps` are Bilbao class tables:",
+                "Ordinary `irreps` are a pinned Bilbao class-table cache:",
                 "",
                 "- https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=<point-group-number>&sg=<representative-space-group>",
                 "",
-                "Linear characters are lift-independent, so the Bilbao scrape is the",
-                "correct source. Schoenflies aliases are added by qten.",
+                "Linear characters of the 32 crystallographic point groups do not",
+                "depend on QTen's SU(2) lift, so these names and numbers stay frozen.",
+                "A catalog rebuild only recomputes `spinor_irreps`. `--check` confirms",
+                "that the generated group still realizes the packaged ordinary table.",
+                "Schoenflies aliases are added by qten.",
                 "",
                 "## Spinor irreducible representations",
                 "",
@@ -289,6 +291,68 @@ def _rows_match(
     return not unused
 
 
+def _check_ordinary_json(record: dict[str, Any]) -> None:
+    table = record.get("irreps") or {}
+    symbol = record["symbol"]
+    if table.get("source") != "bilbao":
+        raise SystemExit(f"{symbol} ordinary table source must be 'bilbao'.")
+    labels = table.get("class_labels") or []
+    multiplicities = [int(value) for value in table.get("multiplicities", ())]
+    irreps = table.get("irreps") or {}
+    if len(labels) != len(multiplicities):
+        raise SystemExit(
+            f"{symbol} ordinary class_labels and multiplicities are different lengths."
+        )
+    order = sum(multiplicities)
+    if sum(int(row["dim"]) ** 2 for row in irreps.values()) != order:
+        raise SystemExit(
+            f"Ordinary dimensions do not satisfy sum(dim^2)=|G| for {symbol}."
+        )
+
+
+def _check_ordinary_realizes_group(
+    group: FinitePointGroup, record: dict[str, Any]
+) -> None:
+    table = record["irreps"]
+    order = sum(int(value) for value in table["multiplicities"])
+    if group.order != order:
+        raise SystemExit(
+            f"Generated order {group.order} does not match ordinary |G|={order} "
+            f"for {record['symbol']}."
+        )
+    try:
+        class_by_element = group.element_class_indices()
+    except ValueError as exc:
+        raise SystemExit(
+            f"Could not align generated classes to Bilbao labels for {record['symbol']}."
+        ) from exc
+    if len(class_by_element) != group.order:
+        raise SystemExit(
+            f"Ordinary class alignment length mismatches |G| for {record['symbol']}."
+        )
+
+    packaged_rows = [
+        [
+            complex(sy.N(character))
+            for character in group.irrep_characters_by_element(name)
+        ]
+        for name in table["irreps"]
+    ]
+    computed = compute_ordinary_irreps(group)
+    generated_index = group._generated_class_indices()
+    computed_rows = [
+        [
+            parse_class_character(row["characters"][generated_index[index]])
+            for index in range(group.order)
+        ]
+        for row in computed["irreps"].values()
+    ]
+    if not _rows_match(packaged_rows, computed_rows, atol=1e-6):
+        raise SystemExit(
+            f"Packaged Bilbao χ does not match the generated group for {record['symbol']}."
+        )
+
+
 def check_self(data: dict[str, Any], *, live: bool = True) -> None:
     three_d = _three_d_records(data)
     if len(three_d) != 32:
@@ -301,6 +365,7 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
         raise SystemExit("1D catalog symbols do not match the embedding table.")
 
     for record in data["point_groups"]:
+        _check_ordinary_json(record)
         irreps = record.get("irreps") or {}
         spinor = record.get("spinor_irreps")
         if not spinor:
@@ -343,6 +408,7 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
                 ),
                 spin="electron",
             )
+        _check_ordinary_realizes_group(group, record)
         live_table = compute_spinor_irreps(group)
         packaged_rows = [
             [parse_class_character(value) for value in row["characters"]]
@@ -487,14 +553,12 @@ def check_spgrep(data: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--refresh-ordinary",
-        action="store_true",
-        help="Rejected: ordinary Bilbao tables are reused from the packaged catalog.",
-    )
-    parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate the packaged catalog against a live QTen lift.",
+        help=(
+            "Validate the packaged catalog: ordinary Bilbao χ still matches "
+            "the generated group, and spinor χ matches the live QTen lift."
+        ),
     )
     parser.add_argument(
         "--check-spgrep",
@@ -515,7 +579,7 @@ def main() -> None:
             check_spgrep(data)
         return
 
-    generated = generate(refresh_ordinary=args.refresh_ordinary)
+    generated = generate()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     DATA_PATH.write_text(
         json.dumps(generated, indent=2, sort_keys=True) + "\n", encoding="utf-8"

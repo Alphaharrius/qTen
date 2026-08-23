@@ -19,9 +19,11 @@ from qten.pointgroups import (
 )
 from qten.pointgroups._registry import (
     _point_group_data,
+    _rotation_mapping_z_to,
     known_point_group_symbols,
     verify_spinor_factor_system,
 )
+from qten.pointgroups.finite import _matrix_key
 from qten.phys import su2_of_point_group
 
 
@@ -415,3 +417,107 @@ def test_non_abelian_tetrahedral_point_group_preserves_diamond_lattice_basis():
     for element in td.elements():
         opr = PointGroupOpr(element)
         assert all(opr @ site in diamond for site in sites)
+
+
+@pytest.mark.parametrize("symbol", ["4/m", "4/mmm", "mmm", "6/m"])
+def test_plane_cut_rejects_non_faithful_groups(symbol):
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup(symbol, plane="xy")
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup(f"{symbol}-xy")
+
+
+def test_plane_cut_keeps_faithful_c4v():
+    group = pointgroup("4mm", plane="xy")
+    assert group.order == 8
+    assert pointgroup("4mm", plane=(0, 0, 1)).order == 8
+
+
+def test_plane_vector_rejects_non_faithful_4m():
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup("4/m", plane=(0, 0, 1))
+
+
+def _assert_characters_follow_conjugation(original, reoriented, rotation):
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    irrep_names = tuple(original.irreps["irreps"])
+    for name in irrep_names:
+        chi_old = {
+            _matrix_key(element.irrep): character
+            for element, character in zip(
+                original.elements(),
+                original.irrep_characters_by_element(name),
+            )
+        }
+        chi_new = {
+            _matrix_key(element.irrep): character
+            for element, character in zip(
+                reoriented.elements(),
+                reoriented.irrep_characters_by_element(name),
+            )
+        }
+        for element in original.elements():
+            image = sy.ImmutableDenseMatrix(
+                sy.simplify(rotation @ element.irrep @ inverse)
+            )
+            expected = chi_old[_matrix_key(element.irrep)]
+            got = chi_new[_matrix_key(image)]
+            assert sy.simplify(sy.expand_complex(expected - got)).equals(0), (
+                f"{original.symbol} irrep {name}"
+            )
+
+
+@pytest.mark.parametrize("symbol", ["3", "4", "6"])
+@pytest.mark.parametrize("axis", [(0, 0, -1), (1, 1, -1), (1, 0, 0)])
+def test_axis_reorientation_preserves_ordinary_characters(symbol, axis):
+    original = pointgroup(symbol)
+    reoriented = pointgroup(symbol, axis=axis)
+    _assert_characters_follow_conjugation(
+        original, reoriented, _rotation_mapping_z_to(axis)
+    )
+
+
+def test_c6_axis_x_keeps_threefold_class_labels():
+    original = pointgroup("6")
+    reoriented = pointgroup("6", axis=(1, 0, 0))
+    rotation = _rotation_mapping_z_to((1, 0, 0))
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    labels = original.irreps["class_labels"]
+    old_by_key = {
+        _matrix_key(element.irrep): labels[class_index]
+        for element, class_index in zip(
+            original.elements(), original.element_class_indices()
+        )
+    }
+    new_by_key = {
+        _matrix_key(element.irrep): labels[class_index]
+        for element, class_index in zip(
+            reoriented.elements(), reoriented.element_class_indices()
+        )
+    }
+    for element in original.elements():
+        image = sy.ImmutableDenseMatrix(sy.simplify(rotation @ element.irrep @ inverse))
+        assert old_by_key[_matrix_key(element.irrep)] == new_by_key[_matrix_key(image)]
+
+
+def test_c3_flipped_plane_cut_keeps_ordinary_characters():
+    original = pointgroup("3")
+    cut = pointgroup("3", plane=(0, 0, -1))
+    assert cut.order == 3
+    rotation = _rotation_mapping_z_to((0, 0, -1))
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    chi_old = {
+        _matrix_key(element.irrep): character
+        for element, character in zip(
+            original.elements(),
+            original.irrep_characters_by_element("^2E"),
+        )
+    }
+    for element, character in zip(
+        cut.elements(), cut.irrep_characters_by_element("^2E")
+    ):
+        preimage = sy.ImmutableDenseMatrix(
+            sy.simplify(inverse @ element.rotation3 @ rotation)
+        )
+        expected = chi_old[_matrix_key(preimage)]
+        assert sy.simplify(sy.expand_complex(expected - character)).equals(0)

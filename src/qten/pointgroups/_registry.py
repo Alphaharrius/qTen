@@ -16,7 +16,7 @@ from typing import Any
 
 import sympy as sy
 
-from .finite import FinitePointGroup
+from .finite import FinitePointGroup, _matrix_key
 
 
 _STANDARD_AXIS_NAMES = ("x", "y", "z")
@@ -297,6 +297,64 @@ def _attach_spinor_table(
         irreps=group.irreps,
         spinor_irreps=table,
         spin=group.spin,
+        class_indices=group.class_indices,
+    )
+
+
+def _require_faithful_restriction(
+    group: FinitePointGroup,
+    project: Any,
+    *,
+    symbol: str,
+    plane_desc: str,
+) -> dict[tuple[float, ...], int]:
+    """Reject a plane cut that identifies distinct 3D operations.
+
+    Returns a map from projected-matrix key to Bilbao class index when the
+    3D group carries packaged ordinary irreps.
+    """
+    class_by_element = group.element_class_indices() if group.irreps else None
+    seen_3d: dict[tuple[float, ...], tuple[float, ...]] = {}
+    class_by_2d: dict[tuple[float, ...], int] = {}
+    for index, element in enumerate(group.elements()):
+        key2 = _matrix_key(project(element.irrep))
+        key3 = _matrix_key(element.irrep)
+        previous = seen_3d.get(key2)
+        if previous is not None and previous != key3:
+            raise ValueError(
+                f"Point group {symbol} does not act faithfully on {plane_desc}: "
+                "distinct 3D operations become the same spatial matrix. "
+                "Use the 3D group (axis=) or a faithful subgroup "
+                "(for example 4mm instead of 4/m)."
+            )
+        seen_3d[key2] = key3
+        if class_by_element is not None:
+            class_by_2d[key2] = class_by_element[index]
+    return class_by_2d
+
+
+def _group_with_projected_classes(
+    group: FinitePointGroup,
+    class_by_2d: dict[tuple[float, ...], int],
+) -> FinitePointGroup:
+    if not class_by_2d:
+        return group
+    try:
+        indices = tuple(
+            class_by_2d[_matrix_key(element.irrep)] for element in group.elements()
+        )
+    except KeyError as exc:
+        raise ValueError(
+            f"Could not transport class labels onto the {group.symbol} plane cut."
+        ) from exc
+    return FinitePointGroup(
+        generators=group.generators,
+        axes=group.axes,
+        symbol=group.symbol,
+        irreps=group.irreps,
+        spinor_irreps=group.spinor_irreps,
+        spin=group.spin,
+        class_indices=indices,
     )
 
 
@@ -323,7 +381,8 @@ def named_pointgroup(
     The query accepts canonical Hermann-Mauguin symbols such as ``"4mm"`` and
     Schoenflies aliases such as ``"C4v"``. A trailing axis suffix such as
     ``"C4v-xy"`` is an alias for ``plane="xy"``: spatial matrices become 2D
-    while the 3D rotations used for spin are kept.
+    while the 3D rotations used for spin are kept. A named group that is not
+    faithful on the requested plane raises ``ValueError``.
     """
 
     symbol, axis_names = _split_named_query(query)
@@ -382,6 +441,12 @@ def named_pointgroup(
                 )
             spatial.append(_project_matrix_to_plane(generator.irrep, first, second))
             rotations.append(generator.irrep)
+        class_by_2d = _require_faithful_restriction(
+            group,
+            lambda matrix: _project_matrix_to_plane(matrix, first, second),
+            symbol=symbol,
+            plane_desc=f"the plane with normal {plane}",
+        )
         cut = FinitePointGroup.from_matrices(
             matrices=spatial,
             axes=_axis_symbols("xy"),
@@ -390,7 +455,7 @@ def named_pointgroup(
             rotation3s=rotations,
             spin=spin,
         )
-        return cut
+        return _group_with_projected_classes(cut, class_by_2d)
 
     if axis_names == "xyz":
         group = FinitePointGroup.from_matrices(
@@ -406,6 +471,19 @@ def named_pointgroup(
     if embedded is not None:
         return _group_from_record(embedded, spin)
 
+    group3 = FinitePointGroup.from_matrices(
+        matrices=cartesian,
+        axes=xyz_axes,
+        symbol=symbol,
+        irreps=record.get("irreps"),
+        spin=spin,
+    )
+    class_by_2d = _require_faithful_restriction(
+        group3,
+        lambda matrix: _project_generator(matrix, axis_names),
+        symbol=symbol,
+        plane_desc=f"the {axis_names} plane",
+    )
     projected = tuple(_project_generator(matrix, axis_names) for matrix in cartesian)
     group = FinitePointGroup.from_matrices(
         matrices=projected,
@@ -415,4 +493,5 @@ def named_pointgroup(
         rotation3s=cartesian,
         spin=spin,
     )
+    group = _group_with_projected_classes(group, class_by_2d)
     return _attach_spinor_table(group, packaged=packaged)
