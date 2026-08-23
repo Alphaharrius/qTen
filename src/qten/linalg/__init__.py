@@ -17,6 +17,8 @@ Decompositions
   Hermitian eigenvalues only.
 - [`qr`][qten.linalg.decompose.qr]
   QR factorization.
+- [`lowdin_orthonormalize`][qten.linalg.orthogonalize.lowdin_orthonormalize]
+  Symmetric orthonormalization of matrix columns.
 - [`svd`][qten.linalg.decompose.svd]
   Singular value decomposition.
 
@@ -41,4 +43,5 @@ from .decompose import (
     qr as qr,
     svd as svd,
 )
+from .orthogonalize import lowdin_orthonormalize as lowdin_orthonormalize
 from .tensors import einsum as einsum, norm as norm
