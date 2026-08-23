@@ -221,3 +221,9 @@ uv.lock
 
 # Notebooks
 *.ipynb
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif

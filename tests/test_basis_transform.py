@@ -20,6 +20,7 @@ from qten.bands import (
     bandfold,
     bandtransform,
     bandunfold,
+    cartesian_scale,
     get_band_fold,
     get_band_transform,
 )
@@ -647,3 +648,65 @@ def test_momentum_transform():
     # Formula: new_rep = M^T @ old_rep = [2] @ [0.5] = [1]
     assert new_k.rep == ImmutableDenseMatrix([1])
     assert new_k.space.basis == ImmutableDenseMatrix([[sy.pi]])
+
+
+def test_cartesian_scale_preserves_tensor_information_and_rescales_spaces():
+    basis = ImmutableDenseMatrix.diag(2, 3, 4)
+    lattice = Lattice(
+        basis=basis,
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(2, 2, 2)),
+        unit_cell={"r": ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0])},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    offset = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice)
+    h_space = HilbertSpace.new([_mode(offset)])
+    data = torch.arange(k_space.dim, dtype=torch.float64).reshape(k_space.dim, 1, 1)
+    tensor_in = Tensor(data=data, dims=(k_space, h_space, h_space))
+
+    scaled = cartesian_scale(tensor_in, (sy.Rational(1, 2),) * 3)
+
+    assert scaled.data is tensor_in.data
+    assert scaled.data.shape == tensor_in.data.shape
+    scaled_k = scaled.dims[0]
+    assert isinstance(scaled_k, MomentumSpace)
+    scaled_reciprocal = scaled_k.elements()[0].space
+    assert scaled_reciprocal.dual.basis == ImmutableDenseMatrix.diag(
+        1, sy.Rational(3, 2), 2
+    )
+    assert scaled_reciprocal.basis == lattice.dual.basis * 2
+    assert [k.rep for k in scaled_k.elements()] == [k.rep for k in k_space.elements()]
+
+    for dim in scaled.dims[1:]:
+        assert isinstance(dim, HilbertSpace)
+        scaled_offset = dim.elements()[0].irrep_of(Offset)
+        assert scaled_offset.rep == offset.rep
+        assert scaled_offset.space == scaled_reciprocal.dual
+
+
+def test_cartesian_scale_rejects_invalid_scale():
+    lattice = Lattice(basis=ImmutableDenseMatrix([[2]]), shape=(2,))
+    tensor = Tensor(data=torch.arange(2), dims=(brillouin_zone(lattice.dual),))
+
+    with pytest.raises(ValueError, match="expected 1, got 2"):
+        cartesian_scale(tensor, (1, 1))
+    with pytest.raises(ValueError, match="nonzero"):
+        cartesian_scale(tensor, (0,))
+    with pytest.raises(TypeError, match="int or sympy.Expr"):
+        cartesian_scale(tensor, (0.5,))  # type: ignore[arg-type]
+
+
+def test_cartesian_scale_rescales_affine_space_offsets():
+    lattice = Lattice(basis=ImmutableDenseMatrix.eye(2), shape=(1, 1))
+    affine = AffineSpace(basis=ImmutableDenseMatrix.diag(2, 3))
+    offset = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 1]), space=affine)
+    hilbert = HilbertSpace.new([_mode(offset)])
+    tensor = Tensor(
+        data=torch.ones((1, 1, 1)),
+        dims=(brillouin_zone(lattice.dual), hilbert, hilbert),
+    )
+
+    scaled = cartesian_scale(tensor, (2, 3))
+
+    scaled_offset = scaled.dims[1].elements()[0].irrep_of(Offset)
+    assert scaled_offset.rep == offset.rep
+    assert scaled_offset.space == AffineSpace(basis=ImmutableDenseMatrix.diag(4, 9))

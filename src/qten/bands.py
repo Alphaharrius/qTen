@@ -38,6 +38,7 @@ the momentum-sector matrices when filling or selecting bands.
 """
 
 from collections import OrderedDict
+import math
 from typing import (
     Any,
     Callable,
@@ -61,12 +62,14 @@ from multimethod import multimethod
 import torch
 
 from .geometries import (
+    AffineSpace,
     BasisTransform,
     InverseBasisTransform,
     KPointSet,
     Lattice,
     Momentum,
     Offset,
+    PeriodicBoundary,
     ReciprocalLattice,
 )
 from .geometries.fourier import fourier_transform
@@ -92,6 +95,243 @@ from .symbolics import (
 from .pointgroups.elements import PointGroupOpr
 from .pointgroups.ops import _internal_transform_basis
 from .utils.devices import Device
+
+
+def _rectangular_upsample_data(
+    data: torch.Tensor,
+    shape: tuple[int, ...],
+    scale: tuple[int, ...],
+) -> torch.Tensor:
+    """Upsample a rectangular momentum grid without dense Fourier kernels.
+
+    This is the FFT equivalent of applying the real cardinal-weight matrix in
+    :func:`upsample`.  The two transforms are needed because taking the real
+    part of the cardinal kernel averages its positive- and negative-frequency
+    evaluations.  In particular, this preserves the established symmetric
+    treatment of even-grid Nyquist modes.
+    """
+    enlarged_shape = tuple(size * factor for size, factor in zip(shape, scale))
+    spatial_axes = tuple(range(len(shape)))
+    old_size = math.prod(shape)
+    new_size = math.prod(enlarged_shape)
+
+    # Move each raw FFT coefficient to the same *centered* translation in the
+    # enlarged cell.  For an even size, the half-period coefficient belongs to
+    # the negative representative, matching the dense implementation.
+    source_axes = [torch.arange(size, device=data.device) for size in shape]
+    source_grid = torch.meshgrid(*source_axes, indexing="ij")
+    target_indices = tuple(
+        torch.where(axis < (size + 1) // 2, axis, axis - size) % enlarged_size
+        for axis, size, enlarged_size in zip(source_grid, shape, enlarged_shape)
+    )
+
+    positive_coefficients = torch.fft.ifftn(data, dim=spatial_axes)
+    padded = positive_coefficients.new_zeros((*enlarged_shape, *data.shape[-2:]))
+    padded[target_indices] = positive_coefficients
+    interpolated = torch.fft.fftn(padded, dim=spatial_axes)
+
+    negative_coefficients = torch.fft.fftn(data, dim=spatial_axes) / old_size
+    padded = negative_coefficients.new_zeros((*enlarged_shape, *data.shape[-2:]))
+    padded[target_indices] = negative_coefficients
+    interpolated = (
+        interpolated + new_size * torch.fft.ifftn(padded, dim=spatial_axes)
+    ) / 2
+
+    if not data.is_complex():
+        return interpolated.real.to(data.dtype)
+    return interpolated
+
+
+def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
+    r"""
+    Interpolate a momentum-resolved matrix tensor onto a denser BZ grid.
+
+    The interpolation is performed in the localized (Wannier) representation:
+    the sampled matrices are inverse Fourier transformed to hopping matrices on
+    the original finite real-space cell, then evaluated on the momentum grid
+    dual to an enlarged periodic cell.  Thus ``scale=(s1, ..., sd)`` multiplies
+    the real-space boundary generators by the corresponding positive integer
+    factors and increases the number of momentum sectors by ``prod(scale)``.
+
+    Centered representatives of the original translation quotient are used.
+    At an even-period boundary, the half-period translation is assigned to the
+    negative representative.  This convention is deterministic and generally
+    gives the locality-friendly interpolation used for Wannier Hamiltonians.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Matrix tensor with dims ``(MomentumSpace, HilbertSpace, HilbertSpace)``.
+        Its leading momentum space must be the complete Brillouin-zone grid of
+        a finite periodic lattice.
+    scale : Tuple[int, ...]
+        Positive integer enlargement factor for each real-space boundary
+        generator.
+
+    Returns
+    -------
+    Tensor
+        Interpolated tensor with dims ``(new_momentum_space, B_left, B_right)``.
+        Spatial Bloch spaces are relabeled onto the enlarged finite lattice
+        (whose primitive basis is unchanged), so subsequent operations such as
+        band folding see consistent lattice metadata. Complex input keeps its
+        dtype; real input is returned in its original real dtype.
+
+    Notes
+    -----
+    This is exact on the original momentum grid but does not create additional
+    physical information.  Reliable interpolation requires a consistent,
+    localized Bloch/orbital gauge; independently sorted eigenvalues are not a
+    substitute for the matrix-valued input.
+    """
+    if tensor.rank() != 3:
+        raise ValueError(
+            "upsample requires a rank-3 tensor with dims "
+            "(MomentumSpace, HilbertSpace, HilbertSpace)."
+        )
+    if not isinstance(tensor.dims[0], MomentumSpace):
+        raise TypeError("upsample requires the first dimension to be a MomentumSpace.")
+    if not isinstance(tensor.dims[1], HilbertSpace) or not isinstance(
+        tensor.dims[2], HilbertSpace
+    ):
+        raise TypeError("upsample requires both matrix dimensions to be HilbertSpace.")
+    if tensor.dims[1] != tensor.dims[2] or tensor.data.shape[1] != tensor.data.shape[2]:
+        raise ValueError("upsample requires equal, square Hilbert-space matrix legs.")
+
+    k_space = cast(MomentumSpace, tensor.dims[0])
+    if not k_space.elements():
+        raise ValueError("upsample requires a nonempty MomentumSpace.")
+    reciprocal = _wannier_reciprocal_lattice(k_space)
+    lattice = reciprocal.dual
+    dim = lattice.dim
+
+    if not isinstance(scale, tuple):
+        raise TypeError("upsample scale must be a tuple of positive integers.")
+    if len(scale) != dim:
+        raise ValueError(
+            f"upsample scale must have one entry per spatial dimension ({dim}), "
+            f"got {len(scale)}."
+        )
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in scale):
+        raise TypeError("upsample scale entries must be positive integers (not bools).")
+    if any(value <= 0 for value in scale):
+        raise ValueError("upsample scale entries must all be positive.")
+
+    # The interpolation contract requires the complete character group, not an
+    # arbitrary path/subset that happens to use the same reciprocal lattice.
+    complete_k_space = brillouin_zone(reciprocal)
+    if k_space != complete_k_space:
+        raise ValueError(
+            "upsample requires the complete Brillouin-zone momentum grid in "
+            "its canonical order."
+        )
+
+    boundary = lattice.boundaries.basis
+    enlarged_boundary = ImmutableDenseMatrix(
+        boundary @ ImmutableDenseMatrix.diag(*scale)
+    )
+    enlarged_lattice = Lattice(
+        basis=lattice.basis,
+        boundaries=PeriodicBoundary(enlarged_boundary),
+        unit_cell={name: offset.rep for name, offset in lattice.unit_cell.items()},
+    )
+    new_k_space = brillouin_zone(enlarged_lattice.dual)
+
+    def _rehome_bloch_space(space: HilbertSpace) -> HilbertSpace:
+        """Relabel spatial states without changing their basis coordinates."""
+        states: list[U1Basis] = []
+        for element in space.elements():
+            state = cast(U1Basis, element)
+            try:
+                offset = state.irrep_of(Offset)
+            except ValueError:
+                # Abstract/non-spatial Hilbert spaces remain valid matrix labels.
+                return space
+            states.append(state.replace(offset.rebase(enlarged_lattice)))
+        return HilbertSpace.new(states)
+
+    left_space = _rehome_bloch_space(cast(HilbertSpace, tensor.dims[1]))
+    right_space = _rehome_bloch_space(cast(HilbertSpace, tensor.dims[2]))
+
+    # A diagonal positive boundary has the canonical Cartesian-product momentum
+    # order used by ``brillouin_zone``.  Exploit that separability with FFTs:
+    # memory is O(N_new * bands^2), rather than O(N_new * N_old), and runtime is
+    # O(N_new log N_new), rather than quadratic.  Keep the dense implementation
+    # below as the general fallback for skew periodic cells.
+    rectangular_shape: tuple[int, ...] | None = None
+    if boundary == ImmutableDenseMatrix.diag(
+        *(boundary[i, i] for i in range(dim))
+    ) and all(
+        bool(boundary[i, i].is_integer) and boundary[i, i] > 0 for i in range(dim)
+    ):
+        rectangular_shape = tuple(int(boundary[i, i]) for i in range(dim))
+
+    if rectangular_shape is not None:
+        matrix_shape = tuple(tensor.data.shape[1:])
+        grid_data = tensor.data.reshape(*rectangular_shape, *matrix_shape)
+        interpolated = _rectangular_upsample_data(
+            grid_data, rectangular_shape, scale
+        ).reshape(-1, *matrix_shape)
+        return Tensor(
+            data=interpolated,
+            dims=(new_k_space, left_space, right_space),
+        )
+
+    # Only the dense cardinal kernel needs explicit centered translations.
+    # The rectangular FFT path above applies the same convention directly in
+    # integer index space.
+    boundary_inv = boundary.inv()
+    centered_reps: list[ImmutableDenseMatrix] = []
+    for rep in lattice.boundaries.representatives():
+        coeff = boundary_inv @ rep
+        shift = ImmutableDenseMatrix(
+            [sy.floor(coeff[i, 0] + sy.Rational(1, 2)) for i in range(dim)]
+        )
+        centered_reps.append(ImmutableDenseMatrix(rep - boundary @ shift))
+
+    real_dtype = (
+        torch.float32
+        if tensor.data.dtype
+        in (torch.float16, torch.bfloat16, torch.float32, torch.complex64)
+        else torch.float64
+    )
+    complex_dtype = torch.complex64 if real_dtype == torch.float32 else torch.complex128
+    device = tensor.data.device
+    old_k = torch.tensor(
+        [[float(k.rep[i, 0]) for i in range(dim)] for k in k_space.elements()],
+        dtype=real_dtype,
+        device=device,
+    )
+    new_k = torch.tensor(
+        [[float(k.rep[i, 0]) for i in range(dim)] for k in new_k_space.elements()],
+        dtype=real_dtype,
+        device=device,
+    )
+    translations = torch.tensor(
+        [[float(rep[i, 0]) for i in range(dim)] for rep in centered_reps],
+        dtype=real_dtype,
+        device=device,
+    )
+    old_kernel = torch.exp(
+        (-2j * torch.pi * (old_k @ translations.T)).to(complex_dtype)
+    )
+    new_kernel = torch.exp(
+        (-2j * torch.pi * (new_k @ translations.T)).to(complex_dtype)
+    )
+
+    # The real part implements the symmetric ±R treatment of Nyquist modes.
+    # Without it, an even grid assigns a self-conjugate half-period mode to one
+    # sign only; complex interpolation coefficients then turn Hermitian input
+    # blocks non-Hermitian between samples.  Real cardinal weights interpolate
+    # every original block exactly while preserving conjugation relations.
+    weights = (new_kernel @ old_kernel.conj().T).real / k_space.dim
+    interpolated = torch.einsum(
+        "nk,kab->nab", weights.to(tensor.data.dtype), tensor.data
+    )
+    return Tensor(
+        data=interpolated,
+        dims=(new_k_space, left_space, right_space),
+    )
 
 
 def _basis_states_at_fractional_offset(
@@ -2576,3 +2816,114 @@ def proj_wannierization(
         svd_threshold,
         infer_lattice=wannierize_lattice,
     )
+
+
+def cartesian_scale(tensor: Tensor, scale: Sequence[sy.Expr | int]) -> Tensor:
+    r"""
+    Rescale the Cartesian geometry of a momentum-resolved tensor in place of
+    selecting or interpolating its information.
+
+    For Cartesian scale matrix \(S=\operatorname{diag}(s_1,\ldots,s_d)\), a
+    direct-lattice basis \(A\) becomes \(SA\). Its reciprocal basis therefore
+    becomes \(S^{-T}G\). Fractional real-space and momentum coordinates,
+    periodic boundaries, unit-cell sites, tensor data, and every axis size are
+    preserved.
+
+    Parameters
+    ----------
+    tensor : Tensor
+        Momentum-resolved tensor whose first axis is a
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+    scale : Sequence[sympy.Expr | int]
+        Nonzero Cartesian scale factor for each spatial direction. Entries
+        must be Python integers or symbolic SymPy expressions.
+
+    Returns
+    -------
+    Tensor
+        A tensor sharing the original data with geometrically rescaled
+        `MomentumSpace` and spatial `HilbertSpace` dimensions.
+
+    Raises
+    ------
+    ValueError
+        If a scale entry is zero or its length differs from the spatial
+        dimension.
+    TypeError
+        If the first tensor dimension is not a `MomentumSpace`, a momentum is
+        not backed by a `ReciprocalLattice`, or a scale entry is neither an
+        integer nor a SymPy expression.
+    """
+    if tensor.rank() < 1:
+        raise ValueError("cartesian_scale requires a tensor with at least one axis.")
+    if not isinstance(tensor.dims[0], MomentumSpace):
+        raise TypeError(
+            "The first dimension of the tensor must be a MomentumSpace, "
+            f"but is of type {type(tensor.dims[0])}"
+        )
+
+    if any(
+        not isinstance(entry, sy.Expr)
+        and (not isinstance(entry, int) or isinstance(entry, bool))
+        for entry in scale
+    ):
+        raise TypeError("cartesian_scale scale entries must be int or sympy.Expr.")
+    factors = tuple(sy.sympify(entry) for entry in scale)
+    if any(sy.simplify(entry) == 0 for entry in factors):
+        raise ValueError("cartesian_scale scale entries must all be nonzero.")
+
+    scaled_spaces: dict[AffineSpace, AffineSpace] = {}
+
+    def scale_space(space: AffineSpace) -> AffineSpace:
+        if len(factors) != space.dim:
+            raise ValueError(
+                "cartesian_scale scale must have one entry per Cartesian direction: "
+                f"expected {space.dim}, got {len(factors)}."
+            )
+        if space not in scaled_spaces:
+            basis = ImmutableDenseMatrix.diag(*factors) @ space.basis
+            scaled_spaces[space] = (
+                Lattice(
+                    basis=basis,
+                    boundaries=space.boundaries,
+                    unit_cell={
+                        name: site.rep for name, site in space.unit_cell.items()
+                    },
+                )
+                if isinstance(space, Lattice)
+                else AffineSpace(basis=basis)
+            )
+        return scaled_spaces[space]
+
+    def scale_momentum(momentum: Momentum) -> Momentum:
+        if not isinstance(momentum.space, ReciprocalLattice):
+            raise TypeError(
+                "Momentum must be backed by a ReciprocalLattice, got "
+                f"{type(momentum.space).__name__}."
+            )
+        return Momentum(
+            rep=momentum.rep,
+            space=cast(Lattice, scale_space(momentum.space.dual)).dual,
+        )
+
+    def scale_hilbert(space: HilbertSpace) -> HilbertSpace:
+        states: list[U1Basis] = []
+        for state in space.elements():
+            base = tuple(
+                Offset(rep=irrep.rep, space=scale_space(irrep.space))
+                if isinstance(irrep, Offset)
+                else irrep
+                for irrep in state.base
+            )
+            states.append(U1Basis(coef=state.coef, base=base))
+        return HilbertSpace.new(states)
+
+    dims = tuple(
+        dim.map(scale_momentum)
+        if isinstance(dim, MomentumSpace)
+        else scale_hilbert(dim)
+        if isinstance(dim, HilbertSpace)
+        else dim
+        for dim in tensor.dims
+    )
+    return Tensor(data=tensor.data, dims=dims)
