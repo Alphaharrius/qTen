@@ -50,6 +50,7 @@ For broader domain APIs, see:
 - [`qten.phys`][qten.phys]
 - [`qten.pointgroups`][qten.pointgroups]
 - [`qten.symbolics`][qten.symbolics]
+- [`qten.topology`][qten.topology]
 - [`qten.utils`][qten.utils]
 """
 
@@ -116,5 +117,6 @@ from . import plottings as plottings
 from . import pointgroups as pointgroups
 from . import precision as precision
 from . import symbolics as symbolics
+from . import topology as topology
 from . import utils as utils
 from . import validations as validations

@@ -37,6 +37,7 @@ plugins:
             filters:
               - "!^_$"
               - "!^_[^_]"
+              - "!^__all__$"
               - "!^NonNumericExpr$"
               - "!^__contains__$"
               - "!^__add__$"
