@@ -18,6 +18,11 @@ Core API
 - [`z2_indices`][qten.topology.z2_indices]
   Fu--Kane inversion parities at the \(2^d\) TRIM, hybrid-Wannier Wilson
   loops, or both.
+- [`Z2ParityResult`][qten.topology.Z2ParityResult],
+  [`Z2WilsonResult`][qten.topology.Z2WilsonResult],
+  [`Z2CombinedResult`][qten.topology.Z2CombinedResult]
+  Result mappings returned by ``method="parity"``, ``"wilson"``, and
+  ``"both"``.
 
 Mathematical convention
 -----------------------
@@ -120,7 +125,8 @@ from ..geometries import Lattice, Momentum, Offset, PeriodicBoundary, Reciprocal
 from ..linalg.tensors import Tensor
 from ..phys import Spin, as_spin, contains_spin
 from ..pointgroups import pointgroup
-from ..pointgroups.elements import PointGroupOpr
+from ..pointgroups.elements import PointGroupElement, PointGroupOpr
+from ..pointgroups.finite import FinitePointGroup
 from ..pointgroups.ops import spinful_hilbert_opr_repr
 from ..symbolics import (
     HilbertSpace,
@@ -133,7 +139,29 @@ from ..symbolics import (
 
 
 class Z2ParityTrimDiagnostics(TypedDict):
-    """Inversion-parity diagnostics at one TRIM."""
+    r"""Inversion-parity diagnostics at one time-reversal invariant momentum.
+
+    This mapping is one value in
+    [`Z2ParityResult`][qten.topology.Z2ParityResult] ``"diagnostics"``.
+    TRIM are labeled by bits \(n\in\{0,1\}^d\) with \(k=n/2\).
+
+    Attributes
+    ----------
+    delta : int
+        Fu--Kane pair-parity product \(\delta(\Gamma)=\pm 1\). Equal to
+        \((-1)^{N_-/2}\), where \(N_-\) is the number of occupied negative
+        inversion eigenvalues.
+    parity_eigenvalues : Tensor
+        Occupied inversion eigenvalues \(\xi_n(\Gamma)\) as a labeled
+        [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(IndexSpace(n_occupied),)`` and shape ``(n_occupied,)``.
+    commutator_error : float
+        Relative residual \(\|HI-IH\|/\|H\|\) at this TRIM. Large values mean
+        the supplied or assembled inversion does not commute with \(H(\Gamma)\).
+    direct_gap : float
+        Occupied-to-empty direct gap at this TRIM. ``nan`` if the occupied
+        count leaves no empty band.
+    """
 
     delta: int
     parity_eigenvalues: Tensor
@@ -142,7 +170,35 @@ class Z2ParityTrimDiagnostics(TypedDict):
 
 
 class Z2ParityResult(TypedDict):
-    """Result returned by the Fu--Kane inversion-parity method."""
+    r"""Result of [`z2_indices(..., method="parity")`][qten.topology.z2_indices].
+
+    Fu--Kane indices from inversion eigenvalues at the \(2^d\) TRIM. The
+    runtime object is a plain ``dict``; keys below are required.
+
+    Attributes
+    ----------
+    indices : tuple[int, ...]
+        \(\mathbb{Z}_2\) indices as integers in \(\{0,1\}\). Length 1 in two
+        dimensions, \((\nu,)\). Length 4 in three dimensions,
+        \((\nu_0, \nu_1, \nu_2, \nu_3)\).
+    method : {"parity"}
+        Construction that produced ``indices``.
+    parity_products : dict[tuple[int, ...], int]
+        TRIM bit-tuple \(n\) to \(\delta(\Gamma_n)=\pm 1\). Each key has one
+        ``0``/``1`` entry per spatial axis, with \(k_j=n_j/2\).
+    diagnostics : dict[tuple[int, ...], Z2ParityTrimDiagnostics]
+        Per-TRIM
+        [`Z2ParityTrimDiagnostics`][qten.topology.Z2ParityTrimDiagnostics]
+        with the same keys as ``parity_products``.
+    direct_gap : float
+        Minimum finite occupied-to-empty gap over the TRIM. ``nan`` if none
+        of those gaps are finite.
+
+    See Also
+    --------
+    [`z2_indices`][qten.topology.z2_indices]
+        Public constructor of this mapping.
+    """
 
     indices: tuple[int, ...]
     method: Literal["parity"]
@@ -152,7 +208,36 @@ class Z2ParityResult(TypedDict):
 
 
 class Z2WilsonPlaneResult(TypedDict):
-    """Hybrid-Wannier data on one TRIM plane."""
+    r"""Hybrid-Wannier data on one Wilson-loop plane.
+
+    In two dimensions this is one loop orientation over the Brillouin zone.
+    In three dimensions it is one TRIM plane \(k_{\mathrm{normal}}=0\) or
+    \(1/2\).
+
+    Attributes
+    ----------
+    z2 : int
+        Plane \(\mathbb{Z}_2\) invariant in \(\{0,1\}\), from the
+        Soluyanov--Vanderbilt largest-gap crossing count of the Wannier
+        centers.
+    wcc : Tensor
+        Hybrid Wannier charge centers \(\bar x_n(k_\perp)\in[0,1)\) as a
+        labeled [`Tensor`][qten.linalg.tensors.Tensor] with dims
+        ``(IndexSpace(n_perp), IndexSpace(n_occupied))`` and shape
+        ``(n_perp, n_occupied)``. The first axis follows ``sweep``.
+    gap_pos : Tensor
+        Largest-gap position on the Wannier circle at each sweep sample, as a
+        labeled tensor with dims ``(IndexSpace(n_perp),)``.
+    sweep : Tensor
+        Fractional \(k_\perp\) samples from \(0\) to \(1/2\), labeled by the
+        same ``IndexSpace(n_perp)`` as ``wcc`` and ``gap_pos``.
+    min_gap : float
+        Minimum occupied-to-empty direct gap along the Wilson strings on this
+        plane. ``nan`` if no finite gap is available.
+    kramers_resolved : bool
+        Whether Wannier centers at the TRIM-plane endpoints pair into Kramers
+        partners within ``kramers_tolerance``.
+    """
 
     z2: int
     wcc: Tensor
@@ -163,7 +248,36 @@ class Z2WilsonPlaneResult(TypedDict):
 
 
 class Z2WilsonResult(TypedDict):
-    """Result returned by the Wilson-loop method."""
+    r"""Result of [`z2_indices(..., method="wilson")`][qten.topology.z2_indices].
+
+    Hybrid-Wannier \(\mathbb{Z}_2\) indices. The runtime object is a plain
+    ``dict``; keys below are required.
+
+    Attributes
+    ----------
+    indices : tuple[int, ...]
+        Same layout as
+        [`Z2ParityResult.indices`][qten.topology.Z2ParityResult]: \((\nu,)\)
+        in 2-D or \((\nu_0, \nu_1, \nu_2, \nu_3)\) in 3-D.
+    method : {"wilson"}
+        Construction that produced ``indices``.
+    planes : dict[tuple[int, float], Z2WilsonPlaneResult]
+        Plane-resolved hybrid-Wannier data. In 2-D the key is
+        ``(loop_axis, 0.0)`` for each loop orientation. In 3-D the key is
+        ``(normal, trim)`` with ``trim`` in ``{0.0, 0.5}``.
+    axis_z2 : tuple[tuple[int, ...], ...]
+        Per-axis plane invariants. In 2-D each entry is ``(ν,)`` for one loop
+        orientation. In 3-D each entry is ``(ν(k_j=0), ν(k_j=π))``.
+    min_gap : float
+        Minimum ``min_gap`` over ``planes``. ``nan`` if none are finite.
+
+    See Also
+    --------
+    [`Z2WilsonPlaneResult`][qten.topology.Z2WilsonPlaneResult]
+        Value type stored in ``planes``.
+    [`z2_indices`][qten.topology.z2_indices]
+        Public constructor of this mapping.
+    """
 
     indices: tuple[int, ...]
     method: Literal["wilson"]
@@ -173,7 +287,29 @@ class Z2WilsonResult(TypedDict):
 
 
 class Z2CombinedResult(TypedDict):
-    """Result returned when both parity and Wilson-loop methods are run."""
+    """Result of [`z2_indices(..., method="both")`][qten.topology.z2_indices].
+
+    Both constructions are run. ``indices`` follows the Fu--Kane parity
+    values; a mismatch with Wilson emits a `RuntimeWarning`.
+
+    Attributes
+    ----------
+    indices : tuple[int, ...]
+        Copy of ``parity["indices"]``.
+    method : {"both"}
+        Construction tag for this combined mapping.
+    parity : Z2ParityResult
+        Full Fu--Kane
+        [`Z2ParityResult`][qten.topology.Z2ParityResult].
+    wilson : Z2WilsonResult
+        Full hybrid-Wannier
+        [`Z2WilsonResult`][qten.topology.Z2WilsonResult].
+
+    See Also
+    --------
+    [`z2_indices`][qten.topology.z2_indices]
+        Public constructor of this mapping.
+    """
 
     indices: tuple[int, ...]
     method: Literal["both"]
@@ -342,20 +478,25 @@ def _kramers_spectrum(energies: torch.Tensor, tolerance: float) -> bool:
     return bool((pairs[:, 1] - pairs[:, 0]).max().item() <= tolerance)
 
 
+def _cartesian_components(offset: Offset) -> list[float]:
+    vector = offset.to_vec(ImmutableDenseMatrix)
+    return [float(component) for component in vector]
+
+
 def _time_reversal_matrix(
     space: HilbertSpace, like: torch.Tensor
 ) -> torch.Tensor | None:
     if not contains_spin(space):
         return None
     theta = like.new_zeros((space.dim, space.dim))
-    index_of: dict[tuple[tuple[object, ...], object], int] = {}
-    parsed: list[tuple[tuple[object, ...], object, int]] = []
+    index_of: dict[tuple[tuple[object, ...], Spin], int] = {}
+    parsed: list[tuple[tuple[object, ...], Spin, int]] = []
     for psi in space.elements():
         try:
-            spin = psi.irrep_of(Spin)
+            labeled = psi.irrep_of(Spin)
         except ValueError:
             return None
-        spin = as_spin(spin)
+        spin = as_spin(labeled)
         if spin is None:
             return None
         nons = tuple(rep for rep in psi.base if as_spin(rep) is None)
@@ -371,12 +512,18 @@ def _time_reversal_matrix(
     return theta
 
 
-def _inversion_element(dim: int):
+def _inversion_element(dim: int) -> PointGroupElement:
     if dim == 2:
         # In 2-D, r -> -r is a pi rotation. Use a trivial spin lift so the
         # operator is spatial inversion, not a spinful C2.
-        return pointgroup("c2-xy:xy", spin="trivial")
-    for element in pointgroup("-1").elements():
+        element = pointgroup("c2-xy:xy", spin="trivial")
+        if isinstance(element, FinitePointGroup):
+            raise RuntimeError("Expected a single 2-D inversion element.")
+        return element
+    group = pointgroup("-1")
+    if not isinstance(group, FinitePointGroup):
+        raise RuntimeError("Point group -1 did not return a finite group.")
+    for element in group.elements():
         irrep_dim = element.irrep.rows
         if sy.simplify(element.irrep + sy.eye(irrep_dim)) == sy.zeros(irrep_dim):
             return element
@@ -438,15 +585,14 @@ class _Z2Engine:
                 "or an explicit inversion tensor."
             )
         k_cart = torch.tensor(
-            [
-                float(c)
-                for c in Momentum(
+            _cartesian_components(
+                Momentum(
                     rep=ImmutableDenseMatrix(
                         [float(x) for x in trim_frac.detach().cpu().reshape(-1)]
                     ),
                     space=self.lattice.dual,
-                ).to_vec()
-            ],
+                )
+            ),
             dtype=self.inversion_i0.real.dtype,
             device=self.inversion_i0.device,
         )
@@ -757,20 +903,21 @@ def _orbital_geometry(
             "label every basis state or none."
         )
 
-    positions = [None] * n_bands
+    positions: list[torch.Tensor | None] = [None] * n_bands
     for state, offset in zip(states, offsets):
         assert offset is not None
         index = space.structure[state]
         positions[index] = torch.tensor(
-            [float(c) for c in offset.to_vec()],
+            _cartesian_components(offset),
             dtype=torch.float64,
         )
         rebased = offset.rebase(lattice)
         for j in range(lattice.dim):
             tau[index, j] = float(rebased.rep[j])
-    if any(item is None for item in positions):
+    resolved = [item for item in positions if item is not None]
+    if len(resolved) != n_bands:
         raise RuntimeError("Offset labels do not cover every orbital index.")
-    return tau, torch.stack([item for item in positions if item is not None])
+    return tau, torch.stack(resolved)
 
 
 def _spatial_inversion_matrix(
@@ -853,13 +1000,14 @@ def _build_engine(
     canonical_position = {
         _rep_key(rep): position for position, rep in enumerate(canonical_reps)
     }
-    scatter_kw = {
-        "direct_boundary": direct_boundary,
-        "dual_boundary": dual_boundary,
-        "grid_shape": grid_shape,
-        "canonical_position": canonical_position,
-    }
-    h_grid = _scatter_to_grid(data, momenta, **scatter_kw)
+    h_grid = _scatter_to_grid(
+        data,
+        momenta,
+        direct_boundary=direct_boundary,
+        dual_boundary=dual_boundary,
+        grid_shape=grid_shape,
+        canonical_position=canonical_position,
+    )
 
     h_grid = 0.5 * (h_grid + h_grid.transpose(-1, -2).conj())
     hoppings = torch.fft.ifftn(h_grid, dim=tuple(range(momentum_dim)))
@@ -890,7 +1038,12 @@ def _build_engine(
         if inversion.data.shape[-2:] != (n_bands, n_bands):
             raise ValueError("inversion must match bloch_hamiltonian's rank and shape.")
         inv_grid = _scatter_to_grid(
-            inversion.data, _bloch_momenta(inversion), **scatter_kw
+            inversion.data,
+            _bloch_momenta(inversion),
+            direct_boundary=direct_boundary,
+            dual_boundary=dual_boundary,
+            grid_shape=grid_shape,
+            canonical_position=canonical_position,
         )
         inversion_hoppings = torch.fft.ifftn(inv_grid, dim=tuple(range(momentum_dim)))
     elif isinstance(space, HilbertSpace) and positions_cart is not None:
@@ -914,7 +1067,7 @@ def _build_engine(
         try:
             inversion_i0 = _spatial_inversion_matrix(space, center, hoppings)
             inversion_center_vec = torch.tensor(
-                [float(c) for c in center.to_vec()], dtype=torch.float64
+                _cartesian_components(center), dtype=torch.float64
             )
         except (RuntimeError, ValueError) as exc:
             inversion_i0 = None
