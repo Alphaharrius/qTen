@@ -130,6 +130,72 @@ def test_representative_spinor_tables_remap_to_generated_elements():
             )
 
 
+def test_td_spinor_has_bilbao_gamma6():
+    group = pointgroup("-43m")
+    assert group.spinor_irreps is not None
+    label = group.spinor_irreps["irreps"]["spinor_1"]["bilbao_label"]
+    assert label in {"\u03936", "\u0393\u03056"}
+    assert group.spinor_irreps["irreps"]["spinor_1"]["characters"][3] > 0
+
+
+def test_oh_spinor_inversion_parity_split():
+    group = pointgroup("m-3m")
+    assert group.spinor_irreps is not None
+    labels = [row["bilbao_label"] for row in group.spinor_irreps["irreps"].values()]
+    plus = {label for label in labels if label.endswith("^+")}
+    minus = {label for label in labels if label.endswith("^-")}
+    assert plus and minus
+    plus_indices = {label.split("^", 1)[0] for label in plus}
+    minus_indices = {label.split("^", 1)[0] for label in minus}
+    assert plus_indices == minus_indices
+    assert "\u03936" in plus_indices
+
+
+def test_2d_parents_inherit_3d_dpg_labels():
+    data = _point_group_data()
+    records = {
+        (record.get("dim", 3), record["symbol"]): record
+        for record in data["point_groups"]
+    }
+    for symbol in ("4mm", "6mm", "3m", "1"):
+        parent = records[(3, symbol)]
+        child = records[(2, symbol)]
+        parent_labels = {
+            name: row["bilbao_label"]
+            for name, row in parent["spinor_irreps"]["irreps"].items()
+        }
+        child_labels = {
+            name: row["bilbao_label"]
+            for name, row in child["spinor_irreps"]["irreps"].items()
+        }
+        assert child_labels == parent_labels
+    one_d = records[(1, "1")]
+    assert (
+        one_d["spinor_irreps"]["irreps"]["spinor_1"]["bilbao_label"]
+        == records[(3, "1")]["spinor_irreps"]["irreps"]["spinor_1"]["bilbao_label"]
+    )
+
+
+def test_every_packaged_spinor_row_has_bilbao_label():
+    for record in _point_group_data()["point_groups"]:
+        labels = [
+            row.get("bilbao_label")
+            for row in record["spinor_irreps"]["irreps"].values()
+        ]
+        assert all(labels)
+        assert len(set(labels)) == len(labels)
+
+
+def test_packaged_catalog_load_does_not_http(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise AssertionError("pointgroup catalog must not HTTP")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    group = pointgroup("-43m")
+    assert group.spinor_irreps is not None
+    assert group.spinor_irreps["irreps"]["spinor_1"]["bilbao_label"]
+
+
 def test_bilbao_parser_splits_complex_conjugate_irrep_rows():
     data = _point_group_data()
     records = {
