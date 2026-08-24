@@ -422,9 +422,7 @@ class _Z2Engine:
 
     def inversion_at_trim(self, trim_frac: torch.Tensor) -> torch.Tensor:
         if self.inversion_hoppings is not None:
-            return _fourier_interpolate(
-                self.inversion_hoppings, trim_frac, self.r_axes
-            )
+            return _fourier_interpolate(self.inversion_hoppings, trim_frac, self.r_axes)
         if (
             self.inversion_i0 is None
             or self.inversion_center_vec is None

@@ -290,9 +290,7 @@ def _pauli():
     return identity, sigma_x, sigma_y, sigma_z
 
 
-def _wilson_dirac_hamiltonian(
-    mass: float, shape: tuple[int, ...] = (4, 4, 4)
-):
+def _wilson_dirac_hamiltonian(mass: float, shape: tuple[int, ...] = (4, 4, 4)):
     dimension = len(shape)
     lattice = Lattice(
         basis=ImmutableDenseMatrix.eye(dimension),
