@@ -170,9 +170,7 @@ def _koster_dpg_labels(
     if inversion:
         inv_index = class_labels.index("-1")
         proper = [
-            index
-            for index, label in enumerate(class_labels)
-            if _is_proper_class(label)
+            index for index, label in enumerate(class_labels) if _is_proper_class(label)
         ]
         grouped: dict[tuple[Any, ...], list[tuple[str, np.ndarray, str]]] = {}
         for name, row in irreps.items():
@@ -414,9 +412,7 @@ def relabel_existing(data: dict[str, Any]) -> dict[str, Any]:
     records.sort(key=lambda record: (int(record.get("dim", 3)), record["symbol"]))
     return {
         "schema_version": data.get("schema_version", 3),
-        "section_convention": data.get(
-            "section_convention", SU2_SECTION_CONVENTION
-        ),
+        "section_convention": data.get("section_convention", SU2_SECTION_CONVENTION),
         "source": data.get("source"),
         "point_groups": records,
     }
@@ -600,8 +596,7 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
                 f"Spinor dimensions do not satisfy sum(dim^2)=|G| for {record['symbol']}."
             )
         labels = [
-            str(row.get("bilbao_label") or "")
-            for row in spinor["irreps"].values()
+            str(row.get("bilbao_label") or "") for row in spinor["irreps"].values()
         ]
         if any(not label for label in labels):
             raise SystemExit(
@@ -660,9 +655,7 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
         if record.get("dim", 3) == 3:
             continue
         parent = three_d_by_symbol[record["symbol"]]
-        expected = _inherit_dpg_labels(
-            record["spinor_irreps"], parent["spinor_irreps"]
-        )
+        expected = _inherit_dpg_labels(record["spinor_irreps"], parent["spinor_irreps"])
         for name, row in record["spinor_irreps"]["irreps"].items():
             if row.get("bilbao_label") != expected[name]:
                 raise SystemExit(
