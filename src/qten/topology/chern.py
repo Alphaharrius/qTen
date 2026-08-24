@@ -1,4 +1,4 @@
-r"""Quantum geometry and topology of momentum-resolved band Hamiltonians.
+r"""Quantum geometry and first Chern number of momentum-resolved band Hamiltonians.
 
 This module computes geometric properties of an isolated occupied-band
 subspace carried by a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with dims
@@ -18,6 +18,8 @@ Core API
 - [`chern_number`][qten.topology.chern_number]
   First Chern number computed either with discrete FHS link variables or by
   integrating the finite-difference Berry curvature.
+- [`FHSResult`][qten.topology.FHSResult], [`QGTResult`][qten.topology.QGTResult]
+  Result mappings returned by ``method="fhs"`` and ``method="qgt"``.
 
 Mathematical convention
 -----------------------
@@ -66,10 +68,10 @@ import sympy as sy
 import torch
 from sympy import ImmutableDenseMatrix
 
-from .geometries import PeriodicBoundary, ReciprocalLattice
-from .linalg.decompose import eigh
-from .linalg.tensors import Tensor
-from .symbolics import HilbertSpace, IndexSpace, MomentumSpace
+from ..geometries import PeriodicBoundary, ReciprocalLattice
+from ..linalg.decompose import eigh
+from ..linalg.tensors import Tensor
+from ..symbolics import HilbertSpace, IndexSpace, MomentumSpace
 
 
 @dataclass(frozen=True)
@@ -219,8 +221,8 @@ def quantum_geometric_tensor(
     bloch_hamiltonian : Tensor
         Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
         ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The final two data
-        axes must be square and represent the Bloch Hamiltonian at each
-        momentum.
+        axes must be square Hilbert-space matrices at each momentum and are
+        aligned onto a common Hilbert space.
     n_occupied : int | None, optional
         Number of lowest-energy bands included in the occupied projector.
         Defaults to half the Hamiltonian bands using integer division.
@@ -411,7 +413,31 @@ def berry_curvature(
 
 
 class FHSResult(TypedDict):
-    """Result returned by the discrete FHS Chern-number method."""
+    r"""Result of [`chern_number(..., method="fhs")`][qten.topology.chern_number].
+
+    Discrete Fukui--Hatsugai--Suzuki Chern number on a complete 2-D
+    reciprocal mesh. The runtime object is a plain ``dict``.
+
+    Attributes
+    ----------
+    chern : float
+        Sum of oriented plaquette phases divided by \(2\pi\).
+    nearest_integer : int
+        ``numpy.rint(chern)`` as a convenience diagnostic, not a proof that
+        the bundle is isolated.
+    direct_gap : float
+        Minimum occupied-to-empty direct gap over the mesh.
+    berry_flux : Tensor
+        Plaquette phase in radians as a labeled
+        [`Tensor`][qten.linalg.tensors.Tensor] with dims ``(MomentumSpace,)``
+        and shape ``(N_k,)``. Momentum \(k\) labels the plaquette anchored at
+        \(k\); the order matches the input Hamiltonian momentum space.
+
+    See Also
+    --------
+    [`chern_number`][qten.topology.chern_number]
+        Public constructor of this mapping.
+    """
 
     chern: float
     nearest_integer: int
@@ -420,7 +446,37 @@ class FHSResult(TypedDict):
 
 
 class QGTResult(TypedDict):
-    """Result returned by the QGT-integral Chern-number method."""
+    r"""Result of [`chern_number(..., method="qgt")`][qten.topology.chern_number].
+
+    Chern number from integrated projector Berry curvature, plus the local
+    quantum-geometric tensors. The runtime object is a plain ``dict``.
+
+    Attributes
+    ----------
+    chern : float
+        \((2\pi)^{-1}\sum_k\Omega_{xy}(k)\) from central finite differences.
+        Approaches an integer only as the mesh is refined.
+    nearest_integer : int
+        ``numpy.rint(chern)`` as a convenience diagnostic.
+    direct_gap : float
+        Minimum occupied-to-empty direct gap over the mesh.
+    quantum_geometric_tensor : Tensor
+        Complex QGT with dims
+        ``(MomentumSpace, IndexSpace(2), IndexSpace(2))`` and shape
+        ``(N_k, 2, 2)``. Components are per reciprocal-grid step.
+    fubini_study_metric : Tensor
+        Real part of ``quantum_geometric_tensor``, same dims and shape.
+    berry_curvature : Tensor
+        \(\Omega_{ij}=2\operatorname{Im}Q_{ij}\), same dims and shape. The
+        \(xy\) orientation matches the FHS plaquette.
+
+    See Also
+    --------
+    [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor]
+        Standalone QGT used to build this mapping.
+    [`chern_number`][qten.topology.chern_number]
+        Public constructor of this mapping.
+    """
 
     chern: float
     nearest_integer: int
@@ -520,7 +576,8 @@ def chern_number(
         Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
         ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The first data axis
         enumerates a complete two-dimensional reciprocal quotient; the last
-        two axes are square Bloch-Hamiltonian matrices.
+        two axes are square Bloch-Hamiltonian matrices and are aligned onto
+        a common Hilbert space.
     n_occupied : int | None, optional
         Number of lowest-energy bands defining the occupied subspace. It must
         lie strictly between zero and the total band count. Defaults to half
