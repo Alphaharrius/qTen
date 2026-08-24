@@ -1,4 +1,4 @@
-r"""Quantum geometry and topology of momentum-resolved band Hamiltonians.
+r"""Quantum geometry and first Chern number of momentum-resolved band Hamiltonians.
 
 This module computes geometric properties of an isolated occupied-band
 subspace carried by a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with dims
@@ -66,10 +66,10 @@ import sympy as sy
 import torch
 from sympy import ImmutableDenseMatrix
 
-from .geometries import PeriodicBoundary, ReciprocalLattice
-from .linalg.decompose import eigh
-from .linalg.tensors import Tensor
-from .symbolics import HilbertSpace, IndexSpace, MomentumSpace
+from ..geometries import PeriodicBoundary, ReciprocalLattice
+from ..linalg.decompose import eigh
+from ..linalg.tensors import Tensor
+from ..symbolics import HilbertSpace, IndexSpace, MomentumSpace
 
 
 @dataclass(frozen=True)

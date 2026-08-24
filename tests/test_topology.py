@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import math
 
 import pytest
 import sympy as sy
@@ -15,6 +16,7 @@ from qten.topology import (
     chern_number,
     fubini_study_metric,
     quantum_geometric_tensor,
+    z2_indices,
 )
 
 
@@ -272,3 +274,162 @@ def test_quantum_geometry_supports_one_and_three_dimensions(sizes):
 
     with pytest.raises(ValueError, match="two-dimensional"):
         chern_number(hamiltonian, 1)
+
+
+def _pauli():
+    identity = torch.eye(2, dtype=torch.complex128)
+    sigma_x = torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.complex128)
+    sigma_y = torch.tensor([[0.0, -1.0j], [1.0j, 0.0]], dtype=torch.complex128)
+    sigma_z = torch.tensor([[1.0, 0.0], [0.0, -1.0]], dtype=torch.complex128)
+    return identity, sigma_x, sigma_y, sigma_z
+
+
+def _wilson_dirac_hamiltonian(mass: float, shape: tuple[int, int, int] = (4, 4, 4)):
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(3),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(*shape)),
+        unit_cell={"r": ImmutableDenseMatrix.zeros(3, 1)},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = HilbertSpace.new(
+        U1Basis(coef=sy.Integer(1), base=(("band", orbital, spin),))
+        for orbital in range(2)
+        for spin in range(2)
+    )
+    identity, sigma_x, sigma_y, sigma_z = _pauli()
+    beta = torch.kron(sigma_z, identity)
+    alpha_x = torch.kron(sigma_x, sigma_x)
+    alpha_y = torch.kron(sigma_x, sigma_y)
+    alpha_z = torch.kron(sigma_x, sigma_z)
+    blocks = []
+    for momentum in k_space.elements():
+        kx = 2.0 * math.pi * float(momentum.rep[0])
+        ky = 2.0 * math.pi * float(momentum.rep[1])
+        kz = 2.0 * math.pi * float(momentum.rep[2])
+        mass_term = mass + math.cos(kx) + math.cos(ky) + math.cos(kz)
+        blocks.append(
+            mass_term * beta
+            + math.sin(kx) * alpha_x
+            + math.sin(ky) * alpha_y
+            + math.sin(kz) * alpha_z
+        )
+    hamiltonian = Tensor(
+        data=torch.stack(blocks),
+        dims=(k_space, band_space, band_space),
+    )
+    inversion = Tensor(
+        data=beta.expand(hamiltonian.data.shape[0], -1, -1).clone(),
+        dims=hamiltonian.dims,
+    )
+    return hamiltonian, inversion
+
+
+@pytest.mark.parametrize(
+    ("mass", "indices"),
+    [
+        (-2.0, (1, 0, 0, 0)),
+        (-4.0, (0, 0, 0, 0)),
+        (0.0, (0, 1, 1, 1)),
+    ],
+)
+def test_z2_parity_indices_of_wilson_dirac_phases(mass, indices):
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(mass)
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )
+
+    assert result["method"] == "parity"
+    assert result["indices"] == indices
+    assert result["direct_gap"] > 0.1
+
+
+def test_z2_auto_uses_parity_when_inversion_is_supplied():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    result = z2_indices(hamiltonian, n_occupied=2, inversion=inversion)
+
+    assert result["method"] == "parity"
+    assert result["indices"] == (1, 0, 0, 0)
+
+
+def test_z2_wilson_indices_agree_with_parity_for_strong_ti():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="wilson",
+        n_loop=16,
+        n_perp=9,
+    )
+
+    assert result["method"] == "wilson"
+    assert result["indices"] == (1, 0, 0, 0)
+    assert result["min_gap"] > 0.1
+
+
+def test_z2_rejects_odd_occupied_count():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    with pytest.raises(ValueError, match="even occupied count"):
+        z2_indices(hamiltonian, n_occupied=1, inversion=inversion, method="parity")
+
+
+def test_z2_rejects_invalid_method():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+
+    with pytest.raises(ValueError, match="method must be"):
+        z2_indices(hamiltonian, 2, inversion=inversion, method="invalid")  # type: ignore[call-overload]
+
+
+def test_z2_rejects_two_dimensional_hamiltonian():
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+
+    with pytest.raises(ValueError, match="three-dimensional"):
+        z2_indices(hamiltonian, n_occupied=2, method="wilson")
+
+
+def test_z2_parity_requires_inversion_or_offset_labels():
+    hamiltonian, _inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    with pytest.raises(RuntimeError, match="Cannot build inversion"):
+        z2_indices(hamiltonian, n_occupied=2, method="parity")
+
+
+def test_z2_both_prefers_parity_indices():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="both",
+        n_loop=16,
+        n_perp=9,
+    )
+
+    assert result["method"] == "both"
+    assert result["indices"] == (1, 0, 0, 0)
+    assert result["parity"]["indices"] == (1, 0, 0, 0)
+    assert result["wilson"]["indices"] == (1, 0, 0, 0)
+
+
+def test_z2_auto_falls_back_to_wilson_without_inversion():
+    hamiltonian, _inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    with pytest.warns(RuntimeWarning, match="Parity method unavailable"):
+        result = z2_indices(
+            hamiltonian,
+            n_occupied=2,
+            method="auto",
+            n_loop=16,
+            n_perp=9,
+        )
+
+    assert result["method"] == "wilson"
+    assert result["indices"] == (1, 0, 0, 0)
