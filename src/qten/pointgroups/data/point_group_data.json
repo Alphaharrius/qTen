@@ -69,7 +69,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1
         ],
@@ -175,7 +174,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -258,7 +256,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1
         ],
@@ -368,7 +365,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -511,7 +507,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -670,7 +665,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           2,
@@ -868,7 +862,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -1059,7 +1052,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -1400,7 +1392,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -1655,7 +1646,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -1771,7 +1761,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -1929,7 +1918,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -2023,7 +2011,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -2308,7 +2295,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -2565,7 +2551,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           2,
@@ -2752,7 +2737,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -2919,7 +2903,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -3115,7 +3098,6 @@
             "dim": 4
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           8,
@@ -3432,7 +3414,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -3653,7 +3634,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -3726,7 +3706,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1
         ],
@@ -3822,7 +3801,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -4010,7 +3988,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -4147,7 +4124,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -4315,7 +4291,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           3,
@@ -4446,7 +4421,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -4581,7 +4555,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           2,
@@ -4716,7 +4689,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           2,
@@ -4900,7 +4872,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -5370,7 +5341,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -5725,7 +5695,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -5898,7 +5867,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -6077,7 +6045,6 @@
             "dim": 4
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           6,
@@ -6245,7 +6212,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -6562,7 +6528,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -7443,7 +7408,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -7927,7 +7891,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           2,
@@ -8154,7 +8117,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -8375,7 +8337,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -8477,7 +8438,6 @@
             "dim": 1
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1
@@ -8838,7 +8798,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           4,
@@ -9242,7 +9201,6 @@
             "dim": 4
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           6,
@@ -9384,7 +9342,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,
@@ -9644,7 +9601,6 @@
             "dim": 2
           }
         },
-        "label_source": "bilbao-dpg-koster",
         "multiplicities": [
           1,
           1,

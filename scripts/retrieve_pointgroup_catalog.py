@@ -3,11 +3,10 @@
 Ordinary class tables are a pinned Bilbao cache. This script never rewrites
 those names or numbers. Spinor class tables are computed from QTen's
 principal SU(2) lift and stored in the same shape as ``irreps``. Each spinor
-row also gets a Representations DPG ``bilbao_label`` (Koster Γ); χ numbers
-are never copied from those pages. ``--check`` verifies the generated group
-still realizes the packaged ordinary table and that every spinor row is
-labeled. spgrep is used only by ``--check-spgrep``; it is never written into
-the JSON.
+row also gets a Koster Γ ``bilbao_label``; χ numbers are never taken from
+double-group pages. ``--check`` verifies the generated group still realizes
+the packaged ordinary table and that every spinor row is labeled. spgrep is
+used only by ``--check-spgrep``; it is never written into the JSON.
 """
 
 from __future__ import annotations
@@ -16,10 +15,6 @@ import argparse
 import json
 import re
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -54,27 +49,8 @@ M_1D_SPATIAL = [[-1]]
 M_1D_ROTATION3 = [[-1, 0, 0], [0, 1, 0], [0, 0, 1]]
 I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 
-# Representations DPG (double point groups). Not BANDREP, not space-group DSG.
-DPG_INDEX_URL = (
-    "https://cryst.ehu.es/cgi-bin/cryst/programs/"
-    "representations_point.pl?tipogrupo=dbg"
-)
 _GAMMA = "\u0393"
 _GAMMA_LABEL_RE = re.compile(rf"^{_GAMMA}(\d+)(?:\^([+-]))?$")
-_DPG_GAMMA_HTML_RE = re.compile(
-    r"(?:overline|text-decoration:\s*overline|&#772;|̄)[^<]{0,80}"
-    r"&Gamma;<sub>(\d+)</sub>"
-    r"|"
-    r"&Gamma;<sub>(\d+)</sub>[^<]{0,40}"
-    r"(?:overline|text-decoration:\s*overline|&#772;|̄)"
-    r"|"
-    r"&Gamma;<sub>(\d+)</sub>\s*(?:\^|<sup>)([+-])",
-    re.IGNORECASE | re.DOTALL,
-)
-_DPG_GAMMA_PLAIN_RE = re.compile(
-    rf"{_GAMMA}\u0305?(\d+)(?:\^([+-]))?|&Gamma;<sub>(\d+)</sub>(?:\^|<sup>)?([+-])?",
-    re.IGNORECASE,
-)
 
 
 def _load_catalog() -> dict[str, Any]:
@@ -179,7 +155,7 @@ def _spinor_index(name: str) -> int:
 def _koster_dpg_labels(
     ordinary_irreps: dict[str, Any], spinor_table: dict[str, Any]
 ) -> dict[str, str]:
-    """Koster/Bilbao DPG Γ names from qten class χ (Representations DPG convention).
+    """Koster Γ names from qten class χ.
 
     Ordinary Γ indices continue. Centrosymmetric groups split each spinor type
     as Γn^+ / Γn^- by χ(i). χ numbers themselves are not rewritten.
@@ -240,185 +216,8 @@ def _koster_dpg_labels(
     return assigned
 
 
-def _dpg_http_get(url: str, *, timeout: float = 20) -> str | None:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "qten-pointgroup-catalog/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            if getattr(response, "status", 200) >= 400:
-                return None
-            return response.read().decode("latin-1", errors="replace")
-    except (urllib.error.URLError, TimeoutError, OSError):
-        return None
-
-
-def _parse_dpg_gamma_labels(html: str) -> list[str]:
-    """Extract barred (double-valued) Koster Γ labels from a DPG HTML page."""
-    labels: list[str] = []
-    seen: set[str] = set()
-    for match in _DPG_GAMMA_HTML_RE.finditer(html):
-        index = next(group for group in match.groups()[:3] if group)
-        parity = match.group(4) if match.lastindex and match.lastindex >= 4 else None
-        label = _format_gamma(int(index), parity if parity in {"+", "-"} else None)
-        if label not in seen:
-            seen.add(label)
-            labels.append(label)
-    if labels:
-        return labels
-    for match in _DPG_GAMMA_PLAIN_RE.finditer(html):
-        index = match.group(1) or match.group(3)
-        if not index:
-            continue
-        parity = match.group(2) or match.group(4)
-        # Unbarred Γ1… on the same page are ordinary rows; skip until an overline
-        # is present, otherwise keep all Γ after the ordinary max via matching.
-        label = _format_gamma(int(index), parity if parity in {"+", "-"} else None)
-        if label not in seen:
-            seen.add(label)
-            labels.append(label)
-    return labels
-
-
-class _DPGTableParser(HTMLParser):
-    """Collect numeric table rows from Representations DPG HTML."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.rows: list[list[str]] = []
-        self._row: list[str] | None = None
-        self._cell: list[str] | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "tr":
-            self._row = []
-        elif tag == "td" and self._row is not None:
-            self._cell = []
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "td" and self._cell is not None and self._row is not None:
-            self._row.append("".join(self._cell).strip())
-            self._cell = None
-        elif tag == "tr" and self._row is not None:
-            if self._row:
-                self.rows.append(self._row)
-            self._row = None
-
-    def handle_data(self, data: str) -> None:
-        if self._cell is not None:
-            self._cell.append(data)
-
-
-def _parse_dpg_character_rows(html: str) -> list[dict[str, Any]]:
-    parser = _DPGTableParser()
-    try:
-        parser.feed(html)
-    except Exception:
-        return []
-    parsed: list[dict[str, Any]] = []
-    for row in parser.rows:
-        joined = " ".join(row)
-        gamma_labels = _parse_dpg_gamma_labels(joined)
-        if not gamma_labels:
-            continue
-        numbers: list[complex] = []
-        for cell in row:
-            stripped = cell.strip().replace(" ", "")
-            if not stripped:
-                continue
-            try:
-                if stripped in {"i", "-i", "+i"}:
-                    numbers.append(1j if "i" in stripped and "-" not in stripped else -1j)
-                    continue
-                numbers.append(complex(stripped.replace("i", "j")))
-            except ValueError:
-                continue
-        if numbers:
-            parsed.append(
-                {
-                    "bilbao_label": gamma_labels[0],
-                    "characters": numbers,
-                    "dim": int(round(abs(numbers[0].real))),
-                }
-            )
-    return parsed
-
-
-def fetch_dpg_tables(symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
-    """Fetch Representations DPG character tables. Empty if the CGI is down."""
-    index = _dpg_http_get(DPG_INDEX_URL)
-    if not index:
-        print("  DPG CGI unavailable (no index)", flush=True)
-        return {}
-    tables: dict[str, list[dict[str, Any]]] = {}
-    for symbol in symbols:
-        html = _dpg_http_get(f"{DPG_INDEX_URL}&super={urllib.parse.quote(symbol)}")
-        if not html or "Internal Server Error" in html or len(html) < 200:
-            continue
-        rows = _parse_dpg_character_rows(html)
-        if rows:
-            tables[symbol] = rows
-            print(f"  DPG {symbol}: {len(rows)} rows", flush=True)
-    return tables
-
-
-def _eta_align_dpg_labels(
-    spinor_table: dict[str, Any], dpg_rows: list[dict[str, Any]]
-) -> dict[str, str] | None:
-    """Match qten spinor rows to DPG double-valued Γ labels.
-
-    Bilbao DPG pages have no U(g). A double-valued row agrees with qten's
-    section up to a global sheet flip on G\\{1} (same idea as ``--check-spgrep``).
-    """
-    qten_items = [
-        (name, _row_chi(row), int(row["dim"]))
-        for name, row in spinor_table["irreps"].items()
-    ]
-    unused = set(range(len(dpg_rows)))
-    assigned: dict[str, str] = {}
-    for name, chi, dim in qten_items:
-        scored = []
-        for index in unused:
-            dpg = dpg_rows[index]
-            dpg_chi = np.asarray(dpg["characters"], dtype=complex)
-            if int(dpg.get("dim") or round(abs(dpg_chi[0].real))) != dim:
-                continue
-            distance = _section_distance(chi, dpg_chi)
-            if np.isfinite(distance):
-                scored.append((distance, index))
-        if not scored:
-            return None
-        scored.sort()
-        distance, match_index = scored[0]
-        if distance > 1e-3 * max(1, chi.size**0.5):
-            return None
-        assigned[name] = str(dpg_rows[match_index]["bilbao_label"])
-        unused.remove(match_index)
-    if unused:
-        return None
-    return assigned
-
-
-def _section_distance(qten_chi: np.ndarray, dpg_chi: np.ndarray) -> float:
-    """L2 distance after trying DPG class windows and a global sheet flip."""
-    if dpg_chi.size < qten_chi.size:
-        return float("inf")
-    best = float("inf")
-    n_class = qten_chi.size
-    for start in range(dpg_chi.size - n_class + 1):
-        window = dpg_chi[start : start + n_class]
-        if abs(window[0].real - qten_chi[0].real) > 0.5:
-            continue
-        exact = float(np.linalg.norm(qten_chi - window))
-        flipped = np.array(window, copy=True)
-        flipped[1:] *= -1
-        best = min(best, exact, float(np.linalg.norm(qten_chi - flipped)))
-    return best
-
-
 def _package_spinor_table(
-    table: dict[str, Any], labels: dict[str, str], *, label_source: str
+    table: dict[str, Any], labels: dict[str, str]
 ) -> dict[str, Any]:
     irreps = {}
     for name, row in table["irreps"].items():
@@ -431,7 +230,6 @@ def _package_spinor_table(
     return {
         "class_labels": table["class_labels"],
         "irreps": irreps,
-        "label_source": label_source,
         "multiplicities": table["multiplicities"],
         "source": table["source"],
     }
@@ -459,43 +257,22 @@ def _inherit_dpg_labels(
         )
         if match is None:
             raise SystemExit(
-                f"Cannot inherit DPG labels: no parent row matches {name}."
+                f"Cannot inherit Koster labels: no parent row matches {name}."
             )
         assigned[name] = parent_irreps[match]["bilbao_label"]
         unused.remove(match)
     return assigned
 
 
-def _labels_for_spinor_table(
-    ordinary_irreps: dict[str, Any],
-    spinor_table: dict[str, Any],
-    dpg_rows: list[dict[str, Any]] | None,
-) -> tuple[dict[str, str], str]:
-    if dpg_rows:
-        aligned = _eta_align_dpg_labels(spinor_table, dpg_rows)
-        if aligned is not None:
-            return aligned, "bilbao-dpg"
-    return _koster_dpg_labels(ordinary_irreps, spinor_table), "bilbao-dpg-koster"
-
-
-def _attach_3d_spinor(
-    record: dict[str, Any],
-    dpg_tables: dict[str, list[dict[str, Any]]] | None = None,
-) -> dict[str, Any]:
+def _attach_3d_spinor(record: dict[str, Any]) -> dict[str, Any]:
     print(f"  spinor {record['symbol']}", flush=True)
     group = _group_from_3d(record)
     table = compute_spinor_irreps(group)
-    labels, label_source = _labels_for_spinor_table(
-        record["irreps"]["irreps"],
-        table,
-        (dpg_tables or {}).get(record["symbol"]),
-    )
+    labels = _koster_dpg_labels(record["irreps"]["irreps"], table)
     updated = dict(record)
     updated["dim"] = 3
     updated["frame"] = "xyz"
-    updated["spinor_irreps"] = _package_spinor_table(
-        table, labels, label_source=label_source
-    )
+    updated["spinor_irreps"] = _package_spinor_table(table, labels)
     return updated
 
 
@@ -548,9 +325,6 @@ def _two_d_record(parent: dict[str, Any]) -> dict[str, Any]:
         "spinor_irreps": _package_spinor_table(
             table,
             _inherit_dpg_labels(table, parent["spinor_irreps"]),
-            label_source=str(
-                parent["spinor_irreps"].get("label_source", "bilbao-dpg-koster")
-            ),
         ),
         "symbol": symbol,
     }
@@ -590,9 +364,6 @@ def _one_d_record(parent: dict[str, Any]) -> dict[str, Any]:
         "spinor_irreps": _package_spinor_table(
             table,
             _inherit_dpg_labels(table, parent["spinor_irreps"]),
-            label_source=str(
-                parent["spinor_irreps"].get("label_source", "bilbao-dpg-koster")
-            ),
         ),
         "symbol": symbol,
     }
@@ -601,17 +372,8 @@ def _one_d_record(parent: dict[str, Any]) -> dict[str, Any]:
 def generate() -> dict[str, Any]:
     data = _load_catalog()
     parents = {record["symbol"]: record for record in _three_d_records(data)}
-    print("Fetching Bilbao REPRESENTATIONS DPG", flush=True)
-    dpg_tables = fetch_dpg_tables(list(parents))
-    if not dpg_tables:
-        print(
-            "  DPG CGI down; assigning Koster Γ labels from the qten section",
-            flush=True,
-        )
     print("Computing 3D spinor class tables", flush=True)
-    three_d = [
-        _attach_3d_spinor(record, dpg_tables) for record in parents.values()
-    ]
+    three_d = [_attach_3d_spinor(record) for record in parents.values()]
     labeled = {record["symbol"]: record for record in three_d}
     print("Computing 2D/1D embeddings", flush=True)
     embedded = [_two_d_record(labeled[symbol]) for symbol in TWO_D_PARENTS]
@@ -626,24 +388,14 @@ def generate() -> dict[str, Any]:
     }
 
 
-def relabel_existing(
-    data: dict[str, Any],
-    dpg_tables: dict[str, list[dict[str, Any]]] | None = None,
-) -> dict[str, Any]:
-    """Write DPG labels onto packaged spinor χ without recomputing numbers."""
-    dpg_tables = dpg_tables or {}
+def relabel_existing(data: dict[str, Any]) -> dict[str, Any]:
+    """Write Koster Γ labels onto packaged spinor χ without recomputing numbers."""
     three_d = []
     for record in _three_d_records(data):
         table = record["spinor_irreps"]
-        labels, label_source = _labels_for_spinor_table(
-            record["irreps"]["irreps"],
-            table,
-            dpg_tables.get(record["symbol"]),
-        )
+        labels = _koster_dpg_labels(record["irreps"]["irreps"], table)
         updated = dict(record)
-        updated["spinor_irreps"] = _package_spinor_table(
-            table, labels, label_source=label_source
-        )
+        updated["spinor_irreps"] = _package_spinor_table(table, labels)
         three_d.append(updated)
     labeled = {record["symbol"]: record for record in three_d}
     others = []
@@ -656,9 +408,6 @@ def relabel_existing(
         updated["spinor_irreps"] = _package_spinor_table(
             table,
             _inherit_dpg_labels(table, parent["spinor_irreps"]),
-            label_source=str(
-                parent["spinor_irreps"].get("label_source", "bilbao-dpg-koster")
-            ),
         )
         others.append(updated)
     records = three_d + others
@@ -705,21 +454,16 @@ def _write_provenance() -> None:
                 f"`{SU2_SECTION_CONVENTION}` of each element's `rotation3`. They are not",
                 "copied from Bilbao double-group pages (those tables have no U(g)).",
                 "",
-                "Each spinor row has `bilbao_label`, the Koster Γ name used by",
-                "Representations DPG (Elcoro et al., J. Appl. Cryst. 50, 1457 (2017)):",
-                "",
-                "- https://cryst.ehu.es/cgi-bin/cryst/programs/representations_point.pl?tipogrupo=dbg",
-                "",
-                "A rebuild fetches those pages when the CGI is up, η-aligns class rows",
-                "to QTen's SU(2) section (same idea as `--check-spgrep`), and writes",
-                "the names. χ stays the live lift. If the CGI is down, labels are the",
-                "same Koster continuation of the ordinary Γ indices, with centrosymmetric",
-                "irreps split as Γn^+ / Γn^- by χ(i). `--check` still verifies live-lift",
-                "χ and that every spinor row has `bilbao_label`.",
+                "Each spinor row has `bilbao_label`, the Koster Γ continuation of",
+                "the ordinary table (same numbering Representations DPG uses).",
+                "Spinor χ stays the live lift. Ordinary Γ indices continue; centrosymmetric",
+                "irreps split as Γn^+ / Γn^- by χ(i). This script does not fetch double-group",
+                "pages. `--check` still verifies live-lift χ and that every spinor row has",
+                "`bilbao_label`.",
                 "",
                 "2D and 1D records add `dim`, `frame`, and paired `spatial` / `rotation3`",
                 "generators. Spin still uses the stored 3D rotation, never a padded 2D",
-                "matrix. Their DPG labels are inherited from the parent 3D table.",
+                "matrix. Their Koster labels are inherited from the parent 3D table.",
                 "",
                 "## spgrep",
                 "",
@@ -922,7 +666,7 @@ def check_self(data: dict[str, Any], *, live: bool = True) -> None:
         for name, row in record["spinor_irreps"]["irreps"].items():
             if row.get("bilbao_label") != expected[name]:
                 raise SystemExit(
-                    f"{record['symbol']} dim={record['dim']} {name} DPG label "
+                    f"{record['symbol']} dim={record['dim']} {name} Koster label "
                     f"{row.get('bilbao_label')!r} does not inherit {expected[name]!r}."
                 )
 
@@ -1061,7 +805,7 @@ def main() -> None:
         help=(
             "Validate the packaged catalog: ordinary Bilbao χ still matches "
             "the generated group, spinor χ matches the live QTen lift, and "
-            "every spinor row has a DPG bilbao_label."
+            "every spinor row has a Koster Γ bilbao_label."
         ),
     )
     parser.add_argument(
@@ -1078,8 +822,7 @@ def main() -> None:
         "--labels-only",
         action="store_true",
         help=(
-            "Fetch Representations DPG (or fall back to Koster Γ continuation) "
-            "and write bilbao_label onto existing spinor χ without recomputing."
+            "Write Koster Γ bilbao_label onto existing spinor χ without recomputing."
         ),
     )
     args = parser.parse_args()
@@ -1093,16 +836,8 @@ def main() -> None:
 
     if args.labels_only:
         data = _load_catalog()
-        print("Fetching Bilbao REPRESENTATIONS DPG", flush=True)
-        dpg_tables = fetch_dpg_tables(
-            [record["symbol"] for record in _three_d_records(data)]
-        )
-        if not dpg_tables:
-            print(
-                "  DPG CGI down; assigning Koster Γ labels from the qten section",
-                flush=True,
-            )
-        generated = relabel_existing(data, dpg_tables)
+        print("Assigning Koster Γ labels from packaged spinor χ", flush=True)
+        generated = relabel_existing(data)
     else:
         generated = generate()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
