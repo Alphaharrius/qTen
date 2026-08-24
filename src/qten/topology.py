@@ -43,10 +43,9 @@ Momentum-grid convention
 ------------------------
 Finite differences follow the two primitive quotient directions
 $e_x=(1,0)$ and $e_y=(0,1)$. Tensor components are therefore expressed per
-reciprocal-grid step. For a diagonal periodic cell, returned arrays use the
-rectangular momentum-grid shape. For a sheared cell, values remain flat in
-canonical quotient-representative order: reshaping Smith-normal-form order
-would incorrectly imply rectangular Brillouin-zone adjacency.
+reciprocal-grid step. Local quantum-geometric results retain the input
+``MomentumSpace`` as their first symbolic dimension. Their data therefore use
+the flat momentum-space order rather than an unlabeled rectangular reshape.
 
 Numerical methods
 -----------------
@@ -70,7 +69,7 @@ from sympy import ImmutableDenseMatrix
 
 from .geometries import PeriodicBoundary, ReciprocalLattice
 from .linalg.tensors import Tensor
-from .symbolics import MomentumSpace
+from .symbolics import IndexSpace, MomentumSpace
 
 
 @dataclass(frozen=True)
@@ -78,10 +77,15 @@ class _Grid:
     data: torch.Tensor
     occupied: torch.Tensor
     projectors: torch.Tensor
-    neighbor_x: torch.Tensor
-    neighbor_y: torch.Tensor
+    neighbors: tuple[torch.Tensor, ...]
+    canonical_indices: torch.Tensor
+    momentum_space: MomentumSpace
     output_shape: tuple[int, ...]
     direct_gap: float
+
+    @property
+    def momentum_dim(self) -> int:
+        return len(self.neighbors)
 
 
 def _topology_grid(
@@ -105,8 +109,13 @@ def _topology_grid(
 
     k_space = bloch_hamiltonian.dims[0]
     momenta = k_space.elements()
-    if not momenta or len(momenta[0].rep) != 2:
-        raise ValueError("A two-dimensional momentum grid is required.")
+    if not momenta:
+        raise ValueError("The momentum grid must not be empty.")
+    momentum_dim = len(momenta[0].rep)
+    if momentum_dim not in (1, 2, 3):
+        raise ValueError(
+            "A one-, two-, or three-dimensional momentum grid is required."
+        )
 
     reciprocal_lattice = k_space.extract(ReciprocalLattice)
     direct_boundary = reciprocal_lattice.lattice.boundaries
@@ -150,11 +159,15 @@ def _topology_grid(
             stacklevel=3,
         )
 
-    unit_x = ImmutableDenseMatrix([1, 0])
-    unit_y = ImmutableDenseMatrix([0, 1])
-    neighbor_keys = (
-        [rep_key(dual_boundary.wrap(rep + unit_x)) for rep in canonical_reps],
-        [rep_key(dual_boundary.wrap(rep + unit_y)) for rep in canonical_reps],
+    units = tuple(
+        ImmutableDenseMatrix(
+            [int(component == direction) for component in range(momentum_dim)]
+        )
+        for direction in range(momentum_dim)
+    )
+    neighbor_keys = tuple(
+        [rep_key(dual_boundary.wrap(rep + unit)) for rep in canonical_reps]
+        for unit in units
     )
     canonical_indices = torch.tensor(
         [representative_to_index[rep_key(rep)] for rep in canonical_reps],
@@ -173,15 +186,18 @@ def _topology_grid(
     occupied = occupied[canonical_indices]
     projectors = occupied @ occupied.conj().transpose(-2, -1)
     if direct_boundary.basis.is_diagonal():
-        output_shape = tuple(int(direct_boundary.basis[i, i]) for i in range(2))
+        output_shape = tuple(
+            int(direct_boundary.basis[i, i]) for i in range(momentum_dim)
+        )
     else:
         output_shape = (len(canonical_reps),)
     return _Grid(
         data=data,
         occupied=occupied,
         projectors=projectors,
-        neighbor_x=neighbors[0],
-        neighbor_y=neighbors[1],
+        neighbors=neighbors,
+        canonical_indices=canonical_indices,
+        momentum_space=k_space,
         output_shape=output_shape,
         direct_gap=direct_gap,
     )
@@ -195,8 +211,9 @@ def quantum_geometric_tensor(
     bloch_hamiltonian: Tensor,
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
-) -> np.ndarray:
-    r"""Compute the occupied-subspace quantum geometric tensor on a 2-D grid.
+) -> Tensor:
+    r"""Compute the occupied-subspace quantum geometric tensor on a 1-D, 2-D,
+    or 3-D grid.
 
     The occupied projector is built from the ``n_occupied`` lowest-energy
     eigenvectors at every momentum. Central differences along the two
@@ -222,12 +239,13 @@ def quantum_geometric_tensor(
 
     Returns
     -------
-    numpy.ndarray
-        Complex QGT with trailing shape ``(2, 2)``. On a diagonal periodic
-        cell the full shape is ``(N_x, N_y, 2, 2)``. On a sheared cell it is
-        ``(N_k, 2, 2)`` in canonical quotient-representative order. Components
-        are measured per reciprocal-grid step, not per Cartesian inverse-length
-        unit.
+    Tensor
+        Complex QGT with dims ``(MomentumSpace, IndexSpace(d),
+        IndexSpace(d))`` and shape ``(N_k, d, d)``, where ``d`` is the
+        momentum-space dimension. The first dimension is the input
+        Hamiltonian's momentum space, so momentum labels and their ordering
+        are preserved. Components are measured per reciprocal-grid step, not
+        per Cartesian inverse-length unit.
 
     Raises
     ------
@@ -236,7 +254,7 @@ def quantum_geometric_tensor(
         [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
     ValueError
         If the tensor is not rank 3, its Hamiltonian blocks are not square,
-        ``n_occupied`` is invalid, the momentum space is not two-dimensional,
+        ``n_occupied`` is invalid, the momentum space is not 1-D, 2-D, or 3-D,
         the boundary is not periodic, or momentum points do not form a unique
         complete reciprocal quotient.
 
@@ -257,11 +275,9 @@ def quantum_geometric_tensor(
         Brillouin-zone topological invariant.
     """
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
-    neighbor_indices = (grid.neighbor_x, grid.neighbor_y)
-
     # The inverse neighbor permutation gives k-e_i for every canonical k.
     derivatives = []
-    for forward in neighbor_indices:
+    for forward in grid.neighbors:
         backward = torch.empty_like(forward)
         backward[forward] = torch.arange(
             forward.numel(), dtype=torch.long, device=forward.device
@@ -269,24 +285,33 @@ def quantum_geometric_tensor(
         derivatives.append((grid.projectors[forward] - grid.projectors[backward]) / 2)
 
     qgt = torch.empty(
-        (grid.projectors.shape[0], 2, 2),
+        (grid.projectors.shape[0], grid.momentum_dim, grid.momentum_dim),
         dtype=grid.data.dtype,
         device=grid.data.device,
     )
-    for i in range(2):
-        for j in range(2):
+    for i in range(grid.momentum_dim):
+        for j in range(grid.momentum_dim):
             qgt[:, i, j] = torch.einsum(
                 "kab,kbc,kca->k", grid.projectors, derivatives[i], derivatives[j]
             )
-    return _reshape(qgt, grid).detach().cpu().numpy()
+    # The finite-difference calculation uses canonical quotient order. Restore
+    # the input MomentumSpace order before attaching its symbolic dimension.
+    ordered_qgt = torch.empty_like(qgt)
+    ordered_qgt[grid.canonical_indices] = qgt
+    component_space = IndexSpace.linear(grid.momentum_dim)
+    return Tensor(
+        data=ordered_qgt,
+        dims=(grid.momentum_space, component_space, component_space),
+    )
 
 
 def fubini_study_metric(
     bloch_hamiltonian: Tensor,
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
-) -> np.ndarray:
-    r"""Compute the occupied-subspace Fubini--Study metric on a 2-D grid.
+) -> Tensor:
+    r"""Compute the occupied-subspace Fubini--Study metric on a 1-D, 2-D,
+    or 3-D grid.
 
     This function returns $g_{ij}(k)=\operatorname{Re}Q_{ij}(k)$, where the
     QGT is computed by
@@ -304,10 +329,10 @@ def fubini_study_metric(
 
     Returns
     -------
-    numpy.ndarray
-        Real metric with trailing shape ``(2, 2)``. Its full shape is
-        ``(N_x, N_y, 2, 2)`` for diagonal cells or ``(N_k, 2, 2)`` for
-        sheared cells. Components are expressed per reciprocal-grid step.
+    Tensor
+        Real metric with dims ``(MomentumSpace, IndexSpace(d),
+        IndexSpace(d))`` and shape ``(N_k, d, d)``. Components are expressed
+        per reciprocal-grid step.
 
     Raises
     ------
@@ -326,18 +351,19 @@ def fubini_study_metric(
     [`berry_curvature`][qten.topology.berry_curvature]
         Berry curvature from the imaginary part of the QGT.
     """
-    return quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance).real
+    return quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance).real()
 
 
 def berry_curvature(
     bloch_hamiltonian: Tensor,
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
-) -> np.ndarray:
-    r"""Compute occupied-subspace Berry curvature on a 2-D momentum grid.
+) -> Tensor:
+    r"""Compute occupied-subspace Berry curvature on a 1-D, 2-D, or 3-D grid.
 
-    QTen uses $\Omega_{xy}(k)=2\operatorname{Im}Q_{xy}(k)$. This orientation
-    agrees with [`chern_number(..., method="fhs")`][qten.topology.chern_number].
+    QTen uses $\Omega_{ij}(k)=2\operatorname{Im}Q_{ij}(k)$. In two dimensions,
+    the $xy$ orientation agrees with
+    [`chern_number(..., method="fhs")`][qten.topology.chern_number].
 
     Parameters
     ----------
@@ -351,11 +377,11 @@ def berry_curvature(
 
     Returns
     -------
-    numpy.ndarray
-        Real scalar curvature at every momentum plaquette. The shape is
-        ``(N_x, N_y)`` for a diagonal periodic cell or ``(N_k,)`` in canonical
-        quotient-representative order for a sheared cell. Values are expressed
-        per reciprocal-grid plaquette, so ``curvature.sum() / (2*pi)`` is the
+    Tensor
+        Real antisymmetric curvature tensor with dims
+        ``(MomentumSpace, IndexSpace(d), IndexSpace(d))`` and shape
+        ``(N_k, d, d)``. In two dimensions, summing
+        ``curvature.data[..., 0, 1]`` and dividing by ``2*pi`` gives the
         central-finite-difference estimate of the first Chern number.
 
     Raises
@@ -382,7 +408,7 @@ def berry_curvature(
         FHS or curvature-integral Chern number.
     """
     qgt = quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance)
-    return 2.0 * qgt[..., 0, 1].imag
+    return Tensor(data=2.0 * qgt.data.imag, dims=qgt.dims)
 
 
 def _discrete_chern_number(
@@ -392,6 +418,8 @@ def _discrete_chern_number(
 ) -> dict[str, Any]:
     """Compute the occupied-band Chern number with the discrete FHS formula."""
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
+    if grid.momentum_dim != 2:
+        raise ValueError("The first Chern number requires a two-dimensional grid.")
 
     def link(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
         determinant = torch.linalg.det(left.conj().transpose(-2, -1) @ right)
@@ -403,14 +431,10 @@ def _discrete_chern_number(
             )
         return determinant / magnitude
 
-    link_x = link(grid.occupied, grid.occupied[grid.neighbor_x])
-    link_y = link(grid.occupied, grid.occupied[grid.neighbor_y])
-    plaquette = (
-        link_x
-        * link_y[grid.neighbor_x]
-        * link_x[grid.neighbor_y].conj()
-        * link_y.conj()
-    )
+    neighbor_x, neighbor_y = grid.neighbors
+    link_x = link(grid.occupied, grid.occupied[neighbor_x])
+    link_y = link(grid.occupied, grid.occupied[neighbor_y])
+    plaquette = link_x * link_y[neighbor_x] * link_x[neighbor_y].conj() * link_y.conj()
     flux = _reshape(torch.angle(plaquette), grid)
     chern = float((flux.sum() / (2.0 * torch.pi)).item())
     return {
@@ -481,11 +505,11 @@ def chern_number(
         diagonal periodic cell and ``(N_k,)`` in canonical representative
         order for a sheared cell.
 
-        For ``method="qgt"`` the mapping instead contains
-        ``"quantum_geometric_tensor"`` and ``"fubini_study_metric"`` with
-        trailing shape ``(2, 2)``, plus scalar ``"berry_curvature"``. Their
-        grid prefix is ``(N_x, N_y)`` for diagonal cells or ``(N_k,)`` for
-        sheared cells.
+        For ``method="qgt"`` the mapping instead contains labeled `Tensor`
+        values: ``"quantum_geometric_tensor"`` and
+        ``"fubini_study_metric"`` and ``"berry_curvature"`` all have shape
+        ``(N_k, 2, 2)``. Each retains the input momentum space as its first
+        dimension.
 
     Raises
     ------
@@ -563,15 +587,17 @@ def chern_number(
         raise ValueError("method must be 'fhs' or 'qgt'.")
 
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
+    if grid.momentum_dim != 2:
+        raise ValueError("The first Chern number requires a two-dimensional grid.")
     qgt = quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance)
-    curvature = 2.0 * qgt[..., 0, 1].imag
-    chern = float(curvature.sum() / (2.0 * np.pi))
+    curvature = Tensor(data=2.0 * qgt.data.imag, dims=qgt.dims)
+    chern = float(curvature.data[..., 0, 1].sum() / (2.0 * np.pi))
     return {
         "chern": chern,
         "nearest_integer": int(np.rint(chern)),
         "direct_gap": grid.direct_gap,
         "quantum_geometric_tensor": qgt,
-        "fubini_study_metric": qgt.real,
+        "fubini_study_metric": qgt.real(),
         "berry_curvature": curvature,
     }
 
