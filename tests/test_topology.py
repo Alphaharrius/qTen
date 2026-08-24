@@ -91,7 +91,8 @@ def test_chern_number_exposes_robust_and_geometric_methods():
     fhs = chern_number(hamiltonian, n_occupied=1)
     geometric = chern_number(hamiltonian, n_occupied=1, method="qgt")
 
-    assert abs(fhs["nearest_integer"]) == 1
+    assert fhs["chern"] == pytest.approx(-1.0, abs=1e-12)
+    assert fhs["nearest_integer"] == -1
     assert geometric["chern"] == pytest.approx(fhs["chern"], abs=0.1)
     assert geometric["fubini_study_metric"].data.shape == (24 * 24, 2, 2)
     assert geometric["berry_curvature"].data.shape == (24 * 24, 2, 2)

@@ -4,7 +4,7 @@ This module computes geometric properties of an isolated occupied-band
 subspace carried by a rank-3 [`Tensor`][qten.linalg.tensors.Tensor] with dims
 ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The Hamiltonian is
 diagonalized independently at every momentum, and the ``n_occupied``
-lowest-energy eigenvectors define the occupied projector (P(k)).
+lowest-energy eigenvectors define the occupied projector \(P(k)\).
 
 Core API
 --------
@@ -21,10 +21,9 @@ Core API
 
 Mathematical convention
 -----------------------
-For occupied projector $P(k)$, QTen uses
+For occupied projector \(P(k)\), QTen uses
 
-
-$$
+\[
 Q_{ij}(k) = \operatorname{Tr}\!\left[
     P(k)\,\partial_i P(k)\,\partial_j P(k)
 \right],
@@ -32,7 +31,7 @@ Q_{ij}(k) = \operatorname{Tr}\!\left[
 g_{ij}(k) = \operatorname{Re} Q_{ij}(k),
 \qquad
 \Omega_{ij}(k) = 2\operatorname{Im} Q_{ij}(k).
-$$
+\]
 
 The curvature sign agrees with the oriented plaquette used by
 [`chern_number(..., method="fhs")`][qten.topology.chern_number]. Projector
@@ -41,11 +40,11 @@ general unitary rotations among occupied eigenvectors.
 
 Momentum-grid convention
 ------------------------
-Finite differences follow the two primitive quotient directions
-$e_x=(1,0)$ and $e_y=(0,1)$. Tensor components are therefore expressed per
-reciprocal-grid step. Local quantum-geometric results retain the input
-``MomentumSpace`` as their first symbolic dimension. Their data therefore use
-the flat momentum-space order rather than an unlabeled rectangular reshape.
+Finite differences follow every primitive quotient direction \(e_i\). Tensor
+components are therefore expressed per reciprocal-grid step. Local
+quantum-geometric results retain the input ``MomentumSpace`` as their first
+symbolic dimension. Their data therefore use the flat momentum-space order
+rather than an unlabeled rectangular reshape.
 
 Numerical methods
 -----------------
@@ -216,10 +215,9 @@ def quantum_geometric_tensor(
     or 3-D grid.
 
     The occupied projector is built from the ``n_occupied`` lowest-energy
-    eigenvectors at every momentum. Central differences along the two
-    primitive reciprocal-grid directions approximate $\partial_xP$ and
-    $\partial_yP$, after which
-    $Q_{ij}=\operatorname{Tr}[P(\partial_iP)(\partial_jP)]$ is evaluated.
+    eigenvectors at every momentum. Central differences along every primitive
+    reciprocal-grid direction approximate \(\partial_iP\), after which
+    \(Q_{ij}=\operatorname{Tr}[P(\partial_iP)(\partial_jP)]\) is evaluated.
 
     Parameters
     ----------
@@ -313,7 +311,7 @@ def fubini_study_metric(
     r"""Compute the occupied-subspace Fubini--Study metric on a 1-D, 2-D,
     or 3-D grid.
 
-    This function returns $g_{ij}(k)=\operatorname{Re}Q_{ij}(k)$, where the
+    This function returns \(g_{ij}(k)=\operatorname{Re}Q_{ij}(k)\), where the
     QGT is computed by
     [`quantum_geometric_tensor`][qten.topology.quantum_geometric_tensor].
 
@@ -361,8 +359,8 @@ def berry_curvature(
 ) -> Tensor:
     r"""Compute occupied-subspace Berry curvature on a 1-D, 2-D, or 3-D grid.
 
-    QTen uses $\Omega_{ij}(k)=2\operatorname{Im}Q_{ij}(k)$. In two dimensions,
-    the $xy$ orientation agrees with
+    QTen uses \(\Omega_{ij}(k)=2\operatorname{Im}Q_{ij}(k)\). In two dimensions,
+    the \(xy\) orientation agrees with
     [`chern_number(..., method="fhs")`][qten.topology.chern_number].
 
     Parameters
@@ -378,7 +376,7 @@ def berry_curvature(
     Returns
     -------
     Tensor
-        Real antisymmetric curvature tensor with dims
+        Pointwise real antisymmetric curvature tensor at every momentum, with dims
         ``(MomentumSpace, IndexSpace(d), IndexSpace(d))`` and shape
         ``(N_k, d, d)``. In two dimensions, summing
         ``curvature.data[..., 0, 1]`` and dividing by ``2*pi`` gives the
@@ -463,8 +461,8 @@ def chern_number(
       This gauge-invariant Fukui--Hatsugai--Suzuki construction is the default
       and the recommended finite-grid topological invariant.
     - ``method="qgt"`` computes the projector quantum geometric tensor, takes
-      $\Omega_{xy}=2\operatorname{Im}Q_{xy}$, and evaluates
-      $C=(2\pi)^{-1}\sum_k\Omega_{xy}(k)$. It additionally returns all local
+      \(\Omega_{xy}=2\operatorname{Im}Q_{xy}\), and evaluates
+      \(C=(2\pi)^{-1}\sum_k\Omega_{xy}(k)\). It additionally returns all local
       quantum-geometric data.
 
     Parameters
@@ -480,8 +478,8 @@ def chern_number(
         the bands using integer division.
     gap_tolerance : float, optional
         Warning threshold for the minimum direct gap
-        $\min_k[E_{n_\mathrm{occupied}}(k)-
-        E_{n_\mathrm{occupied}-1}(k)]$. A gap at or below this value emits a
+        \(\min_k[E_{n_\mathrm{occupied}}(k)-
+        E_{n_\mathrm{occupied}-1}(k)]\). A gap at or below this value emits a
         `RuntimeWarning`, because the occupied bundle is not
         isolated and its Chern number is not well-defined. Defaults to
         ``1e-8``.
@@ -535,15 +533,15 @@ def chern_number(
     -----
     The FHS value satisfies
 
-    $$
+    \[
     C_\mathrm{FHS} = \frac{1}{2\pi}
     \sum_k \operatorname{Arg}\!\left[
       U_x(k)U_y(k+e_x)U_x(k+e_y)^*U_y(k)^*
     \right],
-    $$
+    \]
 
-    where $U_i(k)$ is the phase of the determinant of the occupied-subspace
-    overlap between $k$ and $k+e_i$. Determinants make the formula
+    where \(U_i(k)\) is the phase of the determinant of the occupied-subspace
+    overlap between \(k\) and \(k+e_i\). Determinants make the formula
     invariant under arbitrary unitary changes of occupied-band basis.
 
     ``nearest_integer`` is a convenience diagnostic, not proof that the bundle

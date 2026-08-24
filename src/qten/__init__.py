@@ -50,6 +50,7 @@ For broader domain APIs, see:
 - [`qten.phys`][qten.phys]
 - [`qten.pointgroups`][qten.pointgroups]
 - [`qten.symbolics`][qten.symbolics]
+- [`qten.topology`][qten.topology]
 - [`qten.utils`][qten.utils]
 """
 
