@@ -143,6 +143,44 @@ def _unravel_index(index: int, shape: tuple[int, int, int]) -> tuple[int, int, i
     return (i0, i1, i2)
 
 
+def _scatter_to_grid(
+    data: torch.Tensor,
+    momenta: Sequence[Momentum],
+    *,
+    direct_boundary: PeriodicBoundary,
+    dual_boundary: PeriodicBoundary,
+    grid_shape: tuple[int, int, int],
+    canonical_position: dict[tuple[sy.Expr, ...], int],
+) -> torch.Tensor:
+    """Place Bloch matrices onto the rectangular FFT grid by momentum labels."""
+    n_k = math.prod(grid_shape)
+    if len(momenta) != n_k:
+        raise ValueError(
+            f"Found {len(momenta)} momenta, but the lattice shape is {grid_shape}."
+        )
+    grid = data.new_zeros((*grid_shape, data.shape[-2], data.shape[-1]))
+    seen: set[tuple[int, int, int]] = set()
+    for sector, momentum in enumerate(momenta):
+        integer_rep = ImmutableDenseMatrix(direct_boundary.basis.T @ momentum.rep)
+        if any(not sy.sympify(value).is_integer for value in integer_rep):
+            raise ValueError(
+                "Momentum grid contains a point outside the reciprocal quotient."
+            )
+        key = _rep_key(dual_boundary.wrap(integer_rep))
+        if key not in canonical_position:
+            raise ValueError(
+                f"Duplicate or incomplete momentum quotient representative {key}."
+            )
+        index = _unravel_index(canonical_position[key], grid_shape)
+        if index in seen:
+            raise ValueError(f"Duplicate momentum grid point {index}.")
+        seen.add(index)
+        grid[index] = data[sector]
+    if len(seen) != n_k:
+        raise ValueError("Momentum points do not form a complete reciprocal grid.")
+    return grid
+
+
 def _fourier_interpolate(
     hoppings: torch.Tensor,
     k_frac: torch.Tensor | Sequence[float],
@@ -209,9 +247,10 @@ def _kramers_pairs(wcc: torch.Tensor, tolerance: float) -> bool:
         delta[i] = torch.inf
         delta[used] = torch.inf
         partner = int(torch.argmin(delta).item())
-        if not bool(torch.isfinite(delta[partner]).item()) or float(
-            delta[partner].item()
-        ) > tolerance:
+        if (
+            not bool(torch.isfinite(delta[partner]).item())
+            or float(delta[partner].item()) > tolerance
+        ):
             return False
         used[i] = True
         used[partner] = True
@@ -294,9 +333,7 @@ class _Z2Engine:
     inversion_error: Exception | None = None
     time_reversal: torch.Tensor | None = None
 
-    def hamiltonians_at(
-        self, k_frac: torch.Tensor | Sequence[float]
-    ) -> torch.Tensor:
+    def hamiltonians_at(self, k_frac: torch.Tensor | Sequence[float]) -> torch.Tensor:
         ham = _fourier_interpolate(self.hoppings, k_frac, self.rx, self.ry, self.rz)
         return 0.5 * (ham + ham.transpose(-1, -2).conj())
 
@@ -679,9 +716,10 @@ def _build_engine(
             "sheared boundaries are not supported."
         )
     dual_boundary = PeriodicBoundary(ImmutableDenseMatrix(direct_boundary.basis.T))
-    grid_shape = tuple(int(n) for n in lattice.shape)
-    if len(grid_shape) != 3:
+    raw_shape = tuple(int(n) for n in lattice.shape)
+    if len(raw_shape) != 3:
         raise ValueError("A three-dimensional momentum grid is required.")
+    grid_shape = (raw_shape[0], raw_shape[1], raw_shape[2])
     n_k = math.prod(grid_shape)
     if n_k != len(momenta):
         raise ValueError(
@@ -694,27 +732,13 @@ def _build_engine(
     canonical_position = {
         _rep_key(rep): position for position, rep in enumerate(canonical_reps)
     }
-
-    h_grid = data.new_zeros((*grid_shape, n_bands, n_bands))
-    seen: set[tuple[int, int, int]] = set()
-    for sector, momentum in enumerate(momenta):
-        integer_rep = ImmutableDenseMatrix(direct_boundary.basis.T @ momentum.rep)
-        if any(not sy.sympify(value).is_integer for value in integer_rep):
-            raise ValueError(
-                "Momentum grid contains a point outside the reciprocal quotient."
-            )
-        key = _rep_key(dual_boundary.wrap(integer_rep))
-        if key not in canonical_position:
-            raise ValueError(
-                f"Duplicate or incomplete momentum quotient representative {key}."
-            )
-        index = _unravel_index(canonical_position[key], grid_shape)
-        if index in seen:
-            raise ValueError(f"Duplicate momentum grid point {index}.")
-        seen.add(index)
-        h_grid[index] = data[sector]
-    if len(seen) != n_k:
-        raise ValueError("Momentum points do not form a complete reciprocal grid.")
+    scatter_kw = {
+        "direct_boundary": direct_boundary,
+        "dual_boundary": dual_boundary,
+        "grid_shape": grid_shape,
+        "canonical_position": canonical_position,
+    }
+    h_grid = _scatter_to_grid(data, momenta, **scatter_kw)
 
     h_grid = 0.5 * (h_grid + h_grid.transpose(-1, -2).conj())
     hoppings = torch.fft.ifftn(h_grid, dim=(0, 1, 2))
@@ -741,14 +765,11 @@ def _build_engine(
                 "inversion band axes must span the Hamiltonian Hilbert space."
             )
         inversion = inversion.align(-2, row_space).align(-1, row_space)
-        if inversion.data.shape != data.shape:
+        if inversion.data.shape[-2:] != (n_bands, n_bands):
             raise ValueError("inversion must match bloch_hamiltonian's rank and shape.")
-        inv_grid = inversion.data.new_zeros((*grid_shape, n_bands, n_bands))
-        for sector, momentum in enumerate(momenta):
-            integer_rep = ImmutableDenseMatrix(direct_boundary.basis.T @ momentum.rep)
-            key = _rep_key(dual_boundary.wrap(integer_rep))
-            index = _unravel_index(canonical_position[key], grid_shape)
-            inv_grid[index] = inversion.data[sector]
+        inv_grid = _scatter_to_grid(
+            inversion.data, _bloch_momenta(inversion), **scatter_kw
+        )
         inversion_hoppings = torch.fft.ifftn(inv_grid, dim=(0, 1, 2))
     elif isinstance(space, HilbertSpace) and positions_cart is not None:
         if inversion_center is None:

@@ -459,9 +459,7 @@ def _two_site_bonding_insulator(shape: tuple[int, int, int] = (4, 4, 4)) -> Tens
     )
     k_space = brillouin_zone(lattice.dual)
     site_a = Offset(rep=ImmutableDenseMatrix([0, 0, 0]), space=lattice)
-    site_b = Offset(
-        rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice
-    )
+    site_b = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice)
     band_space = HilbertSpace.new(
         [
             U1Basis.new(site_a, Spin.up),
@@ -563,6 +561,49 @@ def test_z2_both_requires_parity():
         )
 
 
+def test_z2_parity_pairs_inversion_by_momentum_labels():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+    k_space = hamiltonian.dims[0]
+    gauged_h_blocks = []
+    gauged_i_blocks = []
+    for sector, momentum in enumerate(k_space.elements()):
+        kx, ky, kz = (float(momentum.rep[i]) for i in range(3))
+        theta = 2.0 * math.pi * (kx + 2.0 * ky + 4.0 * kz)
+        phases = torch.exp(1j * theta * torch.arange(1, 5, dtype=torch.float64)).to(
+            torch.complex128
+        )
+        unitary = torch.diag(phases)
+        gauged_h_blocks.append(
+            unitary @ hamiltonian.data[sector] @ unitary.conj().transpose(-2, -1)
+        )
+        gauged_i_blocks.append(
+            unitary @ inversion.data[sector] @ unitary.conj().transpose(-2, -1)
+        )
+    gauged_h = Tensor(data=torch.stack(gauged_h_blocks), dims=hamiltonian.dims)
+    gauged_i = Tensor(data=torch.stack(gauged_i_blocks), dims=inversion.dims)
+
+    reversed_momenta = tuple(reversed(k_space.elements()))
+    reordered_space = MomentumSpace(
+        OrderedDict((momentum, i) for i, momentum in enumerate(reversed_momenta))
+    )
+    source_index = k_space.structure
+    reordered_inversion = Tensor(
+        data=torch.stack(
+            [gauged_i.data[source_index[momentum]] for momentum in reversed_momenta]
+        ),
+        dims=(reordered_space, inversion.dims[1], inversion.dims[2]),
+    )
+
+    result = z2_indices(
+        gauged_h,
+        n_occupied=2,
+        inversion=reordered_inversion,
+        method="parity",
+    )
+
+    assert result["indices"] == (1, 0, 0, 0)
+
+
 def test_z2_parity_aligns_reordered_band_axes():
     hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
     reference = z2_indices(
@@ -591,9 +632,7 @@ def test_z2_parity_aligns_reordered_band_axes():
 def test_z2_parity_returns_labeled_tensors():
     hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
 
-    parity = z2_indices(
-        hamiltonian, n_occupied=2, inversion=inversion, method="parity"
-    )
+    parity = z2_indices(hamiltonian, n_occupied=2, inversion=inversion, method="parity")
     eigenvalues = next(iter(parity["diagnostics"].values()))["parity_eigenvalues"]
     assert isinstance(eigenvalues, Tensor)
     assert eigenvalues.data.shape == (2,)
@@ -627,7 +666,9 @@ def test_z2_accepts_diagonal_momentum_block_space():
     hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
     momenta = tuple(hamiltonian.dims[0].elements())
     pair_space = MomentumBlockSpace(
-        structure=OrderedDict(((momentum, momentum), i) for i, momentum in enumerate(momenta))
+        structure=OrderedDict(
+            ((momentum, momentum), i) for i, momentum in enumerate(momenta)
+        )
     )
     blocked = Tensor(
         data=hamiltonian.data,
