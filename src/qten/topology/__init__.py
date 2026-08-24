@@ -5,8 +5,8 @@ occupied-band subspace carried by a rank-3
 [`Tensor`][qten.linalg.tensors.Tensor] with dims
 ``(MomentumSpace, HilbertSpace, HilbertSpace)``. Chern and quantum-geometry
 routines diagonalize independently at every supplied momentum. The
-three-dimensional \(\mathbb{Z}_2\) routine Fourier-interpolates the mesh so
-TRIM and Wilson strings can be sampled off the original grid.
+two- and three-dimensional \(\mathbb{Z}_2\) routine Fourier-interpolates the
+mesh so TRIM and Wilson strings can be sampled off the original grid.
 
 Core API
 --------
@@ -21,8 +21,8 @@ Core API
   First Chern number computed either with discrete FHS link variables or by
   integrating the finite-difference Berry curvature.
 - [`z2_indices`][qten.topology.z2_indices]
-  Three-dimensional \(\mathbb{Z}_2\) indices from Fu--Kane inversion parities
-  or hybrid-Wannier Wilson loops.
+  Two- and three-dimensional \(\mathbb{Z}_2\) indices from Fu--Kane inversion
+  parities or hybrid-Wannier Wilson loops.
 
 Submodules
 ----------
@@ -30,7 +30,7 @@ Submodules
   Quantum geometric tensor, Fubini--Study metric, Berry curvature, and Chern
   number.
 - [`qten.topology.z2`][qten.topology.z2]
-  Three-dimensional \(\mathbb{Z}_2\) invariants.
+  Two- and three-dimensional \(\mathbb{Z}_2\) invariants.
 """
 
 from .chern import (

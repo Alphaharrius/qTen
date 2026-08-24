@@ -290,11 +290,14 @@ def _pauli():
     return identity, sigma_x, sigma_y, sigma_z
 
 
-def _wilson_dirac_hamiltonian(mass: float, shape: tuple[int, int, int] = (4, 4, 4)):
+def _wilson_dirac_hamiltonian(
+    mass: float, shape: tuple[int, ...] = (4, 4, 4)
+):
+    dimension = len(shape)
     lattice = Lattice(
-        basis=ImmutableDenseMatrix.eye(3),
+        basis=ImmutableDenseMatrix.eye(dimension),
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(*shape)),
-        unit_cell={"r": ImmutableDenseMatrix.zeros(3, 1)},
+        unit_cell={"r": ImmutableDenseMatrix.zeros(dimension, 1)},
     )
     k_space = brillouin_zone(lattice.dual)
     band_space = HilbertSpace.new(
@@ -304,21 +307,19 @@ def _wilson_dirac_hamiltonian(mass: float, shape: tuple[int, int, int] = (4, 4, 
     )
     identity, sigma_x, sigma_y, sigma_z = _pauli()
     beta = torch.kron(sigma_z, identity)
-    alpha_x = torch.kron(sigma_x, sigma_x)
-    alpha_y = torch.kron(sigma_x, sigma_y)
-    alpha_z = torch.kron(sigma_x, sigma_z)
+    alphas = (
+        torch.kron(sigma_x, sigma_x),
+        torch.kron(sigma_x, sigma_y),
+        torch.kron(sigma_x, sigma_z),
+    )
     blocks = []
     for momentum in k_space.elements():
-        kx = 2.0 * math.pi * float(momentum.rep[0])
-        ky = 2.0 * math.pi * float(momentum.rep[1])
-        kz = 2.0 * math.pi * float(momentum.rep[2])
-        mass_term = mass + math.cos(kx) + math.cos(ky) + math.cos(kz)
-        blocks.append(
-            mass_term * beta
-            + math.sin(kx) * alpha_x
-            + math.sin(ky) * alpha_y
-            + math.sin(kz) * alpha_z
-        )
+        angles = [2.0 * math.pi * float(momentum.rep[i]) for i in range(dimension)]
+        mass_term = mass + sum(math.cos(angle) for angle in angles)
+        block = mass_term * beta
+        for angle, alpha in zip(angles, alphas):
+            block = block + math.sin(angle) * alpha
+        blocks.append(block)
     hamiltonian = Tensor(
         data=torch.stack(blocks),
         dims=(k_space, band_space, band_space),
@@ -400,11 +401,64 @@ def test_z2_rejects_invalid_method():
         z2_indices(hamiltonian, 2, inversion=inversion, method="invalid")  # type: ignore[call-overload]
 
 
-def test_z2_rejects_two_dimensional_hamiltonian():
-    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+def test_z2_rejects_one_dimensional_hamiltonian():
+    hamiltonian = _dimensional_hamiltonian((8,))
 
-    with pytest.raises(ValueError, match="three-dimensional"):
-        z2_indices(hamiltonian, n_occupied=2, method="wilson")
+    with pytest.raises(ValueError, match="two- or three-dimensional"):
+        z2_indices(hamiltonian, n_occupied=1, method="wilson")
+
+
+@pytest.mark.parametrize(
+    ("mass", "indices"),
+    [
+        (-1.0, (1,)),
+        (-3.0, (0,)),
+    ],
+)
+def test_z2_parity_indices_of_two_dimensional_wilson_dirac(mass, indices):
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(mass, shape=(4, 4))
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )
+
+    assert result["method"] == "parity"
+    assert result["indices"] == indices
+    assert result["direct_gap"] > 0.1
+
+
+def test_z2_wilson_indices_agree_with_parity_in_two_dimensions():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-1.0, shape=(4, 4))
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="wilson",
+        n_loop=16,
+        n_perp=9,
+    )
+
+    assert result["method"] == "wilson"
+    assert result["indices"] == (1,)
+    assert result["min_gap"] > 0.1
+
+
+def test_z2_two_dimensional_odd_mesh_interpolates_trim():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-1.0, shape=(3, 3))
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )
+
+    assert result["indices"] == (1,)
+    assert result["direct_gap"] > 0.1
 
 
 def test_z2_parity_requires_inversion_or_offset_labels():
@@ -432,6 +486,24 @@ def test_z2_both_prefers_parity_indices():
     assert result["wilson"]["indices"] == (1, 0, 0, 0)
 
 
+def test_z2_both_two_dimensional_quantum_spin_hall():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-1.0, shape=(4, 4))
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="both",
+        n_loop=16,
+        n_perp=9,
+    )
+
+    assert result["method"] == "both"
+    assert result["indices"] == (1,)
+    assert result["parity"]["indices"] == (1,)
+    assert result["wilson"]["indices"] == (1,)
+
+
 def test_z2_auto_falls_back_to_wilson_without_inversion():
     hamiltonian, _inversion = _wilson_dirac_hamiltonian(-2.0)
 
@@ -448,18 +520,18 @@ def test_z2_auto_falls_back_to_wilson_without_inversion():
     assert result["indices"] == (1, 0, 0, 0)
 
 
-def _two_site_bonding_insulator(shape: tuple[int, int, int] = (4, 4, 4)) -> Tensor:
+def _two_site_bonding_insulator(shape: tuple[int, ...] = (4, 4, 4)) -> Tensor:
+    dimension = len(shape)
+    zeros = ImmutableDenseMatrix.zeros(dimension, 1)
+    b_rep = ImmutableDenseMatrix([sy.Rational(1, 2)] + [0] * (dimension - 1))
     lattice = Lattice(
-        basis=ImmutableDenseMatrix.eye(3),
+        basis=ImmutableDenseMatrix.eye(dimension),
         boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(*shape)),
-        unit_cell={
-            "A": ImmutableDenseMatrix([0, 0, 0]),
-            "B": ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]),
-        },
+        unit_cell={"A": zeros, "B": b_rep},
     )
     k_space = brillouin_zone(lattice.dual)
-    site_a = Offset(rep=ImmutableDenseMatrix([0, 0, 0]), space=lattice)
-    site_b = Offset(rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice)
+    site_a = Offset(rep=zeros, space=lattice)
+    site_b = Offset(rep=b_rep, space=lattice)
     band_space = HilbertSpace.new(
         [
             U1Basis.new(site_a, Spin.up),
@@ -484,6 +556,16 @@ def test_z2_parity_assembles_inversion_from_offset_labels():
 
     assert result["method"] == "parity"
     assert result["indices"] == (0, 0, 0, 0)
+    assert result["direct_gap"] == pytest.approx(2.0)
+
+
+def test_z2_parity_assembles_inversion_in_two_dimensions():
+    hamiltonian = _two_site_bonding_insulator(shape=(4, 4))
+
+    result = z2_indices(hamiltonian, n_occupied=2, method="parity")
+
+    assert result["method"] == "parity"
+    assert result["indices"] == (0,)
     assert result["direct_gap"] == pytest.approx(2.0)
 
 
@@ -533,6 +615,26 @@ def test_z2_rejects_sheared_periodic_cell():
             ImmutableDenseMatrix([[2, 1, 0], [0, 2, 0], [0, 0, 2]])
         ),
         unit_cell={"r": ImmutableDenseMatrix.zeros(3, 1)},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = HilbertSpace.new(
+        U1Basis(coef=sy.Integer(1), base=(("band", i),)) for i in range(4)
+    )
+    identity = torch.eye(4, dtype=torch.complex128)
+    hamiltonian = Tensor(
+        data=identity.expand(k_space.dim, -1, -1).clone(),
+        dims=(k_space, band_space, band_space),
+    )
+
+    with pytest.raises(ValueError, match="diagonal periodic cell"):
+        z2_indices(hamiltonian, n_occupied=2, method="wilson")
+
+
+def test_z2_rejects_sheared_two_dimensional_cell():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(2),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix([[2, 1], [0, 2]])),
+        unit_cell={"r": ImmutableDenseMatrix.zeros(2, 1)},
     )
     k_space = brillouin_zone(lattice.dual)
     band_space = HilbertSpace.new(
