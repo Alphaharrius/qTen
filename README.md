@@ -52,6 +52,9 @@ uv sync --extra cu130 --group dev
 The package root exports the main tensor helpers: `Tensor`, `eye`, `zeros`,
 `ones`, and `set_precision`.
 
+Geometry, symmetries, bands, and topology live in submodules:
+`qten.geometries`, `qten.pointgroups`, `qten.bands`, and `qten.topology`.
+
 For simple examples, the easiest axis type is `IndexSpace`.
 
 ## Tensors
@@ -178,6 +181,80 @@ print(lattice.shape)         # (2, 2)
 print(len(lattice.cartes())) # 8
 ```
 
+## Point Groups
+
+`pointgroup(...)` builds a named crystallographic group as a
+`FinitePointGroup`. Write the geometry on that one constructor call: `plane=`
+for a 2D spatial cut, `axis=` to reorient a 3D group. Wrap a group element in
+`PointGroupOpr` for an affine operator; move the origin later with
+`fixpoint_at`.
+
+```python
+from qten.pointgroups import PointGroupOpr, pointgroup
+
+td = pointgroup("Td")                       # 3D tetrahedral group
+c4v = pointgroup("C4v", plane="xy")         # 2D spatial; 3D C4v kept for spin
+c6 = pointgroup("C6", plane="xy")           # 2D sixfold in xy
+c3v = pointgroup("C3v", axis=(1, 1, 1))     # still 3D; C3 about [111]
+T_c4 = PointGroupOpr(c4v.generators[0])     # affine operator at the origin
+```
+
+A planar model uses `plane="xy"`, not `axis=`. `axis=` only reorients the
+standard 3D frame, for example C3 about `[111]`.
+
+Spin follows the Hilbert space: put `Spin` on a `U1Basis`, then symmetrize.
+There is no `.with_spin`. Hilbert-space representations, column projection,
+and operator twirling live on `qten.pointgroups` and are re-exported from
+`qten.ops`:
+
+- `hilbert_repr(opr, space)` assembles \(D(g)\). Center `opr` with
+  `fixpoint_at` first; this helper has no `fixpoint=`.
+- `point_group_column_symmetrize(opr, w, fixpoint=...)` projects columns onto
+  irreps or abelian phase sectors.
+- `point_group_operator_symmetrize(group, operator, fixpoint=...)` twirls an
+  operator by conjugation.
+
+On a spinful space, \(D(g)=D_{\mathrm{orb}}(g)\otimes u(g)\). The rare
+exception is a define-time `pointgroup("C4v", spin="trivial")`, which sets
+\(u(g)=I\).
+
+## Topology
+
+Occupied-band topology lives in `qten.topology`. The input is a Bloch
+Hamiltonian tensor with dims `(MomentumSpace, HilbertSpace, HilbertSpace)`.
+
+```python
+from qten.topology import (
+    berry_curvature,
+    chern_number,
+    fubini_study_metric,
+    quantum_geometric_tensor,
+    z2_indices,
+)
+
+fhs = chern_number(bloch, n_occupied=1)
+print(fhs["chern"], fhs["direct_gap"])
+
+qgt = quantum_geometric_tensor(bloch, n_occupied=1)
+metric = fubini_study_metric(bloch, n_occupied=1)
+omega = berry_curvature(bloch, n_occupied=1)
+
+z2 = z2_indices(bloch, n_occupied=2, inversion_center=(0, 0))
+print(z2["indices"], z2["method"])
+```
+
+Chern and quantum geometry diagonalize independently at each supplied
+momentum. The default Chern method is Fukui--Hatsugai--Suzuki; `method="qgt"`
+integrates Berry curvature from the quantum geometric tensor instead.
+`n_occupied` defaults to half the bands.
+
+`z2_indices` needs an even occupied count. In 2D the result is \((\nu,)\); in
+3D it is \((\nu_0, \nu_1, \nu_2, \nu_3)\). `method="parity"` uses Fu--Kane
+inversion eigenvalues (pass `inversion=` or assemble from orbital `Offset`
+labels about `inversion_center`). `method="wilson"` uses hybrid-Wannier
+loops and does not need inversion. `method="auto"` tries parity and falls
+back to Wilson loops.
+
 ## Plotting
 
 Plotting requires `qten-plots`.
@@ -256,7 +333,7 @@ import qten.ops as Q
 from qten.bands import bandfillings, bandfold, bandtransform
 from qten.geometries import BasisTransform, Lattice, Offset
 from qten.phys import FFObservable
-from qten.pointgroups import AbelianOpr, pointgroup
+from qten.pointgroups import PointGroupOpr, pointgroup
 from qten.symbolics import FuncOpr, HilbertSpace, U1Basis, brillouin_zone
 from qten_plots.plottables import PointCloud
 
@@ -277,8 +354,9 @@ honeycomb = Lattice(
     shape=(96, 96),
 )
 
-c6 = pointgroup("c6-xy:xy")
-T_c6 = AbelianOpr(c6)
+c6 = pointgroup("C6", plane="xy")
+rotation = next(element for element in c6.elements() if element.group_order() == 6)
+T_c6 = PointGroupOpr(rotation)
 
 a1, a2 = honeycomb.basis_vectors()
 R_a1 = FuncOpr(Offset, lambda r: r + a1)
@@ -289,24 +367,34 @@ What this does:
 
 - `triangular` is the triangular Bravais lattice underlying the honeycomb lattice.
 - `unit_cell` adds the two sublattice sites `a` and `b`.
-- `c6` is the sixfold point-group generator.
-- `T_c6 = AbelianOpr(c6)` is the affine version of that rotation. At this stage it only contains the linear `C6` action, centered at the canonical origin.
-- `R_a1` and `R_a2` are translation operators that shift an orbital by one primitive lattice vector.
+- `c6 = pointgroup("C6", plane="xy")` is the finite sixfold group in the
+  honeycomb plane. `plane="xy"` is the 2D spatial cut; `axis=` would reorient
+  a 3D group and is not used here.
+- `rotation` is the order-6 element. The catalog generators of `C6` are C2
+  and C3, so the sixfold rotation is taken from `c6.elements()`.
+- `T_c6 = PointGroupOpr(rotation)` is the affine version of that rotation. At
+  this stage it only contains the linear `C6` action, centered at the
+  canonical origin.
+- `R_a1` and `R_a2` are translation operators that shift an orbital by one
+  primitive lattice vector.
 
 ### 2. Define The Two Bloch Basis Orbitals
 
 Use one orbital on each sublattice site, both transforming in the same `C6` basis channel.
 
 ```python
-psi_a = U1Basis.new(honeycomb.at("a"), c6.basis_table[1])
-psi_b = U1Basis.new(honeycomb.at("b"), c6.basis_table[1])
+psi_a = U1Basis.new(honeycomb.at("a"), rotation.basis_table[1])
+psi_b = U1Basis.new(honeycomb.at("b"), rotation.basis_table[1])
 ```
 
 Here:
 
 - `honeycomb.at("a")` and `honeycomb.at("b")` pick the two sites in the reference unit cell.
-- `c6.basis_table` is a lookup table from `C6` eigenvalue to an `AbelianBasis`.
-- `c6.basis_table[1]` picks the eigen-basis with eigenvalue `1`, which is the trivial `C6` character. In this case it is the constant basis function `e`.
+- `rotation.basis_table` is a lookup table from `C6` eigenvalue to a
+  `PointGroupBasis`.
+- `rotation.basis_table[1]` picks the eigen-basis with eigenvalue `1`, which
+  is the trivial `C6` character. In this case it is the constant basis
+  function `e`.
 - Using that basis means the internal orbital itself is `C6` invariant; the nontrivial symmetry action in this example comes from how the rotation moves the lattice position, not from an extra internal orbital phase.
 
 ### 3. Build The Dirac Semi-Metal Hamiltonian In Real Space
@@ -431,7 +519,8 @@ is the correlation matrix convention used in this workflow: it stores the comple
 Pick a cluster of sites near a chosen center.
 
 ```python
-region = Q.nearest_sites(honeycomb, 2 * a1 + 2 * a2, 3)
+center = 2 * a1 + 2 * a2
+region = Q.nearest_sites(honeycomb, center, 3)
 ```
 
 The third argument is `n_nearest`, the number of distinct distance shells to include around the chosen center.
@@ -440,7 +529,9 @@ The third argument is `n_nearest`, the number of distinct distance shells to inc
 - `2` means the first two distinct shells,
 - `3` means the first three distinct shells.
 
-So this call does not mean “take exactly 3 sites” or “use radius 3”. It means “collect every lattice site whose distance from `2 * a1 + 2 * a2` lies in one of the first three distinct distance shells”.
+So this call does not mean “take exactly 3 sites” or “use radius 3”. It means
+“collect every lattice site whose distance from `center` lies in one of the
+first three distinct distance shells”.
 
 You can inspect that region on the lattice:
 
@@ -450,7 +541,11 @@ _ = honeycomb.plot("structure", highlights=[PointCloud(region)])
 
 This is useful to confirm that the restricted subsystem is centered where you expect.
 
-The center `2 * a1 + 2 * a2` matters later when constructing the local symmetry action. A rotation is not determined only by “rotate by 60 degrees”; it also needs a center. The local symmetry operator must be centered on the same point as the local patch if you want the patch and its restricted modes to transform into themselves.
+The same `center` matters later when constructing the local symmetry action. A
+rotation is not determined only by “rotate by 60 degrees”; it also needs a
+fixed point. The local symmetry operator must be centered on the same point as
+the local patch if you want the patch and its restricted modes to transform
+into themselves.
 
 ### 10. Build The Restricted Correlation Matrix
 
@@ -504,12 +599,19 @@ These local modes are the starting point for symmetry-adapted basis construction
 Center the symmetry at the same point used for the local region and build its matrix representation on the local basis.
 
 ```python
-g_c6 = Q.hilbert_opr_repr(T_c6.fixpoint_at(2 * a1 + 2 * a2), u.dims[0])
+g_c6 = Q.hilbert_repr(T_c6.fixpoint_at(center), u.dims[0])
 ```
 
-This gives the local unitary representation of the sixfold rotation acting on the restricted Hilbert space.
+This gives the local unitary representation \(D(g)\) of the sixfold rotation
+acting on the restricted Hilbert space. `hilbert_repr` is the point-group
+assembler: on a spinless space it is the orbital permutation matrix, and on a
+spinful space it includes the \(SU(2)\) factor.
 
-The `.fixpoint_at(2 * a1 + 2 * a2)` part is essential. `T_c6` by itself is only the affine rotation with its default center. `fixpoint_at(r)` changes the affine translation part so that the point `r` is invariant under the operation. In formula form, if the affine action is
+The `.fixpoint_at(center)` part is essential. `hilbert_repr` has no
+`fixpoint=` argument, so the affine center must already live on the operator.
+`T_c6` by itself is only the affine rotation with its default origin.
+`fixpoint_at(r)` changes the affine translation part so that the point `r` is
+invariant under the operation. In formula form, if the affine action is
 
 ```text
 x -> R x + t
@@ -531,9 +633,10 @@ That is exactly what `fixpoint_at(...)` does internally.
 
 Why this matters here:
 
-- the local region was chosen around `2 * a1 + 2 * a2`,
-- the restricted Hilbert space `u.dims[0]` is the Hilbert space of that local patch,
-- the local `C6` operator should rotate around the same center as the patch.
+- the local region was chosen around `center`,
+- the restricted Hilbert space `u.dims[0]` is the Hilbert space of that local
+  patch,
+- the local `C6` operator should rotate around the same point as the patch.
 
 If you skipped `fixpoint_at(...)`, you would generally be representing a rotation around the wrong point, so the local subspace would not transform the way you intend.
 
@@ -542,15 +645,26 @@ If you skipped `fixpoint_at(...)`, you would generally be representing a rotatio
 Now symmetry-adapt the first few local modes.
 
 ```python
-u_sym = Q.abelian_column_symmetrize(
-    T_c6.fixpoint_at(2 * a1 + 2 * a2),
+u_sym = Q.point_group_column_symmetrize(
+    T_c6,
     u[:, :3],
+    fixpoint=center,
 )
 ```
 
-This is the simplest high-level way to get a `C6`-adapted basis from the local unitary structure.
+This is the simplest high-level way to get a `C6`-adapted basis from the local
+unitary structure. For a cyclic `PointGroupOpr`, the helper projects onto
+abelian phase sectors. For a `FinitePointGroup` it uses the group's irrep
+projectors instead.
 
-Conceptually, this takes a set of columns spanning a small local subspace and rotates them into columns with definite abelian symmetry character under `C6`. That is usually the cleanest entry point if your goal is “give me local modes with good symmetry labels”.
+On this helper, pass the desired invariant point as `fixpoint=`. That is
+equivalent to wrapping each element with `PointGroupOpr(...).fixpoint_at(...)`
+before assembling \(D(g)\).
+
+Conceptually, this takes a set of columns spanning a small local subspace and
+rotates them into columns with definite abelian symmetry character under `C6`.
+That is usually the cleanest entry point if your goal is “give me local modes
+with good symmetry labels”.
 
 You can visualize the resulting basis vectors:
 
@@ -604,8 +718,9 @@ The reason this works is standard subspace linear algebra:
 
 So `w_sym` and `u_sym` are solving the same problem in two different ways:
 
-- `u_sym` uses the high-level helper,
-- `w_sym` constructs the symmetry-adapted basis explicitly from the projected unitary.
+- `u_sym` uses `point_group_column_symmetrize`,
+- `w_sym` constructs the symmetry-adapted basis explicitly from the projected
+  unitary.
 
 To compare before and after:
 
@@ -620,5 +735,5 @@ This manual route is useful when you want to inspect the symmetry representation
 
 - QTen tensors always carry axis metadata in `dims`.
 - `IndexSpace` is the simplest place to start.
-- Geometry, symbolic, point-group, and band tools are available from
+- Geometry, symbolic, point-group, band, and topology tools are available from
   submodules when you need them.
