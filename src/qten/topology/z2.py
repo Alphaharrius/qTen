@@ -19,11 +19,78 @@ Core API
   Fu--Kane inversion parities at the eight TRIM, hybrid-Wannier Wilson loops
   on the six TRIM planes, or both.
 
+Mathematical convention
+-----------------------
+TRIM are the eight points \(\Gamma_i=n/2\) with \(n\in\{0,1\}^3\). At each
+TRIM the occupied inversion eigenvalues \(\xi_n(\Gamma_i)=\pm 1\) come in
+Kramers pairs. Their pair product is
+
+\[
+\delta(\Gamma_i)=\prod_{m=1}^{N_{\mathrm{occ}}/2}\xi_{2m}(\Gamma_i)
+=(-1)^{N_-(\Gamma_i)/2},
+\]
+
+where \(N_-\) is the number of occupied negative parities. The returned
+indices satisfy
+
+\[
+(-1)^{\nu_0}=\prod_{i=1}^{8}\delta(\Gamma_i),
+\qquad
+(-1)^{\nu_j}=\prod_{\Gamma_i:\,k_j=\pi}\delta(\Gamma_i).
+\]
+
+Without inversion, each TRIM plane \(k_j=0\) or \(k_j=\pi\) carries a 2-D
+\(\mathbb{Z}_2\) invariant from hybrid Wannier charge centers. Along a
+closed string at fixed \(k_\perp\),
+
+\[
+W(k_\perp)=\prod_\ell
+\operatorname{polar}\!\left[
+U^\dagger(k_\ell)\,e^{-2\pi i\,\tau\cdot\Delta k}\,U(k_{\ell+1})
+\right],
+\qquad
+\bar{x}_n(k_\perp)=\frac{\operatorname{Arg}\lambda_n(W)}{2\pi}\bmod 1,
+\]
+
+where \(U(k)\) holds occupied eigenvectors and \(\tau\) is the orbital
+fractional offset. The plane invariant is the Soluyanov--Vanderbilt
+largest-gap crossing count of those centers. Then
+
+\[
+\nu_0=\nu(k_j=0)+\nu(k_j=\pi)\pmod{2},
+\qquad
+\nu_j=\nu(k_j=\pi).
+\]
+
+If the three axes disagree on \(\nu_0\), the majority vote is returned.
+
+Fourier interpolation
+---------------------
+Sampled Bloch matrices are placed on the rectangular reciprocal quotient
+and inverted with an FFT. Evaluation at fractional \(k\) is the
+trigonometric polynomial
+
+\[
+H(k)=\sum_R t(R)\,e^{-2\pi i\,k\cdot R},
+\qquad
+t=\mathcal{F}^{-1}[H_{\mathrm{mesh}}].
+\]
+
+The same interpolant is used for an explicit inversion tensor. When
+inversion is assembled from orbital offsets about a center \(c\),
+
+\[
+I_{\alpha\beta}(k)=(I_0)_{\alpha\beta}
+\exp\bigl(-i[(r_\alpha-c)+(r_\beta-c)]\cdot k_{\mathrm{cart}}\bigr).
+\]
+
+The periodic cell must be diagonal in the primitive basis.
+
 Numerical methods
 -----------------
 - ``method="parity"`` uses Fu--Kane products of inversion eigenvalues at the
   eight TRIM. It requires an inversion operator: either an explicit rank-3
-  tensor in the same basis as the Hamiltonian, or orbital
+  tensor whose matrices are paired to \(H(k)\) by momentum labels, or orbital
   [`Offset`][qten.geometries.spatials.Offset] labels from which spatial
   inversion about ``inversion_center`` is assembled.
 - ``method="wilson"`` tracks hybrid Wannier charge centers on the six TRIM
@@ -924,7 +991,7 @@ def z2_indices(
         [`MomentumBlockSpace`][qten.symbolics.state_space.MomentumBlockSpace]
         of diagonal \((k,k)\) blocks whose momenta form a complete 3-D
         reciprocal quotient. The last two axes are square Bloch-Hamiltonian
-        matrices and must span the same Hilbert space up to ray ordering.
+        matrices and are aligned onto a common Hilbert space.
     n_occupied : int | None, optional
         Number of lowest-energy bands defining the occupied subspace. It must
         be even and lie strictly between zero and the total band count.
@@ -935,9 +1002,14 @@ def z2_indices(
         (`RuntimeError`). ``"both"`` requires parity to succeed. Defaults to
         ``"auto"``.
     inversion : Tensor | None, optional
-        Optional rank-3 inversion tensor with the same shape as
-        ``bloch_hamiltonian``. If omitted, spatial inversion is assembled from
-        orbital [`Offset`][qten.geometries.spatials.Offset] labels about
+        Optional rank-3 inversion operator with dims
+        ``(MomentumSpace, HilbertSpace, HilbertSpace)``, or with a diagonal
+        `MomentumBlockSpace` of \((k,k)\) blocks. Band axes are aligned onto
+        the Hamiltonian Hilbert space. Each momentum is paired with
+        \(H(k)\) by its label, not by data-axis order, and the labeled
+        points must form the same complete reciprocal quotient. If omitted,
+        spatial inversion is assembled from orbital
+        [`Offset`][qten.geometries.spatials.Offset] labels about
         ``inversion_center``.
     inversion_center : Offset | Sequence[float] | None, optional
         Fixed point of spatial inversion, as an `Offset` or a 3-vector in the
@@ -962,7 +1034,7 @@ def z2_indices(
 
     Returns
     -------
-    dict[str, Any]
+    Z2ParityResult or Z2WilsonResult or Z2CombinedResult
         Result mapping. Every method returns:
 
         - ``"indices"``: \((\nu_0, \nu_1, \nu_2, \nu_3)\) as integers in
@@ -972,10 +1044,12 @@ def z2_indices(
         For ``method="parity"`` the mapping also contains Fu--Kane
         ``"parity_products"`` at each TRIM, per-TRIM ``"diagnostics"``
         (including a labeled ``"parity_eigenvalues"``
-        [`Tensor`][qten.linalg.tensors.Tensor]), and ``"direct_gap"``.
+        [`Tensor`][qten.linalg.tensors.Tensor] of shape
+        ``(n_occupied,)``), and ``"direct_gap"``.
 
         For ``method="wilson"`` it contains hybrid-Wannier ``"planes"`` whose
-        ``"wcc"``, ``"gap_pos"``, and ``"sweep"`` values are labeled
+        ``"wcc"`` (shape ``(n_perp, n_occupied)``), ``"gap_pos"``, and
+        ``"sweep"`` values are labeled
         [`Tensor`][qten.linalg.tensors.Tensor] objects, per-axis plane
         invariants ``"axis_z2"``, and ``"min_gap"``.
 
@@ -985,14 +1059,18 @@ def z2_indices(
     Raises
     ------
     TypeError
-        If the first tensor dimension is not a momentum space, or either
+        If the Hamiltonian or inversion first dimension is not a
+        `MomentumSpace` or `MomentumBlockSpace`, or either Hamiltonian
         matrix dimension is not a `HilbertSpace`.
     ValueError
         If ``method`` is unsupported; the input is not a rank-3 square Bloch
         Hamiltonian; ``n_occupied`` is invalid; the momentum space is not
         three-dimensional and periodic with a diagonal cell; a
-        `MomentumBlockSpace` contains off-diagonal \((k,k')\) blocks; or
-        momentum points do not form a unique complete reciprocal quotient.
+        `MomentumBlockSpace` contains off-diagonal \((k,k')\) blocks;
+        Hamiltonian or inversion momenta do not form a unique complete
+        reciprocal quotient; inversion band axes do not span the Hamiltonian
+        Hilbert space; or ``n_loop`` / ``n_perp`` are below the Wilson-loop
+        minima.
     RuntimeError
         For ``method="parity"`` or ``method="both"``, if inversion cannot be
         constructed or is not resolved at a TRIM.
@@ -1009,9 +1087,13 @@ def z2_indices(
 
     Notes
     -----
-    The Fu--Kane strong index is the product of the eight TRIM parity products
-    \(\delta(\Gamma_i)\), and each weak index \(\nu_i\) is the product of
-    \(\delta\) over the four TRIM with \(k_i=\pi\).
+    Fu--Kane indices are recovered from TRIM pair-parity products
+    \(\delta(\Gamma_i)\) by \((-1)^{\nu_0}=\prod_i\delta(\Gamma_i)\) and
+    \((-1)^{\nu_j}=\prod_{k_j=\pi}\delta(\Gamma_i)\). Wilson indices use the
+    hybrid-Wannier plane invariants \(\nu(k_j=0)\) and \(\nu(k_j=\pi)\) as
+    described in the module docstring. Both constructions evaluate the
+    Fourier interpolant of the input mesh rather than requiring TRIM or
+    Wilson strings to sit on sampled \(k\)-points.
 
     Examples
     --------

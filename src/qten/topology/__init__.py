@@ -3,9 +3,10 @@ r"""Quantum geometry and topology of momentum-resolved band Hamiltonians.
 This package computes geometric and topological properties of an isolated
 occupied-band subspace carried by a rank-3
 [`Tensor`][qten.linalg.tensors.Tensor] with dims
-``(MomentumSpace, HilbertSpace, HilbertSpace)``. The Hamiltonian is
-diagonalized independently at every momentum, and the ``n_occupied``
-lowest-energy eigenvectors define the occupied projector \(P(k)\).
+``(MomentumSpace, HilbertSpace, HilbertSpace)``. Chern and quantum-geometry
+routines diagonalize independently at every supplied momentum. The
+three-dimensional \(\mathbb{Z}_2\) routine Fourier-interpolates the mesh so
+TRIM and Wilson strings can be sampled off the original grid.
 
 Core API
 --------

@@ -219,8 +219,8 @@ def quantum_geometric_tensor(
     bloch_hamiltonian : Tensor
         Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
         ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The final two data
-        axes must be square and represent the Bloch Hamiltonian at each
-        momentum.
+        axes must be square Hilbert-space matrices at each momentum and are
+        aligned onto a common Hilbert space.
     n_occupied : int | None, optional
         Number of lowest-energy bands included in the occupied projector.
         Defaults to half the Hamiltonian bands using integer division.
@@ -520,7 +520,8 @@ def chern_number(
         Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
         ``(MomentumSpace, HilbertSpace, HilbertSpace)``. The first data axis
         enumerates a complete two-dimensional reciprocal quotient; the last
-        two axes are square Bloch-Hamiltonian matrices.
+        two axes are square Bloch-Hamiltonian matrices and are aligned onto
+        a common Hilbert space.
     n_occupied : int | None, optional
         Number of lowest-energy bands defining the occupied subspace. It must
         lie strictly between zero and the total band count. Defaults to half
