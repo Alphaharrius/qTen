@@ -54,6 +54,7 @@ dev = [
     "qten_plots",
     "build>=1.2.2",
     "twine>=6.1.0",
+    "spgrep>=0.6.0",
 ]
 docs = [
     "properdocs>=1.0.0",

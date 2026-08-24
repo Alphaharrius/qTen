@@ -1,15 +1,25 @@
+"""Point-group helpers on tensors: column / joint projection and transforms.
+
+Role: spinless and spinful *operations* (``point_group_column_symmetrize``,
+``joint_*``, ``get_direct_transform``). SU(2) numerics are in ``test_spin.py``;
+1D / 2D / 3D geometry is in ``test_pointgroup_spin_oracles.py``.
+"""
+
 import sympy as sy
 import pytest
 import torch
 from sympy import ImmutableDenseMatrix
 
-from qten.geometries.spatials import AffineSpace, Offset
+from qten.geometries.spatials import AffineSpace, Lattice, Offset
 from qten.linalg.tensors import Tensor
+from qten.phys import Spin
 from qten.pointgroups import (
     FinitePointGroup,
     PointGroupBasis,
     PointGroupElement,
     PointGroupOpr,
+    SpinorIrrepSector,
+    SymmetryDegeneracy,
     pointgroup,
 )
 from qten.pointgroups.ops import (
@@ -93,6 +103,33 @@ def test_point_group_column_symmetrize_projects_indexspace_columns_to_sector_lab
     assert set(sector_phases.tolist()) == {1.0 + 0.0j, -1.0 + 0.0j}
 
 
+def test_point_group_basis_representation_respects_target_gauge():
+    x, y = sy.symbols("x y")
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+    mirror = _opr_with_offset(
+        irrep=ImmutableDenseMatrix([[-1, 0], [0, 1]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
+    )
+    fx = PointGroupBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    gauged_space = HilbertSpace.new([_state(fx, irrep=sy.I)])
+
+    representation = _hilbert_opr_repr(mirror, gauged_space)
+
+    assert torch.allclose(
+        representation.data,
+        torch.tensor([[-1]], dtype=torch.complex128),
+        rtol=0,
+        atol=1e-12,
+    )
+    assert torch.allclose(
+        representation.data @ representation.data,
+        torch.eye(1, dtype=torch.complex128),
+        rtol=0,
+        atol=1e-12,
+    )
+
+
 def test_point_group_column_symmetrize_defaults_to_one_sector_per_input_column():
     x, y = sy.symbols("x y")
     space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
@@ -170,7 +207,31 @@ def test_point_group_column_symmetrize_adds_degeneracy_tag_for_duplicate_labels(
 
     labels = list(w_sym.dims[1].elements())
     assert len(labels) == 2
-    assert all(label.irrep_of(int) in (0, 1) for label in labels)
+    assert {label.irrep_of(SymmetryDegeneracy).index for label in labels} == {0, 1}
+
+
+def test_degeneracy_tag_preserves_existing_integer_metadata():
+    x, y = sy.symbols("x y")
+    space = AffineSpace(basis=ImmutableDenseMatrix.eye(2))
+    mirror = _opr_with_offset(
+        irrep=ImmutableDenseMatrix([[-1, 0], [0, 1]]),
+        axes=(x, y),
+        offset=Offset(rep=ImmutableDenseMatrix([0, 0]), space=space),
+    )
+    fx = PointGroupBasis(expr=x, axes=(x, y), order=1, rep=ImmutableDenseMatrix([1, 0]))
+    fy = PointGroupBasis(expr=y, axes=(x, y), order=1, rep=ImmutableDenseMatrix([0, 1]))
+    row_space = HilbertSpace.new([_state(fx), _state(fy)])
+    seed_space = HilbertSpace.new([U1Basis.new(7, fx), U1Basis.new(7, fy)])
+    w = Tensor(
+        data=torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.complex128),
+        dims=(row_space, seed_space),
+    )
+
+    projected = point_group_column_symmetrize(mirror, w)
+    labels = projected.dims[1].elements()
+
+    assert all(label.irrep_of(int) == 7 for label in labels)
+    assert {label.irrep_of(SymmetryDegeneracy).index for label in labels} == {0, 1}
 
 
 def test_point_group_column_symmetrize_full_sector_expands_mixed_column():
@@ -194,6 +255,22 @@ def test_point_group_column_symmetrize_full_sector_expands_mixed_column():
     w_sym = point_group_column_symmetrize(mirror, w, full_sector=True)
 
     assert w_sym.data.shape == (2, 2)
+
+
+def test_c6v_e1_spinless_hilbert_repr_is_dense_and_unitary():
+    c6v = pointgroup("6mm")
+    e1 = c6v.irrep_basis(1, "E1")
+    space = HilbertSpace.new([_state(basis) for basis in e1])
+    c6 = next(element for element in c6v.elements() if element.group_order() == 6)
+    representation = _hilbert_opr_repr(PointGroupOpr(c6), space)
+    identity = torch.eye(space.dim, dtype=representation.data.dtype)
+    assert torch.allclose(
+        representation.data.conj().T @ representation.data,
+        identity,
+        rtol=0,
+        atol=1e-12,
+    )
+    assert int((representation.data.abs() > 1e-8).sum().item()) == 4
 
 
 def test_point_group_column_symmetrize_accepts_point_group_basis_rows():
@@ -220,6 +297,72 @@ def test_point_group_column_symmetrize_accepts_point_group_basis_rows():
     assert w_sym.data.shape == (2, 2)
     assert torch.allclose(torch.abs(w_sym.data), torch.eye(2, dtype=torch.float64))
     assert sector_phases == {sy.Integer(1), sy.Integer(-1)}
+
+
+def test_finite_point_group_projection_promotes_integer_seed_data():
+    x, y = sy.symbols("x y")
+    c4v = pointgroup("C4v-xy")
+    e_basis = {basis.expr: basis for basis in c4v.irrep_basis(order=1, irrep="E")}
+    space = HilbertSpace.new([_state(e_basis[x]), _state(e_basis[y])])
+    seed = Tensor(
+        data=torch.tensor([[1], [0]], dtype=torch.int64),
+        dims=(space, IndexSpace.linear(1)),
+    )
+
+    projected = point_group_column_symmetrize(c4v, seed, full_sector=True)
+
+    assert projected.data.is_complex()
+    assert projected.data.shape == (2, 1)
+    assert torch.allclose(
+        torch.linalg.vector_norm(projected.data, dim=0),
+        torch.ones(1, dtype=projected.data.real.dtype),
+    )
+
+
+def test_finite_spinful_projection_resolves_tetrahedral_orbital_multiplets():
+    td = pointgroup("-43m")
+    affine = AffineSpace(basis=ImmutableDenseMatrix.eye(3))
+    center = Offset(ImmutableDenseMatrix.zeros(3, 1), affine)
+    vertices = (
+        Offset(ImmutableDenseMatrix([1, 1, 1]), affine),
+        Offset(ImmutableDenseMatrix([1, -1, -1]), affine),
+        Offset(ImmutableDenseMatrix([-1, 1, -1]), affine),
+        Offset(ImmutableDenseMatrix([-1, -1, 1]), affine),
+    )
+    space = HilbertSpace.new(
+        U1Basis.new(vertex, spin)
+        for vertex in vertices
+        for spin in (Spin.up, Spin.down)
+    )
+    seed = Tensor(
+        data=torch.eye(space.dim, dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(space.dim)),
+    )
+
+    projected = point_group_column_symmetrize(
+        td,
+        seed,
+        full_sector=True,
+        fixpoint=center,
+    )
+
+    assert projected.data.shape == (space.dim, space.dim)
+    assert torch.allclose(
+        projected.data.conj().T @ projected.data,
+        torch.eye(space.dim, dtype=torch.complex128),
+        rtol=0,
+        atol=1e-12,
+    )
+    sectors = [
+        label.irrep_of(SpinorIrrepSector) for label in projected.dims[1].elements()
+    ]
+    assert {sector.source for sector in sectors} == {"qten-su2-principal-v1"}
+    counts: dict[str, int] = {}
+    dimensions: dict[str, int] = {}
+    for sector in sectors:
+        counts[sector.irrep] = counts.get(sector.irrep, 0) + 1
+        dimensions[sector.irrep] = sector.dim
+    assert all(count % dimensions[irrep] == 0 for irrep, count in counts.items())
 
 
 def test_joint_point_group_column_symmetrize_projects_diagonal_mirrors():
@@ -275,6 +418,35 @@ def test_joint_point_group_column_symmetrize_projects_diagonal_mirrors():
         (sy.Integer(-1), sy.Integer(1)),
         (sy.Integer(-1), sy.Integer(-1)),
     }
+
+
+def test_joint_projection_rejects_noncommuting_affine_actions():
+    x = sy.Symbol("x")
+    lattice = Lattice(basis=ImmutableDenseMatrix([[1]]), shape=(4,))
+    space = HilbertSpace.new(U1Basis.new(site) for site in lattice.cartes())
+    reflection = PointGroupElement(
+        irrep=ImmutableDenseMatrix([[-1]]),
+        axes=(x,),
+    )
+    about_zero = PointGroupOpr(reflection).fixpoint_at(
+        Offset(ImmutableDenseMatrix([0]), lattice),
+        rebase=True,
+    )
+    about_half = PointGroupOpr(reflection).fixpoint_at(
+        Offset(ImmutableDenseMatrix([sy.Rational(1, 2)]), lattice),
+        rebase=True,
+    )
+    seed = Tensor(
+        data=torch.tensor([[1.0], [2.0], [3.0], [5.0]], dtype=torch.complex128),
+        dims=(space, IndexSpace.linear(1)),
+    )
+
+    with pytest.raises(ValueError, match="commuting Hilbert-space representations"):
+        joint_point_group_column_symmetrize(
+            (about_zero, about_half),
+            seed,
+            full_sector=True,
+        )
 
 
 def test_joint_point_group_basis_returns_common_diagonal_mirror_eigenfunctions():

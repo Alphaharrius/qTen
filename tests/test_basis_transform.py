@@ -291,7 +291,7 @@ def test_bandtransform_one_sided_modes_return_momentum_block_tensors():
         data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1).to(torch.complex128),
         dims=(k_space, h_space, h_space),
     )
-    t = PointGroupOpr(pointgroup("m-x:x"))
+    t = PointGroupOpr(pointgroup("m", plane="x").generators[0])
 
     left_transform = get_band_transform(t, tensor_in, side="left")
     right_transform = get_band_transform(t, tensor_in, side="right")
@@ -328,7 +328,7 @@ def test_bandtransform_both_returns_plain_momentum_space_tensor():
         data=torch.arange(4, dtype=torch.float64).reshape(4, 1, 1).to(torch.complex128),
         dims=(k_space, h_space, h_space),
     )
-    t = PointGroupOpr(pointgroup("m-x:x"))
+    t = PointGroupOpr(pointgroup("m", plane="x").generators[0])
 
     transformed = bandtransform(t, tensor_in, opt="both")
     left_transform = get_band_transform(t, tensor_in, side="left")

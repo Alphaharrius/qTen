@@ -1,10 +1,11 @@
-"""
+r"""
 Symbolic point-group element representations.
 
-This module defines the core single-generator objects used by QTen's symmetry
+This module defines the core single-element objects used by QTen's symmetry
 machinery. [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
-stores an exact linear representation, derives Euclidean polynomial bases, and
-computes symbolic eigen-basis sectors.
+stores an exact linear representation (`irrep` on the model, optional
+`rotation3` in \(O(3)\), and a construction-time `spin` policy), derives
+Euclidean polynomial bases, and computes symbolic eigen-basis sectors.
 [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] couples that linear
 action with an affine offset. Polynomial sector labels live in
 [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis].
@@ -13,14 +14,14 @@ Repository usage
 ----------------
 Use this module for explicit point-group construction and algebra. Higher-level
 query-string construction is available through
-[`pointgroup()`][qten.pointgroups._pointgroups.pointgroup], multi-generator
+[`pointgroup()`][qten.pointgroups.pointgroup], multi-generator
 groups live in [`qten.pointgroups.finite`][qten.pointgroups.finite], and
 tensor/Hilbert-space projection helpers live in
 [`qten.pointgroups.ops`][qten.pointgroups.ops].
 """
 
 from dataclasses import dataclass
-from typing import Dict, Tuple, cast
+from typing import Dict, NoReturn, Tuple, cast
 from collections import OrderedDict
 from itertools import product
 from functools import lru_cache, reduce
@@ -28,7 +29,8 @@ import sympy as sy
 
 from ..abstracts import HasBase, Operable
 from ..geometries import AffineSpace, Momentum, Offset
-from ..symbolics import Opr
+from ..phys.spin import Spin, as_spin
+from ..symbolics import Opr, U1Basis
 from ..validations import need_validation
 from ..validations.symbolics import check_invertibility, check_numerical
 from ..utils.collections_ext import FrozenDict
@@ -80,12 +82,13 @@ def _embed_irrep_to_axes(
 @dataclass(frozen=True)
 class PointGroupElement(Opr):
     r"""
-    Abelian linear operator represented on Cartesian coordinate functions.
+    Linear point operation represented on Cartesian coordinate functions.
 
     [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] stores the linear part `g` of a symmetry/operator as an
     exact matrix `irrep` acting on the coordinate axes `axes`. It provides the
     order-dependent polynomial representations induced by that linear action
     and the corresponding eigen-basis functions ([`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis]).
+    A single element may belong to an abelian or a non-abelian group.
 
     Mathematical meaning
     --------------------
@@ -117,6 +120,13 @@ class PointGroupElement(Opr):
         basis defined by `axes`.
     axes : Tuple[sy.Symbol, ...]
         Ordered coordinate symbols on which `irrep` acts.
+    rotation3 : sy.ImmutableDenseMatrix | None, optional
+        The same physical operation as a Cartesian \(O(3)\) matrix, used to lift
+        spin-1/2. Three-dimensional groups may leave this unset and use
+        `irrep`. Lower-dimensional groups must set it at construction.
+    spin : str, default `"electron"`
+        Construction-time spin policy. `"electron"` lifts `rotation3`;
+        `"trivial"` uses \(u(g)=I\).
 
     Attributes
     ----------
@@ -125,6 +135,11 @@ class PointGroupElement(Opr):
         basis defined by `axes`.
     axes : Tuple[sy.Symbol, ...]
         Ordered coordinate symbols on which `irrep` acts.
+    rotation3 : sy.ImmutableDenseMatrix | None
+        Stored 3D rotation used for the \(SU(2)\) lift, or `None` when `irrep`
+        is already that 3D matrix.
+    spin : str
+        `"electron"` or `"trivial"`, fixed at construction.
 
     Main API
     --------
@@ -151,10 +166,13 @@ class PointGroupElement(Opr):
     both matrices into a common axis basis. The merged basis preserves the full
     left-axis order and appends only unseen right axes. Missing axes act by the
     identity, while shared axes are aligned by symbol and reordered as needed.
+    Both operands must share the same `spin` policy, and either both store
+    `rotation3` or neither does.
 
     The [`group_order()`][qten.pointgroups.elements.PointGroupElement.group_order] and [`basis_table`][qten.pointgroups.elements.PointGroupElement.basis_table] utilities assume the represented
-    element has finite order. They are appropriate for finite abelian point
-    symmetries, but may fail or be incomplete for infinite-order linear maps.
+    element has finite order. They apply to a single finite-order operation,
+    not only to abelian groups, and may fail or be incomplete for
+    infinite-order linear maps.
     """
 
     irrep: sy.ImmutableDenseMatrix
@@ -168,6 +186,33 @@ class PointGroupElement(Opr):
     Ordered coordinate symbols on which `irrep` acts. Their order fixes the
     ambient coordinate basis for all derived polynomial representations.
     """
+    rotation3: sy.ImmutableDenseMatrix | None = None
+    r"""
+    The same physical operation as a Cartesian \(O(3)\) matrix, used to lift
+    spin-1/2. Three-dimensional groups may leave this unset and use `irrep`.
+    Lower-dimensional groups must set it at construction; it is not inferred
+    by padding `irrep` at lift time.
+    """
+    spin: str = "electron"
+    r"""
+    Spin policy fixed at construction. ``"electron"`` uses the \(SU(2)\) lift of
+    `rotation3`. ``"trivial"`` uses \(u(g)=I\).
+    """
+
+    def with_irrep(
+        self,
+        irrep: sy.ImmutableDenseMatrix,
+        axes: Tuple[sy.Symbol, ...] | None = None,
+        *,
+        rotation3: sy.ImmutableDenseMatrix | None | object = ...,
+    ) -> "PointGroupElement":
+        """Return a copy with a new spatial matrix, keeping spin metadata."""
+        return PointGroupElement(
+            irrep=irrep,
+            axes=self.axes if axes is None else axes,
+            rotation3=self.rotation3 if rotation3 is ... else rotation3,
+            spin=self.spin,
+        )
 
     @lru_cache
     def _full_indices(self, order: int):
@@ -355,9 +400,12 @@ class PointGroupElement(Opr):
         `axes`, so `self @ self.inv()` and `self.inv() @ self` both represent
         the identity map on that coordinate system.
         """
-        return PointGroupElement(
-            irrep=sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
-            axes=self.axes,
+        rotation3 = None
+        if self.rotation3 is not None:
+            rotation3 = sy.ImmutableDenseMatrix(sy.simplify(self.rotation3.inv()))
+        return self.with_irrep(
+            sy.ImmutableDenseMatrix(sy.simplify(self.irrep.inv())),
+            rotation3=rotation3,
         )
 
     @lru_cache
@@ -430,9 +478,11 @@ class PointGroupElement(Opr):
 @Operable.__matmul__.register
 def _(left: PointGroupElement, right: PointGroupElement) -> PointGroupElement:
     """
-    Compose two abelian linear operators in algebraic `@` order.
+    Compose two linear point operations in algebraic `@` order.
 
-    The returned group represents the map `left(right(x))`.
+    The returned element represents the map `left(right(x))`. Both
+    operands must share the same `spin` policy. Either both store
+    `rotation3` or neither does; a missing `rotation3` is not the identity.
 
     Axis handling
     -------------
@@ -476,11 +526,28 @@ def _(left: PointGroupElement, right: PointGroupElement) -> PointGroupElement:
     _require_unique_axes(right.axes, role="right")
 
     merged = _merged_axes(left.axes, right.axes)
+    if left.spin != right.spin:
+        raise ValueError(
+            "Cannot compose point-group elements with different spin policies "
+            f"{left.spin!r} and {right.spin!r}."
+        )
     left_irrep = _embed_irrep_to_axes(left.irrep, left.axes, merged)
     right_irrep = _embed_irrep_to_axes(right.irrep, right.axes, merged)
+    if (left.rotation3 is None) != (right.rotation3 is None):
+        raise ValueError(
+            "Cannot compose point-group elements unless both store rotation3 "
+            "or neither does. A missing rotation3 is not the identity."
+        )
+    rotation3 = None
+    if left.rotation3 is not None and right.rotation3 is not None:
+        rotation3 = sy.ImmutableDenseMatrix(
+            sy.simplify(left.rotation3 @ right.rotation3)
+        )
     return PointGroupElement(
         irrep=sy.ImmutableDenseMatrix(sy.simplify(left_irrep @ right_irrep)),
         axes=merged,
+        rotation3=rotation3,
+        spin=left.spin,
     )
 
 
@@ -524,20 +591,21 @@ def _(g: PointGroupElement, f: PointGroupBasis) -> Multiple[PointGroupBasis]:
 @dataclass(frozen=True, init=False)
 class PointGroupOpr(Opr, HasBase[AffineSpace]):
     r"""
-    Abelian operator acting on polynomial coordinate functions.
+    Affine point operation acting on polynomial coordinate functions.
 
-    This class combines an abelian linear representation with a translation:
-    \(x \mapsto gx + t\), where `g` is carried by
-    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] and \(t\) by
-    `offset`.
+    This class combines a linear [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]
+    with a translation: \(x \mapsto gx + t\), where \(t\) is stored on
+    `offset`. The linear part may belong to an abelian or a non-abelian group.
 
     Parameters
     ----------
     g : PointGroupElement
         Linear part of the affine transformation.
-    offset : Offset
-        Translation part of the affine transformation, stored in the same
-        affine space on which ``g`` acts.
+    offset : Offset | None
+        Not accepted as a constructor argument. Passing a value raises
+        `TypeError`. The constructor always starts at the origin; call
+        [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
+        afterwards. The `offset` *attribute* stores the resulting translation.
 
     Attributes
     ----------
@@ -552,6 +620,11 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
     The operator is initialized at the canonical origin of the identity affine
     basis. To center it at a specific point, construct it first and then call
     [`fixpoint_at(...)`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at].
+    Applying the operator to a [`Spin`][qten.phys.spin.Spin] label or a
+    spinful [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] raises: a generic
+    \(SU(2)\) factor produces a superposition. Use
+    [`expand_spin`][qten.phys.spin.expand_spin] or
+    [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr].
     """
 
     g: PointGroupElement
@@ -631,9 +704,7 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
         change = B_new.inv() @ B_old
         new_irrep = change @ irrep @ change.inv()
         return PointGroupOpr._from_parts(
-            g=PointGroupElement(
-                irrep=sy.ImmutableDenseMatrix(new_irrep), axes=self.g.axes
-            ),
+            g=self.g.with_irrep(sy.ImmutableDenseMatrix(new_irrep)),
             offset=self.offset.rebase(new_base),
         )
 
@@ -681,7 +752,7 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
             space=t.offset.space,
         )
         return PointGroupOpr._from_parts(
-            g=PointGroupElement(irrep=irrep, axes=t.g.axes),
+            g=t.g.with_irrep(irrep),
             offset=fixed_offset,
         )
 
@@ -814,3 +885,48 @@ def _(t: PointGroupOpr, k: Momentum) -> Momentum:
         Transformed momentum in the same reciprocal lattice space as `k`.
     """
     return _apply_point_group_opr_to_momentum_cached(t, k)
+
+
+def _reject_spinful_matmul(kind: str) -> NoReturn:
+    raise ValueError(
+        f"{kind} @ a spinful label cannot return a single state: a generic "
+        "SU(2) factor maps |s⟩ to a superposition. Use expand_spin, "
+        "spinful_transform_basis, or hilbert_repr."
+    )
+
+
+def _orbital_u1basis(opr: Opr, psi: U1Basis) -> U1Basis:
+    new_coef: sy.Expr = psi.coef
+    new_base: list[object] = []
+    for rep in psi.base:
+        ret = opr(rep) if opr.allows(rep) else rep
+        if isinstance(ret, Multiple):
+            new_coef *= ret.coef
+            new_base.append(ret.base)
+        else:
+            new_base.append(ret)
+    return U1Basis(new_coef, tuple(new_base))
+
+
+@PointGroupElement.register(Spin)
+def _(g: PointGroupElement, spin: Spin) -> Spin:
+    _reject_spinful_matmul("PointGroupElement")
+
+
+@PointGroupOpr.register(Spin)
+def _(opr: PointGroupOpr, spin: Spin) -> Spin:
+    _reject_spinful_matmul("PointGroupOpr")
+
+
+@PointGroupElement.register(U1Basis)
+def _(g: PointGroupElement, psi: U1Basis) -> U1Basis:
+    if any(as_spin(rep) is not None for rep in psi.base):
+        _reject_spinful_matmul("PointGroupElement")
+    return _orbital_u1basis(g, psi)
+
+
+@PointGroupOpr.register(U1Basis)
+def _(opr: PointGroupOpr, psi: U1Basis) -> U1Basis:
+    if any(as_spin(rep) is not None for rep in psi.base):
+        _reject_spinful_matmul("PointGroupOpr")
+    return _orbital_u1basis(opr, psi)

@@ -185,8 +185,8 @@ def test_offset_with_affine_space():
 
 def test_pointgroup_with_affine_space():
     # Test that pointgroup returns the linear point-group element directly
-    c3 = pointgroup("c3-xy:xy")
-    assert c3.irrep.shape == (2, 2)
+    c3 = pointgroup("3", plane="xy")
+    assert c3.generators[0].irrep.shape == (2, 2)
 
 
 def test_affine_group_element_rebase():

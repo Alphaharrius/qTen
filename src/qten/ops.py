@@ -1,4 +1,4 @@
-"""
+r"""
 Convenience namespace for QTen operation helpers.
 
 This module re-exports commonly used functional operations from geometry,
@@ -31,11 +31,15 @@ Symbolic operations
 - [`fractional_opr()`][qten.symbolics.ops.fractional_opr]
 - [`region_hilbert()`][qten.symbolics.ops.region_hilbert]
 - [`hilbert_opr_repr()`][qten.symbolics.ops.hilbert_opr_repr]
+  One-to-one symbolic representation; it cannot express \(SU(2)\) spin mixing.
 
 Point-group operations
 ----------------------
+- [`hilbert_repr()`][qten.pointgroups.ops.hilbert_repr]
+  Hilbert-space `D(g)`, including the \(SU(2)\) factor on a spinful space.
 - [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis]
 - [`point_group_column_symmetrize()`][qten.pointgroups.ops.point_group_column_symmetrize]
+- [`point_group_operator_symmetrize()`][qten.pointgroups.ops.point_group_operator_symmetrize]
 - [`joint_point_group_column_symmetrize()`][qten.pointgroups.ops.joint_point_group_column_symmetrize]
 - [`get_direct_transform()`][qten.pointgroups.ops.get_direct_transform]
 
@@ -71,8 +75,10 @@ from .bands import (
     upsample as upsample,
 )
 from .pointgroups.ops import (
-    point_group_column_symmetrize as point_group_column_symmetrize,
     get_direct_transform as get_direct_transform,
+    hilbert_repr as hilbert_repr,
     joint_point_group_basis as joint_point_group_basis,
     joint_point_group_column_symmetrize as joint_point_group_column_symmetrize,
+    point_group_column_symmetrize as point_group_column_symmetrize,
+    point_group_operator_symmetrize as point_group_operator_symmetrize,
 )

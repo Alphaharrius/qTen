@@ -1,3 +1,11 @@
+"""Packaged point-group catalog: generators, Bilbao χ, and class alignment.
+
+Role: JSON loading and conjugacy-class matching. Spinor *projector* completeness
+on a bare spin space is in ``test_spin.py``; 1D / 2D / 3D lifts are in
+``test_pointgroup_spin_oracles.py``.
+"""
+
+import pytest
 import sympy as sy
 
 from qten.geometries.boundary import PeriodicBoundary
@@ -9,10 +17,25 @@ from qten.pointgroups import (
     PointGroupBasis,
     pointgroup,
 )
-from qten.pointgroups._registry import _point_group_data, known_point_group_symbols
+from qten.pointgroups._registry import (
+    _point_group_data,
+    _rotation_mapping_z_to,
+    known_point_group_symbols,
+    verify_spinor_factor_system,
+)
+from qten.pointgroups.finite import _matrix_key
+from qten.phys import su2_of_point_group
 
 
-def test_existing_affine_pointgroup_queries_return_point_group_element():
+def test_named_c4_returns_finite_point_group():
+    c4 = pointgroup("4", plane="xy")
+
+    assert isinstance(c4, FinitePointGroup)
+    assert c4.axes == sy.symbols("x y")
+    assert c4.order == 4
+
+
+def test_legacy_affine_query_still_returns_element():
     c4 = pointgroup("c4-xy:xy")
 
     assert isinstance(c4, PointGroupElement)
@@ -50,7 +73,11 @@ def test_known_point_group_symbols_include_crystallographic_classes():
 
 def test_packaged_data_uses_per_group_records():
     data = _point_group_data()
-    records = {record["symbol"]: record for record in data["point_groups"]}
+    records = {
+        record["symbol"]: record
+        for record in data["point_groups"]
+        if record.get("dim", 3) == 3 and record.get("frame", "xyz") == "xyz"
+    }
     c4v = records["4mm"]
 
     assert c4v["aliases"] == ["C4v"]
@@ -81,9 +108,35 @@ def test_all_packaged_character_tables_are_complete():
         )
 
 
+def test_computed_spinor_tables_are_complete():
+    for symbol in ("1", "4", "4mm", "-43m", "3"):
+        group = pointgroup(symbol)
+        table = group.spinor_table()
+        assert table["class_labels"] == list(group.irreps["class_labels"])
+        assert (
+            sum(int(row["dim"]) ** 2 for row in table["irreps"].values()) == group.order
+        )
+        verify_spinor_factor_system(group)
+
+
+def test_representative_spinor_tables_remap_to_generated_elements():
+    for symbol in ("4", "4mm", "-43m", "3", "6/mmm"):
+        group = pointgroup(symbol)
+        assert group.spinor_irreps is not None
+        verify_spinor_factor_system(group)
+        for irrep_name in group.spinor_irreps["irreps"]:
+            assert len(group.spinor_irrep_characters_by_element(irrep_name)) == (
+                group.order
+            )
+
+
 def test_bilbao_parser_splits_complex_conjugate_irrep_rows():
     data = _point_group_data()
-    records = {record["symbol"]: record for record in data["point_groups"]}
+    records = {
+        record["symbol"]: record
+        for record in data["point_groups"]
+        if record.get("dim", 3) == 3 and record.get("frame", "xyz") == "xyz"
+    }
     c6_irreps = records["6"]["irreps"]["irreps"]
 
     assert "^1E2" in c6_irreps
@@ -106,6 +159,31 @@ def test_hexagonal_rotoinversion_classes_align_with_character_tables():
         assert all(
             abs(complex(sy.N(entry))) < 1e-10 for entry in projector_sum - sy.eye(3)
         )
+
+
+def test_trigonal_and_hexagonal_generators_are_cartesian_spin_rotations():
+    symbols = (
+        "3",
+        "-3",
+        "32",
+        "3m",
+        "-3m",
+        "6",
+        "-6",
+        "6/m",
+        "622",
+        "6mm",
+        "-6m2",
+        "6/mmm",
+    )
+    for symbol in symbols:
+        group = pointgroup(symbol)
+        for generator in group.generators:
+            rotation = generator.irrep
+            assert sy.simplify(rotation.T @ rotation) == sy.eye(3)
+            lift = su2_of_point_group(generator)
+            assert sy.simplify(lift.H @ lift) == sy.eye(2)
+            assert sy.simplify(lift.det()) == 1
 
 
 def test_diagonal_c4v_generator_keeps_b1_b2_geometric_labels():
@@ -191,8 +269,8 @@ def test_affine_wrapper_transforms_point_group_basis_through_linear_part():
 
 def test_manual_c4_and_registry_c4_share_polynomial_basis_but_not_sector_basis():
     x, y = sy.symbols("x y")
-    manual_c4 = pointgroup("c4-xy:xy")
-    c4v = pointgroup("C4v-xy")
+    manual_c4 = pointgroup("4", plane="xy").generators[0]
+    c4v = pointgroup("C4v", plane="xy")
 
     assert isinstance(manual_c4, PointGroupElement)
     assert isinstance(c4v, FinitePointGroup)
@@ -219,6 +297,99 @@ def test_manual_c4_and_registry_c4_share_polynomial_basis_but_not_sector_basis()
     )
     assert manual_sector_exprs != finite_sector_exprs
     assert finite_sector_exprs == {x, y}
+
+
+def test_c3_class_alignment_respects_rotation_sense():
+    group = pointgroup("3")
+    omega = sy.exp(2 * sy.pi * sy.I / 3)
+    characters = group.irrep_characters_by_element("^2E")
+    labels = group.irreps["class_labels"]
+    class_by_element = group.element_class_indices()
+
+    seen_plus = False
+    seen_minus = False
+    for element, character, class_index in zip(
+        group.elements(), characters, class_by_element
+    ):
+        if element.group_order() != 3:
+            continue
+        image = sy.simplify(element.irrep[0, 0] + sy.I * element.irrep[1, 0])
+        label = labels[class_index]
+        if sy.simplify(sy.expand_complex(image - omega)).equals(0):
+            assert label == "3^+"
+            assert sy.simplify(sy.expand_complex(character - omega)).equals(0)
+            seen_plus = True
+        elif sy.simplify(sy.expand_complex(image - omega**2)).equals(0):
+            assert label == "3^-"
+            assert sy.simplify(sy.expand_complex(character - omega**2)).equals(0)
+            seen_minus = True
+        else:
+            raise AssertionError(f"Unexpected C3 image {image}")
+    assert seen_plus and seen_minus
+
+
+def test_class_alignment_rejects_size_only_fallback():
+    c4v = pointgroup("C4v-xy")
+    bad_irreps = {
+        "class_labels": ["1", "2", "4", "4", "4"],
+        "multiplicities": list(c4v.irreps["multiplicities"]),
+        "irreps": c4v.irreps["irreps"],
+        "source": "test",
+    }
+    with pytest.raises(ValueError, match="geometrically align"):
+        FinitePointGroup.from_matrices(
+            (generator.irrep for generator in c4v.generators),
+            axes=c4v.axes,
+            symbol="4mm",
+            irreps=bad_irreps,
+        ).element_class_indices()
+
+
+def test_distinct_character_tables_do_not_share_projector_cache():
+    import copy
+
+    c4v = pointgroup("C4v-xy")
+    swapped = copy.deepcopy(c4v.irreps)
+    swapped["irreps"]["B1"], swapped["irreps"]["B2"] = (
+        copy.deepcopy(c4v.irreps["irreps"]["B2"]),
+        copy.deepcopy(c4v.irreps["irreps"]["B1"]),
+    )
+    left = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in c4v.generators),
+        axes=c4v.axes,
+        symbol="4mm",
+        irreps=c4v.irreps,
+    )
+    right = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in c4v.generators),
+        axes=c4v.axes,
+        symbol="4mm",
+        irreps=swapped,
+    )
+    assert left != right
+    assert hash(left) != hash(right)
+    left_b1 = {sy.simplify(basis.expr) for basis in left.irrep_basis(2, "B1")}
+    right_b1 = {sy.simplify(basis.expr) for basis in right.irrep_basis(2, "B1")}
+    assert left_b1 == {c4v.axes[0] ** 2 - c4v.axes[1] ** 2}
+    assert right_b1 == {c4v.axes[0] * c4v.axes[1]}
+
+
+def test_incomplete_spinor_table_is_rejected():
+    group = pointgroup("4")
+    tampered_table = dict(group.spinor_irreps)
+    irreps = dict(tampered_table["irreps"])
+    name = next(iter(irreps))
+    irreps[name] = {**irreps[name], "dim": 99}
+    tampered_table["irreps"] = irreps
+    tampered = FinitePointGroup.from_matrices(
+        (generator.irrep for generator in group.generators),
+        axes=group.axes,
+        symbol=group.symbol,
+        irreps=group.irreps,
+        spinor_irreps=tampered_table,
+    )
+    with pytest.raises(ValueError, match="sum\\(dim\\^2\\)"):
+        verify_spinor_factor_system(tampered)
 
 
 def test_non_abelian_tetrahedral_point_group_preserves_diamond_lattice_basis():
@@ -254,3 +425,143 @@ def test_non_abelian_tetrahedral_point_group_preserves_diamond_lattice_basis():
     for element in td.elements():
         opr = PointGroupOpr(element)
         assert all(opr @ site in diamond for site in sites)
+
+
+@pytest.mark.parametrize("symbol", ["4/m", "4/mmm", "mmm", "6/m"])
+def test_plane_cut_rejects_non_faithful_groups(symbol):
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup(symbol, plane="xy")
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup(f"{symbol}-xy")
+
+
+def test_plane_cut_keeps_faithful_c4v():
+    group = pointgroup("4mm", plane="xy")
+    assert group.order == 8
+    assert pointgroup("4mm", plane=(0, 0, 1)).order == 8
+
+
+@pytest.mark.parametrize("normal", [(0, 0, 1), (0, 0, -1), (0, 0, 2)])
+def test_c2_coordinate_plane_tuple_matches_named_xy(normal):
+    named = pointgroup("2", plane="xy")
+    vector = pointgroup("2", plane=normal)
+    named_c2 = next(
+        element for element in named.elements() if element.group_order() == 2
+    )
+    vector_c2 = next(
+        element for element in vector.elements() if element.group_order() == 2
+    )
+    assert sy.simplify(named_c2.irrep + sy.eye(2)) == sy.zeros(2)
+    assert sy.simplify(vector_c2.irrep - named_c2.irrep) == sy.zeros(2)
+    assert named_c2.rotation3 is not None
+    assert vector_c2.rotation3 is not None
+    assert sy.simplify(vector_c2.rotation3 - named_c2.rotation3) == sy.zeros(3)
+    assert sy.simplify(named_c2.rotation3 - sy.diag(-1, -1, 1)) == sy.zeros(3)
+
+
+def test_catalog_skip_live_still_realizes_ordinary_tables():
+    import inspect
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "retrieve_pointgroup_catalog.py"
+    )
+    spec = importlib.util.spec_from_file_location("retrieve_pointgroup_catalog", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = inspect.getsource(module.check_self)
+    assert source.index("_check_ordinary_realizes_group") < source.index("if not live")
+
+
+def test_plane_vector_rejects_non_faithful_4m():
+    with pytest.raises(ValueError, match="faithfully"):
+        pointgroup("4/m", plane=(0, 0, 1))
+
+
+def _assert_characters_follow_conjugation(original, reoriented, rotation):
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    irrep_names = tuple(original.irreps["irreps"])
+    for name in irrep_names:
+        chi_old = {
+            _matrix_key(element.irrep): character
+            for element, character in zip(
+                original.elements(),
+                original.irrep_characters_by_element(name),
+            )
+        }
+        chi_new = {
+            _matrix_key(element.irrep): character
+            for element, character in zip(
+                reoriented.elements(),
+                reoriented.irrep_characters_by_element(name),
+            )
+        }
+        for element in original.elements():
+            image = sy.ImmutableDenseMatrix(
+                sy.simplify(rotation @ element.irrep @ inverse)
+            )
+            expected = chi_old[_matrix_key(element.irrep)]
+            got = chi_new[_matrix_key(image)]
+            assert sy.simplify(sy.expand_complex(expected - got)).equals(0), (
+                f"{original.symbol} irrep {name}"
+            )
+
+
+@pytest.mark.parametrize("symbol", ["3", "4", "6"])
+@pytest.mark.parametrize("axis", [(0, 0, -1), (1, 1, -1), (1, 0, 0)])
+def test_axis_reorientation_preserves_ordinary_characters(symbol, axis):
+    original = pointgroup(symbol)
+    reoriented = pointgroup(symbol, axis=axis)
+    _assert_characters_follow_conjugation(
+        original, reoriented, _rotation_mapping_z_to(axis)
+    )
+
+
+def test_c6_axis_x_keeps_threefold_class_labels():
+    original = pointgroup("6")
+    reoriented = pointgroup("6", axis=(1, 0, 0))
+    rotation = _rotation_mapping_z_to((1, 0, 0))
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    labels = original.irreps["class_labels"]
+    old_by_key = {
+        _matrix_key(element.irrep): labels[class_index]
+        for element, class_index in zip(
+            original.elements(), original.element_class_indices()
+        )
+    }
+    new_by_key = {
+        _matrix_key(element.irrep): labels[class_index]
+        for element, class_index in zip(
+            reoriented.elements(), reoriented.element_class_indices()
+        )
+    }
+    for element in original.elements():
+        image = sy.ImmutableDenseMatrix(sy.simplify(rotation @ element.irrep @ inverse))
+        assert old_by_key[_matrix_key(element.irrep)] == new_by_key[_matrix_key(image)]
+
+
+def test_c3_flipped_plane_cut_keeps_ordinary_characters():
+    original = pointgroup("3")
+    cut = pointgroup("3", plane=(0, 0, -1))
+    assert cut.order == 3
+    rotation = _rotation_mapping_z_to((0, 0, -1))
+    inverse = sy.ImmutableDenseMatrix(sy.simplify(rotation.inv()))
+    chi_old = {
+        _matrix_key(element.irrep): character
+        for element, character in zip(
+            original.elements(),
+            original.irrep_characters_by_element("^2E"),
+        )
+    }
+    for element, character in zip(
+        cut.elements(), cut.irrep_characters_by_element("^2E")
+    ):
+        preimage = sy.ImmutableDenseMatrix(
+            sy.simplify(inverse @ element.rotation3 @ rotation)
+        )
+        expected = chi_old[_matrix_key(preimage)]
+        assert sy.simplify(sy.expand_complex(expected - character)).equals(0)

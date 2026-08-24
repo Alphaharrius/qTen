@@ -2,10 +2,1910 @@
   "point_groups": [
     {
       "aliases": [
+        "C1"
+      ],
+      "crystal_system": "triclinic",
+      "dim": 1,
+      "frame": "x",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1
+            ],
+            "dim": 1,
+            "functions": ""
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=1&sg=1"
+      },
+      "source_encoding": "a",
+      "spinor_irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "1"
+    },
+    {
+      "aliases": [
+        "C1h",
+        "Cs"
+      ],
+      "crystal_system": "monoclinic",
+      "dim": 1,
+      "frame": "x",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              -1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,y,x^2,y^2,z^2,xy,Jz"
+          },
+          "A^''": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,xz,yz,Jx,Jy"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=4&sg=6"
+      },
+      "source_encoding": "j",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "m"
+    },
+    {
+      "aliases": [
+        "C1"
+      ],
+      "crystal_system": "triclinic",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1
+            ],
+            "dim": 1,
+            "functions": ""
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=1&sg=1"
+      },
+      "source_encoding": "a",
+      "spinor_irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "1"
+    },
+    {
+      "aliases": [
+        "C2"
+      ],
+      "crystal_system": "monoclinic",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              -1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2,xy,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x,y,xz,yz,Jx,Jy"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=3&sg=3"
+      },
+      "source_encoding": "c",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "2"
+    },
+    {
+      "aliases": [
+        "C3"
+      ],
+      "crystal_system": "trigonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2"
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "^1E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=16&sg=143"
+      },
+      "source_encoding": "n",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "3"
+    },
+    {
+      "aliases": [
+        "C3v"
+      ],
+      "crystal_system": "trigonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              "1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "-sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              "1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "-sqrt(3)/2",
+              "-1/2"
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2"
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              2,
+              -1,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(x^2-y^2,xy),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=19&sg=156"
+      },
+      "source_encoding": "kn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "3m"
+    },
+    {
+      "aliases": [
+        "C4"
+      ],
+      "crystal_system": "tetragonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              0,
+              -1
+            ],
+            [
+              1,
+              0
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2,xy"
+          },
+          "^1E": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              "-1j",
+              "1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^2E": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              "1j",
+              "-1j"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=9&sg=75"
+      },
+      "source_encoding": "g",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "4"
+    },
+    {
+      "aliases": [
+        "C4v"
+      ],
+      "crystal_system": "tetragonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              0,
+              -1
+            ],
+            [
+              1,
+              0
+            ]
+          ],
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x^2-y^2"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "xy"
+          },
+          "E": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=13&sg=99"
+      },
+      "source_encoding": "gj",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730956,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              -1.4142135623730976,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "4mm"
+    },
+    {
+      "aliases": [
+        "C6"
+      ],
+      "crystal_system": "hexagonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              -1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2"
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-"
+        ],
+        "irreps": {
+          "A": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2,Jz"
+          },
+          "B": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "^1E1": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              1,
+              "-w",
+              "w^2",
+              -1,
+              "w",
+              "-w^2"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^1E2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              "w",
+              "w^2",
+              1,
+              "w",
+              "w^2"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          },
+          "^2E1": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              1,
+              "-w^2",
+              "w",
+              -1,
+              "w^2",
+              "-w"
+            ],
+            "dim": 1,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "^2E2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              "w^2",
+              "w",
+              1,
+              "w^2",
+              "w"
+            ],
+            "dim": 1,
+            "functions": "(x^2-y^2,xy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=21&sg=168"
+      },
+      "source_encoding": "bn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "6"
+    },
+    {
+      "aliases": [
+        "C6v"
+      ],
+      "crystal_system": "hexagonal",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              "1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "-sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2",
+              0
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2",
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              -1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ],
+          [
+            [
+              "1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "-sqrt(3)/2",
+              "-1/2"
+            ]
+          ],
+          [
+            [
+              "-1/2",
+              "-sqrt(3)/2"
+            ],
+            [
+              "sqrt(3)/2",
+              "-1/2"
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3",
+          "6",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2+y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              1,
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "B2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "\u00b7"
+          },
+          "E1": {
+            "bilbao_label": "\u03935",
+            "characters": [
+              2,
+              -2,
+              -1,
+              1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x,y),(xz,yz),(Jx,Jy)"
+          },
+          "E2": {
+            "bilbao_label": "\u03936",
+            "characters": [
+              2,
+              2,
+              -1,
+              -1,
+              0,
+              0
+            ],
+            "dim": 2,
+            "functions": "(x^2-y^2,xy)"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=25&sg=183"
+      },
+      "source_encoding": "bkn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3",
+          "6",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1,
+              -1.7320508075688774,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              1,
+              1.7320508075688772,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "6mm"
+    },
+    {
+      "aliases": [
+        "C1h",
+        "Cs"
+      ],
+      "crystal_system": "monoclinic",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "A^'": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "x,y,x^2,y^2,z^2,xy,Jz"
+          },
+          "A^''": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "z,xz,yz,Jx,Jy"
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=4&sg=6"
+      },
+      "source_encoding": "j",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "m"
+    },
+    {
+      "aliases": [
+        "C2v"
+      ],
+      "crystal_system": "orthorhombic",
+      "dim": 2,
+      "frame": "xy",
+      "generators": {
+        "rotation3": [
+          [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ]
+        ],
+        "spatial": [
+          [
+            [
+              -1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ],
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              -1
+            ]
+          ]
+        ]
+      },
+      "irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "A1": {
+            "bilbao_label": "\u03931",
+            "characters": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dim": 1,
+            "functions": "z,x^2,y^2,z^2"
+          },
+          "A2": {
+            "bilbao_label": "\u03933",
+            "characters": [
+              1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "xy,Jz"
+          },
+          "B1": {
+            "bilbao_label": "\u03932",
+            "characters": [
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "dim": 1,
+            "functions": "x,xz,Jy"
+          },
+          "B2": {
+            "bilbao_label": "\u03934",
+            "characters": [
+              1,
+              -1,
+              -1,
+              1
+            ],
+            "dim": 1,
+            "functions": "y,yz,Jx"
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "bilbao",
+        "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=7&sg=25"
+      },
+      "source_encoding": "bj",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
+      "symbol": "mm2"
+    },
+    {
+      "aliases": [
         "Ci",
         "S2"
       ],
       "crystal_system": "triclinic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -58,6 +1958,33 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=2&sg=2"
       },
       "source_encoding": "h",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "-1"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              -1
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              1
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-1"
     },
     {
@@ -66,6 +1993,8 @@
         "S6"
       ],
       "crystal_system": "trigonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -203,6 +2132,141 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=17&sg=147"
       },
       "source_encoding": "hn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "-1",
+          "-3^+",
+          "-3^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              -1,
+              -1,
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              -1,
+              -1,
+              -1,
+              1,
+              1
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              -1,
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              -1,
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-3"
     },
     {
@@ -210,6 +2274,8 @@
         "D3d"
       ],
       "crystal_system": "trigonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -364,6 +2430,93 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=20&sg=162"
       },
       "source_encoding": "fhn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "21-10",
+          "-1",
+          "-3",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              -1,
+              0,
+              -1,
+              1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              0,
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              -1,
+              0,
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              -1,
+              0,
+              -1,
+              1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              2,
+              1,
+              0,
+              2,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_6": {
+            "characters": [
+              2,
+              1,
+              0,
+              -2,
+              -1,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3,
+          1,
+          2,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-3m"
     },
     {
@@ -371,6 +2524,8 @@
         "S4"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -453,6 +2608,95 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=10&sg=81"
       },
       "source_encoding": "m",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-4^+",
+          "-4^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-4"
     },
     {
@@ -460,6 +2704,8 @@
         "D2d"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -577,6 +2823,45 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=14&sg=111"
       },
       "source_encoding": "cm",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-4",
+          "2100",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -1.414213562373095,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730931,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-42m"
     },
     {
@@ -584,6 +2869,8 @@
         "Td"
       ],
       "crystal_system": "cubic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -718,6 +3005,55 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=31&sg=215"
       },
       "source_encoding": "dml",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "2100",
+          "-4",
+          "m110"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              1,
+              0,
+              1.4142135623730951,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              1,
+              0,
+              -1.4142135623730943,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              4,
+              -1,
+              0,
+              0,
+              0
+            ],
+            "dim": 4
+          }
+        },
+        "multiplicities": [
+          1,
+          8,
+          3,
+          6,
+          6
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-43m"
     },
     {
@@ -725,6 +3061,8 @@
         "C3h"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -862,6 +3200,171 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=22&sg=174"
       },
       "source_encoding": "in",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "m",
+          "-6^-",
+          "-6^+"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              -1,
+              -1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              -1,
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-6"
     },
     {
@@ -869,6 +3372,8 @@
         "D3h"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1023,6 +3528,60 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=26&sg=187"
       },
       "source_encoding": "ikn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "m",
+          "3",
+          "-6",
+          "2120",
+          "m100"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1,
+              -1.7320508075688774,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              1,
+              1.7320508075688772,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "-6m2"
     },
     {
@@ -1030,6 +3589,8 @@
         "C1"
       ],
       "crystal_system": "triclinic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1070,6 +3631,23 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=1&sg=1"
       },
       "source_encoding": "a",
+      "spinor_irreps": {
+        "class_labels": [
+          "1"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "1"
     },
     {
@@ -1077,6 +3655,8 @@
         "C2"
       ],
       "crystal_system": "monoclinic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1129,6 +3709,39 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=3&sg=3"
       },
       "source_encoding": "c",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "2"
     },
     {
@@ -1136,6 +3749,8 @@
         "C2h"
       ],
       "crystal_system": "monoclinic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1235,6 +3850,83 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=5&sg=10"
       },
       "source_encoding": "ch",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "-1",
+          "m"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              1,
+              [
+                -0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "2/m"
     },
     {
@@ -1243,6 +3935,8 @@
         "V"
       ],
       "crystal_system": "orthorhombic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1342,6 +4036,32 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=6&sg=16"
       },
       "source_encoding": "bc",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "2y",
+          "2x"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "222"
     },
     {
@@ -1349,6 +4069,8 @@
         "T"
       ],
       "crystal_system": "cubic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1448,6 +4170,62 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=28&sg=195"
       },
       "source_encoding": "cd",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              1,
+              1
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ]
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ]
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          3,
+          4,
+          4
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "23"
     },
     {
@@ -1455,6 +4233,8 @@
         "C3"
       ],
       "crystal_system": "trigonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1521,6 +4301,57 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=16&sg=143"
       },
       "source_encoding": "n",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              -1
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "3"
     },
     {
@@ -1528,6 +4359,8 @@
         "D3"
       ],
       "crystal_system": "trigonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1611,6 +4444,45 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=18&sg=149"
       },
       "source_encoding": "en",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "21-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "32"
     },
     {
@@ -1618,6 +4490,8 @@
         "C3v"
       ],
       "crystal_system": "trigonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1701,6 +4575,45 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=19&sg=156"
       },
       "source_encoding": "kn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              -1,
+              0
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "3m"
     },
     {
@@ -1708,6 +4621,8 @@
         "C4"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1790,6 +4705,95 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=9&sg=75"
       },
       "source_encoding": "g",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "4"
     },
     {
@@ -1797,6 +4801,8 @@
         "C4h"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -1980,6 +4986,279 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=11&sg=83"
       },
       "source_encoding": "gh",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4^+",
+          "4^-",
+          "-1",
+          "m",
+          "-4^+",
+          "-4^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_7": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_8": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.707106781187,
+                -0.707106781187
+              ],
+              [
+                -0.707106781187,
+                0.707106781187
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.707106781187,
+                0.707106781187
+              ],
+              [
+                0.707106781187,
+                -0.707106781187
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "4/m"
     },
     {
@@ -1987,6 +5266,8 @@
         "D4h"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -2241,6 +5522,95 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=15&sg=123"
       },
       "source_encoding": "cgh",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "2100",
+          "21-10",
+          "-1",
+          "mz",
+          "-4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -1.414213562373094,
+              0,
+              0,
+              2,
+              0,
+              -1.4142135623730943,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              -1.4142135623730943,
+              0,
+              0,
+              -2,
+              0,
+              1.4142135623730943,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730951,
+              0,
+              0,
+              -2,
+              0,
+              -1.4142135623730951,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_4": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730925,
+              0,
+              0,
+              2,
+              0,
+              1.4142135623730925,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2,
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "4/mmm"
     },
     {
@@ -2248,6 +5618,8 @@
         "D4"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -2365,6 +5737,45 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=12&sg=89"
       },
       "source_encoding": "cg",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "2100",
+          "21-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -1.414213562373095,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730931,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "422"
     },
     {
@@ -2372,6 +5783,8 @@
         "O"
       ],
       "crystal_system": "cubic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -2489,6 +5902,55 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=30&sg=207"
       },
       "source_encoding": "dg",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "4",
+          "2100",
+          "3",
+          "2110"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              1.4142135623730951,
+              0,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              -1.4142135623730943,
+              0,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              4,
+              0,
+              0,
+              -1,
+              0
+            ],
+            "dim": 4
+          }
+        },
+        "multiplicities": [
+          1,
+          6,
+          3,
+          8,
+          6
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "432"
     },
     {
@@ -2496,6 +5958,8 @@
         "C4v"
       ],
       "crystal_system": "tetragonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -2613,6 +6077,45 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=13&sg=99"
       },
       "source_encoding": "gj",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "4",
+          "m100",
+          "m1-10"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              1.4142135623730956,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              -1.4142135623730976,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          2
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "4mm"
     },
     {
@@ -2620,6 +6123,8 @@
         "C6"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -2757,6 +6262,171 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=21&sg=168"
       },
       "source_encoding": "bn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "6"
     },
     {
@@ -2764,6 +6434,8 @@
         "C6h"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -3080,6 +6752,555 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=23&sg=175"
       },
       "source_encoding": "bhn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "6^+",
+          "3^+",
+          "2",
+          "3^-",
+          "6^-",
+          "-1",
+          "-6^+",
+          "-3^+",
+          "m",
+          "-3^-",
+          "-6^-"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ],
+              1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_10": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ],
+              1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_11": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                -0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_12": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ],
+              1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_3": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                -0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_4": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ],
+              -1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_5": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ],
+              -1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_6": {
+            "characters": [
+              1,
+              [
+                -0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                -1.0
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ],
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_7": {
+            "characters": [
+              1,
+              [
+                0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.0,
+                1.0
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                -0.5
+              ],
+              -1,
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_8": {
+            "characters": [
+              1,
+              [
+                -0.866025403784,
+                0.5
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.0,
+                1.0
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                -0.866025403784,
+                -0.5
+              ],
+              -1,
+              [
+                0.866025403784,
+                -0.5
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                0.0,
+                -1.0
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                0.866025403784,
+                0.5
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_9": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              -1,
+              [
+                0.0,
+                1.0
+              ],
+              1,
+              [
+                -0.0,
+                -1.0
+              ],
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "6/m"
     },
     {
@@ -3087,6 +7308,8 @@
         "D6h"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -3420,6 +7643,141 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=27&sg=191"
       },
       "source_encoding": "benh",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "6",
+          "3",
+          "2z",
+          "2120",
+          "2100",
+          "-1",
+          "-6",
+          "-3",
+          "mz",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0,
+              -2,
+              0,
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0,
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1.732050807568877,
+              1,
+              0,
+              0,
+              0,
+              -2,
+              -1.7320508075688774,
+              -1,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_4": {
+            "characters": [
+              2,
+              -1.7320508075688772,
+              1,
+              0,
+              0,
+              0,
+              -2,
+              1.7320508075688772,
+              -1,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_5": {
+            "characters": [
+              2,
+              1.7320508075688774,
+              1,
+              0,
+              0,
+              0,
+              2,
+              1.7320508075688774,
+              1,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_6": {
+            "characters": [
+              2,
+              -1.7320508075688774,
+              1,
+              0,
+              0,
+              0,
+              2,
+              -1.7320508075688774,
+              1,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          2,
+          2,
+          1,
+          3,
+          3,
+          1,
+          2,
+          2,
+          1,
+          3,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "6/mmm"
     },
     {
@@ -3427,6 +7785,8 @@
         "D6"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -3581,6 +7941,60 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=24&sg=177"
       },
       "source_encoding": "ben",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "3",
+          "6",
+          "2120",
+          "2100"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1,
+              -1.7320508075688774,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              1,
+              1.7320508075688772,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "622"
     },
     {
@@ -3588,6 +8002,8 @@
         "C6v"
       ],
       "crystal_system": "hexagonal",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -3742,6 +8158,60 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=25&sg=183"
       },
       "source_encoding": "bkn",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2",
+          "3",
+          "6",
+          "m120",
+          "m100"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              1,
+              -1.7320508075688774,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              0,
+              1,
+              1.7320508075688772,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          2,
+          2,
+          3,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "6mm"
     },
     {
@@ -3750,6 +8220,8 @@
         "Cs"
       ],
       "crystal_system": "monoclinic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -3802,6 +8274,39 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=4&sg=6"
       },
       "source_encoding": "j",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "m"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              1,
+              [
+                0.0,
+                -1.0
+              ]
+            ],
+            "dim": 1
+          },
+          "spinor_2": {
+            "characters": [
+              1,
+              [
+                0.0,
+                1.0
+              ]
+            ],
+            "dim": 1
+          }
+        },
+        "multiplicities": [
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "m"
     },
     {
@@ -3809,6 +8314,8 @@
         "Th"
       ],
       "crystal_system": "cubic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -4009,6 +8516,157 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=29&sg=200"
       },
       "source_encoding": "cdh",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "3^+",
+          "3^-",
+          "2",
+          "-1",
+          "-3^+",
+          "-3^-",
+          "m"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              0,
+              2,
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              [
+                -0.5,
+                0.866025403784
+              ],
+              0,
+              -2,
+              [
+                0.5,
+                0.866025403784
+              ],
+              [
+                0.5,
+                -0.866025403784
+              ],
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1,
+              1,
+              0,
+              -2,
+              -1,
+              -1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_4": {
+            "characters": [
+              2,
+              1,
+              1,
+              0,
+              2,
+              1,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_5": {
+            "characters": [
+              2,
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              0,
+              2,
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_6": {
+            "characters": [
+              2,
+              [
+                -0.5,
+                0.866025403784
+              ],
+              [
+                -0.5,
+                -0.866025403784
+              ],
+              0,
+              -2,
+              [
+                0.5,
+                -0.866025403784
+              ],
+              [
+                0.5,
+                0.866025403784
+              ],
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          4,
+          4,
+          3,
+          1,
+          4,
+          4,
+          3
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "m-3"
     },
     {
@@ -4016,6 +8674,8 @@
         "Oh"
       ],
       "crystal_system": "cubic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -4287,6 +8947,125 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=32&sg=221"
       },
       "source_encoding": "dghl",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "4",
+          "2100",
+          "3",
+          "2110",
+          "-1",
+          "-4",
+          "m100",
+          "-3",
+          "m110"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              -1.414213562373095,
+              0,
+              1,
+              0,
+              -2,
+              1.414213562373095,
+              0,
+              -1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              -1.4142135623730934,
+              0,
+              1,
+              0,
+              2,
+              -1.4142135623730934,
+              0,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_3": {
+            "characters": [
+              2,
+              1.4142135623730954,
+              0,
+              1,
+              0,
+              2,
+              1.4142135623730954,
+              0,
+              1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_4": {
+            "characters": [
+              2,
+              1.414213562373096,
+              0,
+              1,
+              0,
+              -2,
+              -1.414213562373096,
+              0,
+              -1,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_5": {
+            "characters": [
+              4,
+              0,
+              0,
+              -1,
+              0,
+              4,
+              0,
+              0,
+              -1,
+              0
+            ],
+            "dim": 4
+          },
+          "spinor_6": {
+            "characters": [
+              4,
+              0,
+              0,
+              -1,
+              0,
+              -4,
+              0,
+              0,
+              1,
+              0
+            ],
+            "dim": 4
+          }
+        },
+        "multiplicities": [
+          1,
+          6,
+          3,
+          8,
+          6,
+          1,
+          6,
+          3,
+          8,
+          6
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "m-3m"
     },
     {
@@ -4294,6 +9073,8 @@
         "C2v"
       ],
       "crystal_system": "orthorhombic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -4393,6 +9174,32 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=7&sg=25"
       },
       "source_encoding": "bj",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "mm2"
     },
     {
@@ -4401,6 +9208,8 @@
         "Vh"
       ],
       "crystal_system": "orthorhombic",
+      "dim": 3,
+      "frame": "xyz",
       "generators": [
         [
           [
@@ -4601,10 +9410,62 @@
         "url": "https://cryst.ehu.es/cgi-bin/rep/programs/sam/point.py?num=8&sg=47"
       },
       "source_encoding": "bch",
+      "spinor_irreps": {
+        "class_labels": [
+          "1",
+          "2z",
+          "2y",
+          "2x",
+          "-1",
+          "mz",
+          "my",
+          "mx"
+        ],
+        "irreps": {
+          "spinor_1": {
+            "characters": [
+              2,
+              0,
+              0,
+              0,
+              -2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          },
+          "spinor_2": {
+            "characters": [
+              2,
+              0,
+              0,
+              0,
+              2,
+              0,
+              0,
+              0
+            ],
+            "dim": 2
+          }
+        },
+        "multiplicities": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "source": "qten-su2-principal-v1"
+      },
       "symbol": "mmm"
     }
   ],
-  "schema_version": 2,
+  "schema_version": 3,
+  "section_convention": "qten-su2-principal-v1",
   "source": {
     "name": "pymatgen-core",
     "url": "https://raw.githubusercontent.com/materialsproject/pymatgen-core/v2026.5.18/src/pymatgen/symmetry/symm_data.json",

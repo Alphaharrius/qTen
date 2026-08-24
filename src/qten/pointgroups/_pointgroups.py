@@ -7,7 +7,8 @@ affine queries such as `c4-xy:xy` return a single
 [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement]. Named
 crystallographic queries such as `C4v` or `4mm` return a
 [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] built from
-packaged generator data.
+packaged generator data. Named groups accept `plane=`, `axis=`, and `spin=`
+at construction.
 
 Repository usage
 ----------------
@@ -18,12 +19,14 @@ a custom symbolic representation is needed.
 """
 
 import re
+from typing import Literal
 
 import sympy as sy
 
 from .elements import PointGroupElement
 from .finite import FinitePointGroup
-from ._registry import named_pointgroup
+from ._registry import _hashable_axis, named_pointgroup
+from ..phys.spin import _embed_in_cartesian_xyz
 
 
 _AFFINE_QUERY_RE = re.compile(
@@ -137,15 +140,27 @@ def _build_mirror_irrep(ambient: str, target: str) -> sy.ImmutableDenseMatrix:
     return sy.ImmutableDenseMatrix(mutable)
 
 
-def pointgroup(query: str) -> PointGroupElement | FinitePointGroup:
+def pointgroup(
+    query: str,
+    *,
+    plane: str | tuple[float, ...] | None = None,
+    axis: tuple[float, ...] | None = None,
+    spin: Literal["trivial", "electron"] = "electron",
+) -> PointGroupElement | FinitePointGroup:
     r"""
     Build a point-group object from a compact query string.
 
     This is a user-facing constructor for common point operations and named
     crystallographic point groups in Cartesian axes (`x`, `y`, `z`). Compact
-    affine queries return an [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement].
-    Named crystallographic queries return a
-    [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup].
+    affine queries such as `c4-xy:xy` return a
+    [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] with no
+    character table. Named crystallographic queries such as `C4v` or `-43m`
+    return a [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup]
+    with packaged ordinary Bilbao characters. Spinor characters come from
+    QTen's \(SU(2)\) lift: packaged for catalog groups, computed live otherwise.
+    Use `plane=` / `axis=` at construction to fix the spatial frame;
+    `spin="trivial"` is a define-time exception that sets `u(g)=I`. Hilbert
+    spaces that already contain `Spin` use the spinor table.
 
     Query grammar
     -------------
@@ -196,7 +211,17 @@ def pointgroup(query: str) -> PointGroupElement | FinitePointGroup:
     Parameters
     ----------
     query : str
-        Compact point-group query of the form `"<group>-<ambient>:<target>"`.
+        Compact point-group query of the form `"<group>-<ambient>:<target>"`,
+        or a named Hermann-Mauguin / Schoenflies symbol.
+    plane : str | tuple[float, ...] | None, optional
+        Construction-time plane. A string such as `"xy"` reduces spatial
+        matrices while keeping the 3D rotations for spin. A vector is the
+        plane normal.
+    axis : tuple[float, ...] | None, optional
+        Reorient a 3D named group so its standard z-axis maps to this vector.
+    spin : Literal["trivial", "electron"], default "electron"
+        Define-time spin policy. `"electron"` lifts `rotation3`; `"trivial"`
+        uses `u(g)=I`.
 
     Returns
     -------
@@ -216,14 +241,27 @@ def pointgroup(query: str) -> PointGroupElement | FinitePointGroup:
     ```python
     from qten.pointgroups import pointgroup
 
-    rotation = pointgroup("c6-xy:xy")     # 60-degree rotation in xy
-    inverse = pointgroup("c6-xy:yx")      # inverse orientation
-    mirror = pointgroup("m-xyz:yz")       # mirror about the yz-plane
-    c4v = pointgroup("C4v-xy")            # finite square point group
+    rotation = pointgroup("C6", plane="xy")         # sixfold in xy
+    inverse = pointgroup("C6", plane=(0, 0, -1))    # opposite orientation
+    mirror = pointgroup("Cs", plane="x")            # 1D spatial, σ_yz spin
+    td = pointgroup("Td")                      # tetrahedral
+    c4v = pointgroup("C4v", plane="xy")        # 2D spatial, 3D spin
+    c3v = pointgroup("C3v", axis=(1, 1, 1))    # C3 about [111]
+    flavor = pointgroup("C4v", spin="trivial") # u(g)=I
     ```
     """
     if not _is_affine_query(query):
-        return named_pointgroup(query)
+        return named_pointgroup(
+            query,
+            plane=_hashable_axis(plane),
+            axis=_hashable_axis(axis),
+            spin=spin,
+        )
+
+    if plane is not None or axis is not None:
+        raise ValueError(
+            "plane= and axis= apply to named point groups, not affine queries."
+        )
 
     group, ambient, target = _parse_affine_query(query)
 
@@ -243,4 +281,8 @@ def pointgroup(query: str) -> PointGroupElement | FinitePointGroup:
             f"Unsupported group '{group}'. Supported groups are cyclic and mirror."
         )
 
-    return PointGroupElement(irrep=irrep, axes=axes)
+    if len(ambient) < 3:
+        rotation3 = _embed_in_cartesian_xyz(irrep, tuple(ambient))
+    else:
+        rotation3 = irrep
+    return PointGroupElement(irrep=irrep, axes=axes, rotation3=rotation3, spin=spin)
