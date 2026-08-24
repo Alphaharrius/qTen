@@ -58,7 +58,7 @@ integer only as the momentum mesh is refined.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal, overload, TypedDict
 import warnings
 
 import numpy as np
@@ -67,19 +67,18 @@ import torch
 from sympy import ImmutableDenseMatrix
 
 from .geometries import PeriodicBoundary, ReciprocalLattice
+from .linalg.decompose import eigh
 from .linalg.tensors import Tensor
-from .symbolics import IndexSpace, MomentumSpace
+from .symbolics import HilbertSpace, IndexSpace, MomentumSpace
 
 
 @dataclass(frozen=True)
 class _Grid:
-    data: torch.Tensor
     occupied: torch.Tensor
     projectors: torch.Tensor
     neighbors: tuple[torch.Tensor, ...]
     canonical_indices: torch.Tensor
     momentum_space: MomentumSpace
-    output_shape: tuple[int, ...]
     direct_gap: float
 
     @property
@@ -91,11 +90,17 @@ def _topology_grid(
     bloch_hamiltonian: Tensor,
     n_occupied: int | None,
     gap_tolerance: float,
+    *,
+    warning_stacklevel: int = 3,
 ) -> _Grid:
     if bloch_hamiltonian.rank() != 3:
         raise ValueError("bloch_hamiltonian must have dimensions (k, band, band).")
     if not isinstance(bloch_hamiltonian.dims[0], MomentumSpace):
         raise TypeError("The first dimension must be a MomentumSpace.")
+    if not isinstance(bloch_hamiltonian.dims[1], HilbertSpace):
+        raise TypeError("The second dimension must be a HilbertSpace.")
+    if not isinstance(bloch_hamiltonian.dims[2], HilbertSpace):
+        raise TypeError("The third dimension must be a HilbertSpace.")
 
     data = bloch_hamiltonian.data
     if data.shape[-2] != data.shape[-1]:
@@ -146,7 +151,9 @@ def _topology_grid(
         rep_key(rep): position for position, rep in enumerate(canonical_reps)
     }
 
-    energies, eigenvectors = torch.linalg.eigh(data)
+    decomposition = eigh(bloch_hamiltonian)
+    energies = decomposition.eigenvalues.data
+    eigenvectors = decomposition.eigenvectors.data
     direct_gap = float(
         (energies[..., n_occupied] - energies[..., n_occupied - 1]).min().item()
     )
@@ -155,7 +162,7 @@ def _topology_grid(
             f"Minimum direct gap is {direct_gap:.6e}; the occupied bundle is "
             "not isolated, so its topology and quantum geometry are not well-defined.",
             RuntimeWarning,
-            stacklevel=3,
+            stacklevel=warning_stacklevel,
         )
 
     units = tuple(
@@ -184,26 +191,14 @@ def _topology_grid(
     occupied = eigenvectors[..., :n_occupied]
     occupied = occupied[canonical_indices]
     projectors = occupied @ occupied.conj().transpose(-2, -1)
-    if direct_boundary.basis.is_diagonal():
-        output_shape = tuple(
-            int(direct_boundary.basis[i, i]) for i in range(momentum_dim)
-        )
-    else:
-        output_shape = (len(canonical_reps),)
     return _Grid(
-        data=data,
         occupied=occupied,
         projectors=projectors,
         neighbors=neighbors,
         canonical_indices=canonical_indices,
         momentum_space=k_space,
-        output_shape=output_shape,
         direct_gap=direct_gap,
     )
-
-
-def _reshape(values: torch.Tensor, grid: _Grid) -> torch.Tensor:
-    return values.reshape(grid.output_shape + values.shape[1:])
 
 
 def quantum_geometric_tensor(
@@ -249,7 +244,8 @@ def quantum_geometric_tensor(
     ------
     TypeError
         If the first tensor dimension is not a
-        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace], or either
+        matrix dimension is not a `HilbertSpace`.
     ValueError
         If the tensor is not rank 3, its Hamiltonian blocks are not square,
         ``n_occupied`` is invalid, the momentum space is not 1-D, 2-D, or 3-D,
@@ -273,6 +269,11 @@ def quantum_geometric_tensor(
         Brillouin-zone topological invariant.
     """
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
+    return _quantum_geometric_tensor_from_grid(grid)
+
+
+def _quantum_geometric_tensor_from_grid(grid: _Grid) -> Tensor:
+    """Compute a labeled QGT from an already diagonalized topology grid."""
     # The inverse neighbor permutation gives k-e_i for every canonical k.
     derivatives = []
     for forward in grid.neighbors:
@@ -284,8 +285,8 @@ def quantum_geometric_tensor(
 
     qgt = torch.empty(
         (grid.projectors.shape[0], grid.momentum_dim, grid.momentum_dim),
-        dtype=grid.data.dtype,
-        device=grid.data.device,
+        dtype=grid.projectors.dtype,
+        device=grid.projectors.device,
     )
     for i in range(grid.momentum_dim):
         for j in range(grid.momentum_dim):
@@ -406,16 +407,41 @@ def berry_curvature(
         FHS or curvature-integral Chern number.
     """
     qgt = quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance)
-    return Tensor(data=2.0 * qgt.data.imag, dims=qgt.dims)
+    return 2.0 * qgt.imag()
+
+
+class FHSResult(TypedDict):
+    """Result returned by the discrete FHS Chern-number method."""
+
+    chern: float
+    nearest_integer: int
+    direct_gap: float
+    berry_flux: Tensor
+
+
+class QGTResult(TypedDict):
+    """Result returned by the QGT-integral Chern-number method."""
+
+    chern: float
+    nearest_integer: int
+    direct_gap: float
+    quantum_geometric_tensor: Tensor
+    fubini_study_metric: Tensor
+    berry_curvature: Tensor
 
 
 def _discrete_chern_number(
     bloch_hamiltonian: Tensor,
     n_occupied: int | None = None,
     gap_tolerance: float = 1e-8,
-) -> dict[str, Any]:
+) -> FHSResult:
     """Compute the occupied-band Chern number with the discrete FHS formula."""
-    grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
+    grid = _topology_grid(
+        bloch_hamiltonian,
+        n_occupied,
+        gap_tolerance,
+        warning_stacklevel=4,
+    )
     if grid.momentum_dim != 2:
         raise ValueError("The first Chern number requires a two-dimensional grid.")
 
@@ -433,14 +459,37 @@ def _discrete_chern_number(
     link_x = link(grid.occupied, grid.occupied[neighbor_x])
     link_y = link(grid.occupied, grid.occupied[neighbor_y])
     plaquette = link_x * link_y[neighbor_x] * link_x[neighbor_y].conj() * link_y.conj()
-    flux = _reshape(torch.angle(plaquette), grid)
-    chern = float((flux.sum() / (2.0 * torch.pi)).item())
+    canonical_flux = torch.angle(plaquette)
+    ordered_flux = torch.empty_like(canonical_flux)
+    ordered_flux[grid.canonical_indices] = canonical_flux
+    flux = Tensor(data=ordered_flux, dims=(grid.momentum_space,))
+    chern = float((flux.data.sum() / (2.0 * torch.pi)).item())
     return {
         "chern": chern,
         "nearest_integer": int(np.rint(chern)),
         "direct_gap": grid.direct_gap,
-        "berry_flux": flux.detach().cpu().numpy(),
+        "berry_flux": flux,
     }
+
+
+@overload
+def chern_number(
+    bloch_hamiltonian: Tensor,
+    n_occupied: int | None = None,
+    gap_tolerance: float = 1e-8,
+    *,
+    method: Literal["fhs"] = "fhs",
+) -> FHSResult: ...
+
+
+@overload
+def chern_number(
+    bloch_hamiltonian: Tensor,
+    n_occupied: int | None = None,
+    gap_tolerance: float = 1e-8,
+    *,
+    method: Literal["qgt"],
+) -> QGTResult: ...
 
 
 def chern_number(
@@ -449,7 +498,7 @@ def chern_number(
     gap_tolerance: float = 1e-8,
     *,
     method: Literal["fhs", "qgt"] = "fhs",
-) -> dict[str, Any]:
+) -> FHSResult | QGTResult:
     r"""Compute the first Chern number of an occupied band subspace.
 
     The ``n_occupied`` lowest-energy eigenstates define an occupied bundle over
@@ -499,9 +548,10 @@ def chern_number(
         - ``"direct_gap"``: minimum occupied-to-empty direct gap.
 
         For ``method="fhs"`` the mapping also contains ``"berry_flux"``, the
-        oriented plaquette phase in radians. Its shape is ``(N_x, N_y)`` for a
-        diagonal periodic cell and ``(N_k,)`` in canonical representative
-        order for a sheared cell.
+        oriented plaquette phase in radians as a labeled `Tensor` with dims
+        ``(MomentumSpace,)`` and shape ``(N_k,)``. Momentum \(k\) labels the
+        plaquette anchored at \(k\), and the order matches the input
+        `MomentumSpace`.
 
         For ``method="qgt"`` the mapping instead contains labeled `Tensor`
         values: ``"quantum_geometric_tensor"`` and
@@ -513,7 +563,8 @@ def chern_number(
     ------
     TypeError
         If the first tensor dimension is not a
-        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace].
+        [`MomentumSpace`][qten.symbolics.state_space.MomentumSpace], or either
+        matrix dimension is not a `HilbertSpace`.
     ValueError
         If ``method`` is unsupported; the input is not a rank-3 square Bloch
         Hamiltonian; ``n_occupied`` is outside the valid range; the momentum
@@ -548,9 +599,10 @@ def chern_number(
     is isolated or the mesh is sufficiently resolved. Inspect ``direct_gap``
     and, when necessary, repeat the calculation on finer momentum grids.
 
-    For sheared cells, the Chern sum and neighbor graph remain correct, but a
-    flat returned array is intentional: canonical quotient order is not a
-    rectangular Brillouin-zone heatmap.
+    The flux tensor is intentionally flat for every cell: its symbolic
+    `MomentumSpace` dimension preserves labels without implying rectangular
+    heatmap adjacency. This is especially important for sheared cells, whose
+    quotient-representative order is not a rectangular Brillouin-zone heatmap.
 
     Examples
     --------
@@ -587,8 +639,8 @@ def chern_number(
     grid = _topology_grid(bloch_hamiltonian, n_occupied, gap_tolerance)
     if grid.momentum_dim != 2:
         raise ValueError("The first Chern number requires a two-dimensional grid.")
-    qgt = quantum_geometric_tensor(bloch_hamiltonian, n_occupied, gap_tolerance)
-    curvature = Tensor(data=2.0 * qgt.data.imag, dims=qgt.dims)
+    qgt = _quantum_geometric_tensor_from_grid(grid)
+    curvature = 2.0 * qgt.imag()
     chern = float(curvature.data[..., 0, 1].sum() / (2.0 * np.pi))
     return {
         "chern": chern,
@@ -601,6 +653,8 @@ def chern_number(
 
 
 __all__ = [
+    "FHSResult",
+    "QGTResult",
     "berry_curvature",
     "chern_number",
     "fubini_study_metric",

@@ -9,7 +9,7 @@ from qten.geometries.boundary import PeriodicBoundary
 from qten.geometries.spatials import Lattice
 from qten.linalg.tensors import Tensor
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
-from qten.symbolics.state_space import MomentumSpace, brillouin_zone
+from qten.symbolics.state_space import IndexSpace, MomentumSpace, brillouin_zone
 from qten.topology import (
     berry_curvature,
     chern_number,
@@ -69,6 +69,15 @@ def _dimensional_hamiltonian(sizes: tuple[int, ...]) -> Tensor:
     )
 
 
+def _trivial_insulator(boundary_basis: ImmutableDenseMatrix) -> Tensor:
+    hamiltonian = _chern_insulator(boundary_basis)
+    block = torch.diag(torch.tensor([-1.0, 1.0], dtype=torch.complex128))
+    return Tensor(
+        data=block.expand(hamiltonian.data.shape[0], -1, -1).clone(),
+        dims=hamiltonian.dims,
+    )
+
+
 def test_quantum_geometry_components_are_consistent():
     hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(16, 16))
 
@@ -98,6 +107,63 @@ def test_chern_number_exposes_robust_and_geometric_methods():
     assert geometric["berry_curvature"].data.shape == (24 * 24, 2, 2)
 
 
+def test_trivial_insulator_has_zero_chern_number():
+    hamiltonian = _trivial_insulator(ImmutableDenseMatrix.diag(8, 8))
+
+    assert chern_number(hamiltonian, 1)["chern"] == pytest.approx(0.0, abs=1e-12)
+    assert chern_number(hamiltonian, 1, method="qgt")["chern"] == pytest.approx(
+        0.0, abs=1e-12
+    )
+
+
+@pytest.mark.parametrize("n_occupied", [0, 2])
+def test_chern_number_rejects_invalid_occupied_count(n_occupied):
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+
+    with pytest.raises(ValueError, match="strictly between"):
+        chern_number(hamiltonian, n_occupied)
+
+
+def test_chern_number_rejects_invalid_method():
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+
+    with pytest.raises(ValueError, match="method must be"):
+        chern_number(hamiltonian, 1, method="invalid")  # type: ignore[call-overload]
+
+
+def test_qgt_chern_diagonalizes_once(monkeypatch):
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(8, 8))
+    original_eigh = torch.linalg.eigh
+    calls = 0
+
+    def counting_eigh(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_eigh(*args, **kwargs)
+
+    monkeypatch.setattr(torch.linalg, "eigh", counting_eigh)
+
+    chern_number(hamiltonian, n_occupied=1, method="qgt")
+
+    assert calls == 1
+
+
+@pytest.mark.parametrize("method", ["fhs", "qgt"])
+def test_chern_gap_warning_is_emitted_once_at_public_call(method):
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+
+    with pytest.warns(RuntimeWarning) as recorded:
+        chern_number(
+            hamiltonian,
+            n_occupied=1,
+            gap_tolerance=float("inf"),
+            method=method,
+        )
+
+    assert len(recorded) == 1
+    assert recorded[0].filename == __file__
+
+
 def test_sheared_cell_quantum_geometry_stays_flat():
     hamiltonian = _chern_insulator(ImmutableDenseMatrix([[8, 2], [0, 8]]))
 
@@ -105,7 +171,10 @@ def test_sheared_cell_quantum_geometry_stays_flat():
     assert qgt.data.shape == (64, 2, 2)
     assert qgt.dims[0] is hamiltonian.dims[0]
     assert berry_curvature(hamiltonian, 1).data.shape == (64, 2, 2)
-    assert chern_number(hamiltonian, 1)["berry_flux"].shape == (64,)
+    fhs = chern_number(hamiltonian, 1)
+    assert fhs["berry_flux"].data.shape == (64,)
+    assert fhs["berry_flux"].dims == (hamiltonian.dims[0],)
+    assert fhs["chern"] == pytest.approx(-1.0, abs=1e-12)
 
 
 def test_quantum_geometry_follows_momentum_space_order():
@@ -132,6 +201,57 @@ def test_quantum_geometry_follows_momentum_space_order():
             reordered.data[reordered_space.structure[momentum]],
             reference.data[hamiltonian.dims[0].structure[momentum]],
         )
+
+
+def test_fhs_flux_follows_momentum_space_order():
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(6, 4))
+    reference = chern_number(hamiltonian, 1)["berry_flux"]
+
+    reversed_momenta = tuple(reversed(hamiltonian.dims[0].elements()))
+    reordered_space = MomentumSpace(
+        OrderedDict((momentum, i) for i, momentum in enumerate(reversed_momenta))
+    )
+    source_index = hamiltonian.dims[0].structure
+    reordered_hamiltonian = Tensor(
+        data=torch.stack(
+            [hamiltonian.data[source_index[momentum]] for momentum in reversed_momenta]
+        ),
+        dims=(reordered_space, hamiltonian.dims[1], hamiltonian.dims[2]),
+    )
+
+    reordered = chern_number(reordered_hamiltonian, 1)["berry_flux"]
+
+    for momentum in reversed_momenta:
+        assert reordered.data[
+            reordered_space.structure[momentum]
+        ].item() == pytest.approx(
+            reference.data[hamiltonian.dims[0].structure[momentum]].item()
+        )
+
+
+def test_quantum_geometry_aligns_reordered_band_axes():
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(6, 4))
+    reference = quantum_geometric_tensor(hamiltonian, 1)
+    reordered_columns = hamiltonian.dims[2][[1, 0]]
+    reordered_hamiltonian = Tensor(
+        data=hamiltonian.data[..., [1, 0]],
+        dims=(hamiltonian.dims[0], hamiltonian.dims[1], reordered_columns),
+    )
+
+    reordered = quantum_geometric_tensor(reordered_hamiltonian, 1)
+
+    assert torch.allclose(reordered.data, reference.data)
+
+
+@pytest.mark.parametrize("axis", [1, 2])
+def test_quantum_geometry_rejects_non_hilbert_band_axes(axis):
+    hamiltonian = _chern_insulator(ImmutableDenseMatrix.diag(4, 4))
+    dims = list(hamiltonian.dims)
+    dims[axis] = IndexSpace.linear(2)
+    invalid = Tensor(data=hamiltonian.data, dims=tuple(dims))
+
+    with pytest.raises(TypeError, match=f"The {'second' if axis == 1 else 'third'}"):
+        quantum_geometric_tensor(invalid, 1)
 
 
 @pytest.mark.parametrize("sizes", [(8,), (4, 4, 4)])
