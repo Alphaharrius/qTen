@@ -6,8 +6,8 @@ carries four \(\mathbb{Z}_2\) indices \((\nu_0; \nu_1\nu_2\nu_3)\). This module
 evaluates them from a rank-3
 [`Tensor`][qten.linalg.tensors.Tensor] with dims
 ``(MomentumSpace, HilbertSpace, HilbertSpace)`` (or a
-[`MomentumBlockSpace`][qten.symbolics.state_space.MomentumBlockSpace] whose
-left momenta form a complete 3-D grid).
+[`MomentumBlockSpace`][qten.symbolics.state_space.MomentumBlockSpace] of
+diagonal \((k,k)\) blocks whose momenta form a complete 3-D grid).
 
 The input mesh is Fourier-interpolated to a tight-binding hopping tensor so
 that time-reversal invariant momenta (TRIM) and Wilson-loop strings can be
@@ -28,9 +28,10 @@ Numerical methods
   inversion about ``inversion_center`` is assembled.
 - ``method="wilson"`` tracks hybrid Wannier charge centers on the six TRIM
   planes. It does not need inversion symmetry.
-- ``method="auto"`` tries parity first and falls back to Wilson loops.
-- ``method="both"`` runs both constructions. The returned indices are the
-  parity values when that method succeeds.
+- ``method="auto"`` tries parity first and falls back to Wilson loops if
+  inversion cannot be resolved.
+- ``method="both"`` runs both constructions. Parity must succeed; the
+  returned indices are the parity values.
 """
 
 from __future__ import annotations
@@ -42,25 +43,31 @@ from typing import Literal, overload, TypedDict
 import math
 import warnings
 
-import numpy as np
 import sympy as sy
 import torch
 from sympy import ImmutableDenseMatrix
 
-from ..geometries import Momentum, Offset, PeriodicBoundary, ReciprocalLattice
+from ..geometries import Lattice, Momentum, Offset, PeriodicBoundary, ReciprocalLattice
 from ..linalg.tensors import Tensor
-from ..phys import Spin
+from ..phys import Spin, as_spin, contains_spin
 from ..pointgroups import pointgroup
 from ..pointgroups.elements import PointGroupOpr
 from ..pointgroups.ops import spinful_hilbert_opr_repr
-from ..symbolics import HilbertSpace, MomentumBlockSpace, MomentumSpace
+from ..symbolics import (
+    HilbertSpace,
+    IndexSpace,
+    MomentumBlockSpace,
+    MomentumSpace,
+    hilbert_opr_repr,
+    same_rays,
+)
 
 
 class Z2ParityTrimDiagnostics(TypedDict):
     """Inversion-parity diagnostics at one TRIM."""
 
     delta: int
-    parity_eigenvalues: np.ndarray
+    parity_eigenvalues: Tensor
     commutator_error: float
     direct_gap: float
 
@@ -79,9 +86,9 @@ class Z2WilsonPlaneResult(TypedDict):
     """Hybrid-Wannier data on one TRIM plane."""
 
     z2: int
-    wcc: np.ndarray
-    gap_pos: np.ndarray
-    sweep: np.ndarray
+    wcc: Tensor
+    gap_pos: Tensor
+    sweep: Tensor
     min_gap: float
     kramers_resolved: bool
 
@@ -112,21 +119,33 @@ def _rep_key(rep: ImmutableDenseMatrix) -> tuple[sy.Expr, ...]:
 def _bloch_momenta(bloch_hamiltonian: Tensor) -> tuple[Momentum, ...]:
     k_dim = bloch_hamiltonian.dims[0]
     if isinstance(k_dim, MomentumSpace):
-        momenta = tuple(k_dim.elements())
-    elif isinstance(k_dim, MomentumBlockSpace):
-        momenta = tuple(pair[0] for pair in k_dim.elements())
-    else:
-        raise TypeError(
-            "The first dimension must be a MomentumSpace or MomentumBlockSpace."
-        )
-    if momenta and isinstance(momenta[0], tuple):
-        momenta = tuple(pair[0] for pair in momenta)
-    return momenta
+        return tuple(k_dim.elements())
+    if isinstance(k_dim, MomentumBlockSpace):
+        momenta: list[Momentum] = []
+        for left, right in k_dim.elements():
+            if left != right:
+                raise ValueError(
+                    "Z2 requires a diagonal momentum-block Hamiltonian "
+                    "(left and right momenta equal at every block)."
+                )
+            momenta.append(left)
+        return tuple(momenta)
+    raise TypeError(
+        "The first dimension must be a MomentumSpace or MomentumBlockSpace."
+    )
+
+
+def _unravel_index(index: int, shape: tuple[int, int, int]) -> tuple[int, int, int]:
+    _, n1, n2 = shape
+    i2 = index % n2
+    i1 = (index // n2) % n1
+    i0 = index // (n1 * n2)
+    return (i0, i1, i2)
 
 
 def _fourier_interpolate(
     hoppings: torch.Tensor,
-    k_frac: torch.Tensor | np.ndarray | Sequence[float],
+    k_frac: torch.Tensor | Sequence[float],
     rx: torch.Tensor,
     ry: torch.Tensor,
     rz: torch.Tensor,
@@ -155,12 +174,13 @@ def _indices_from_deltas(
     return (int(strong < 0), *(int(product < 0) for product in weak))
 
 
-def _largest_gap_position(wcc: np.ndarray) -> float:
-    wcc = np.sort(np.asarray(wcc, dtype=float) % 1.0)
-    extended = np.concatenate([wcc, [wcc[0] + 1.0]])
-    gaps = np.diff(extended)
-    index = int(np.argmax(gaps))
-    return float((extended[index] + 0.5 * gaps[index]) % 1.0)
+def _largest_gap_position(wcc: torch.Tensor) -> float:
+    wcc = wcc.real % 1.0
+    wcc, _ = torch.sort(wcc)
+    extended = torch.cat((wcc, wcc[:1] + 1.0))
+    gaps = extended[1:] - extended[:-1]
+    index = int(torch.argmax(gaps).item())
+    return float(((extended[index] + 0.5 * gaps[index]) % 1.0).item())
 
 
 def _sgng(gap_left: float, gap_right: float, wcc_pos: float) -> int:
@@ -175,24 +195,64 @@ def _sgng(gap_left: float, gap_right: float, wcc_pos: float) -> int:
     return -1 if crossed else 1
 
 
-def _kramers_pairs(wcc: np.ndarray, tolerance: float) -> bool:
-    wcc = np.sort(np.asarray(wcc, dtype=float) % 1.0)
-    n = len(wcc)
+def _kramers_pairs(wcc: torch.Tensor, tolerance: float) -> bool:
+    wcc, _ = torch.sort(wcc.real % 1.0)
+    n = int(wcc.numel())
     if n % 2:
         return False
-    used = np.zeros(n, dtype=bool)
+    used = torch.zeros(n, dtype=torch.bool, device=wcc.device)
     for i in range(n):
-        if used[i]:
+        if bool(used[i].item()):
             continue
-        delta = np.minimum((wcc - wcc[i]) % 1.0, (wcc[i] - wcc) % 1.0)
-        delta[i] = np.inf
-        delta[used] = np.inf
-        partner = int(np.argmin(delta))
-        if not np.isfinite(delta[partner]) or delta[partner] > tolerance:
+        delta = torch.minimum((wcc - wcc[i]) % 1.0, (wcc[i] - wcc) % 1.0)
+        delta = delta.clone()
+        delta[i] = torch.inf
+        delta[used] = torch.inf
+        partner = int(torch.argmin(delta).item())
+        if not bool(torch.isfinite(delta[partner]).item()) or float(
+            delta[partner].item()
+        ) > tolerance:
             return False
         used[i] = True
         used[partner] = True
     return True
+
+
+def _kramers_spectrum(energies: torch.Tensor, tolerance: float) -> bool:
+    values, _ = torch.sort(energies.real)
+    if int(values.numel()) % 2:
+        return False
+    pairs = values.reshape(-1, 2)
+    return bool((pairs[:, 1] - pairs[:, 0]).max().item() <= tolerance)
+
+
+def _time_reversal_matrix(
+    space: HilbertSpace, like: torch.Tensor
+) -> torch.Tensor | None:
+    if not contains_spin(space):
+        return None
+    theta = like.new_zeros((space.dim, space.dim))
+    index_of: dict[tuple[tuple[object, ...], object], int] = {}
+    parsed: list[tuple[tuple[object, ...], object, int]] = []
+    for psi in space.elements():
+        try:
+            spin = psi.irrep_of(Spin)
+        except ValueError:
+            return None
+        spin = as_spin(spin)
+        if spin is None:
+            return None
+        nons = tuple(rep for rep in psi.base if as_spin(rep) is None)
+        index = space.structure[psi]
+        index_of[(nons, spin)] = index
+        parsed.append((nons, spin, index))
+    for nons, spin, index in parsed:
+        partner = Spin.down if spin.is_up else Spin.up
+        other = index_of.get((nons, partner))
+        if other is None:
+            return None
+        theta[other, index] = 1.0 if spin.is_up else -1.0
+    return theta
 
 
 def _inversion_element():
@@ -226,14 +286,16 @@ class _Z2Engine:
     tau: torch.Tensor
     n_occupied: int
     n_bands: int
-    lattice: object
+    lattice: Lattice
     inversion_hoppings: torch.Tensor | None
     inversion_i0: torch.Tensor | None
     inversion_center_vec: torch.Tensor | None
     positions_cart: torch.Tensor | None
+    inversion_error: Exception | None = None
+    time_reversal: torch.Tensor | None = None
 
     def hamiltonians_at(
-        self, k_frac: torch.Tensor | np.ndarray | Sequence[float]
+        self, k_frac: torch.Tensor | Sequence[float]
     ) -> torch.Tensor:
         ham = _fourier_interpolate(self.hoppings, k_frac, self.rx, self.ry, self.rz)
         return 0.5 * (ham + ham.transpose(-1, -2).conj())
@@ -248,6 +310,11 @@ class _Z2Engine:
             or self.inversion_center_vec is None
             or self.positions_cart is None
         ):
+            if self.inversion_error is not None:
+                raise RuntimeError(
+                    "Cannot build inversion from orbital Offset labels: "
+                    f"{self.inversion_error}"
+                ) from self.inversion_error
             raise RuntimeError(
                 "Cannot build inversion without Offset-labeled orbitals "
                 "or an explicit inversion tensor."
@@ -322,7 +389,10 @@ class _Z2Engine:
                 gap = float("nan")
             diagnostics[bits] = {
                 "delta": delta,
-                "parity_eigenvalues": peig.detach().cpu().numpy(),
+                "parity_eigenvalues": Tensor(
+                    data=peig.detach(),
+                    dims=(IndexSpace.linear(self.n_occupied),),
+                ),
                 "commutator_error": comm,
                 "direct_gap": gap,
             }
@@ -351,8 +421,8 @@ class _Z2Engine:
         return u_svd @ vh
 
     def _wilson_wcc(
-        self, k_string: np.ndarray, loop_axis: int
-    ) -> tuple[np.ndarray, float]:
+        self, k_string: torch.Tensor, loop_axis: int
+    ) -> tuple[torch.Tensor, float]:
         ham = self.hamiltonians_at(k_string)
         energies, vectors = torch.linalg.eigh(ham)
         occupied = vectors[..., : self.n_occupied]
@@ -370,7 +440,8 @@ class _Z2Engine:
             wilson = step if wilson is None else wilson @ step
         evals = torch.linalg.eigvals(wilson)
         wcc = (torch.angle(evals) / (2 * math.pi)) % 1.0
-        return np.sort(wcc.detach().real.cpu().numpy()), min_gap
+        wcc, _ = torch.sort(wcc.real)
+        return wcc, min_gap
 
     def _plane_z2(
         self,
@@ -382,12 +453,14 @@ class _Z2Engine:
     ) -> Z2WilsonPlaneResult:
         loop_axis = (normal + 1) % 3
         sweep_axis = (normal + 2) % 3
-        sweep = np.linspace(0.0, 0.5, n_perp)
-        loop = np.linspace(0.0, 1.0, n_loop, endpoint=False)
-        wcc_list = []
+        real_dtype = self.hoppings.real.dtype
+        device = self.hoppings.device
+        sweep = torch.linspace(0.0, 0.5, n_perp, dtype=real_dtype, device=device)
+        loop = torch.arange(n_loop, dtype=real_dtype, device=device) / n_loop
+        wcc_list: list[torch.Tensor] = []
         min_gap = math.inf
         for ky in sweep:
-            k_string = np.zeros((n_loop, 3), dtype=float)
+            k_string = torch.zeros((n_loop, 3), dtype=real_dtype, device=device)
             k_string[:, normal] = trim_value
             k_string[:, sweep_axis] = ky
             k_string[:, loop_axis] = loop
@@ -398,16 +471,22 @@ class _Z2Engine:
         kramers_resolved = _kramers_pairs(
             wcc_list[0], kramers_tolerance
         ) and _kramers_pairs(wcc_list[-1], kramers_tolerance)
-        gap_pos = [_largest_gap_position(wcc) for wcc in wcc_list]
+        gap_pos = torch.tensor(
+            [_largest_gap_position(wcc) for wcc in wcc_list],
+            dtype=real_dtype,
+            device=device,
+        )
         invariant = 1
         for left, right, wcc_right in zip(gap_pos, gap_pos[1:], wcc_list[1:]):
             for pos in wcc_right:
-                invariant *= _sgng(left, right, pos)
+                invariant *= _sgng(float(left), float(right), float(pos))
+        sweep_space = IndexSpace.linear(n_perp)
+        wcc_space = IndexSpace.linear(self.n_occupied)
         return {
             "z2": 1 if invariant == -1 else 0,
-            "wcc": np.stack(wcc_list),
-            "gap_pos": np.asarray(gap_pos),
-            "sweep": sweep,
+            "wcc": Tensor(data=torch.stack(wcc_list), dims=(sweep_space, wcc_space)),
+            "gap_pos": Tensor(data=gap_pos, dims=(sweep_space,)),
+            "sweep": Tensor(data=sweep, dims=(sweep_space,)),
             "min_gap": min_gap if math.isfinite(min_gap) else float("nan"),
             "kramers_resolved": kramers_resolved,
         }
@@ -426,7 +505,11 @@ class _Z2Engine:
             planes[(normal, 0.5)] = pi
             axis_z2.append((zero["z2"], pi["z2"]))
         strong = [int((z0 + zpi) % 2) for z0, zpi in axis_z2]
-        indices = (strong[0], axis_z2[0][1], axis_z2[1][1], axis_z2[2][1])
+        if len(set(strong)) == 1:
+            strong_index = strong[0]
+        else:
+            strong_index = int(sum(strong) >= 2)
+        indices = (strong_index, axis_z2[0][1], axis_z2[1][1], axis_z2[2][1])
         min_gap = min(plane["min_gap"] for plane in planes.values())
         result: Z2WilsonResult = {
             "indices": indices,
@@ -454,6 +537,42 @@ class _Z2Engine:
             )
         return result
 
+    def check_time_reversal(self, *, stacklevel: int = 3) -> None:
+        origin = self.hoppings.new_zeros(3, dtype=self.hoppings.real.dtype)
+        energies = torch.linalg.eigvalsh(self.hamiltonians_at(origin))
+        span = float((energies.max() - energies.min()).clamp_min(1.0).item())
+        pair_tol = max(1e-6, 1e-4 * span)
+        if not _kramers_spectrum(energies, pair_tol):
+            warnings.warn(
+                "Eigenvalues at Gamma are not Kramers-degenerate; "
+                "the Hamiltonian may break time-reversal, so its Z2 indices "
+                "are not well-defined.",
+                RuntimeWarning,
+                stacklevel=stacklevel,
+            )
+        if self.time_reversal is None:
+            return
+        sample = torch.tensor(
+            [0.2, 0.3, 0.1],
+            dtype=self.hoppings.real.dtype,
+            device=self.hoppings.device,
+        )
+        ham_k = self.hamiltonians_at(sample)
+        ham_minus = self.hamiltonians_at(-sample)
+        theta = self.time_reversal
+        reconstructed = theta @ ham_k.conj() @ theta.conj().transpose(-2, -1)
+        ham_norm = torch.linalg.matrix_norm(ham_k).clamp_min(1.0)
+        error = float(
+            (torch.linalg.matrix_norm(ham_minus - reconstructed) / ham_norm).item()
+        )
+        if error > 1e-4:
+            warnings.warn(
+                f"Time-reversal check failed (relative error {error:.3e}); "
+                "Z2 indices are not well-defined.",
+                RuntimeWarning,
+                stacklevel=stacklevel,
+            )
+
 
 def _orbital_geometry(
     space,
@@ -465,63 +584,50 @@ def _orbital_geometry(
     tau = torch.zeros((n_bands, 3), dtype=dtype, device=device)
     if not isinstance(space, HilbertSpace):
         return tau, None
-    try:
-        positions = []
-        for i, state in enumerate(space.elements()):
-            offset = state.irrep_of(Offset)
-            positions.append(
-                torch.tensor(
-                    [float(c) for c in offset.to_vec()],
-                    dtype=torch.float64,
-                )
-            )
-            rebased = offset.rebase(lattice)
-            for j in range(3):
-                tau[i, j] = float(rebased.rep[j])
-        return tau, torch.stack(positions)
-    except Exception:
-        tau.zero_()
+    states = list(space.elements())
+    offsets: list[Offset | None] = []
+    missing = 0
+    for state in states:
+        try:
+            offsets.append(state.irrep_of(Offset))
+        except ValueError:
+            offsets.append(None)
+            missing += 1
+    if missing == len(states):
         return tau, None
+    if missing:
+        raise ValueError(
+            "Hilbert space has Offset labels on only some orbitals; "
+            "label every basis state or none."
+        )
+
+    positions = [None] * n_bands
+    for state, offset in zip(states, offsets):
+        assert offset is not None
+        index = space.structure[state]
+        positions[index] = torch.tensor(
+            [float(c) for c in offset.to_vec()],
+            dtype=torch.float64,
+        )
+        rebased = offset.rebase(lattice)
+        for j in range(3):
+            tau[index, j] = float(rebased.rep[j])
+    if any(item is None for item in positions):
+        raise RuntimeError("Offset labels do not cover every orbital index.")
+    return tau, torch.stack([item for item in positions if item is not None])
 
 
 def _spatial_inversion_matrix(
     space: HilbertSpace,
     center: Offset,
-    positions_cart: torch.Tensor,
-    n_bands: int,
     hoppings: torch.Tensor,
 ) -> torch.Tensor:
     inv_op = PointGroupOpr(_inversion_element()).fixpoint_at(center)
-    try:
-        return spinful_hilbert_opr_repr(inv_op, space).data.to(
-            device=hoppings.device, dtype=hoppings.dtype
-        )
-    except ValueError:
-        pass
-    elements = list(space.elements())
-    center_vec = torch.tensor([float(c) for c in center.to_vec()], dtype=torch.float64)
-    target = 2.0 * center_vec - positions_cart
-    i0 = hoppings.new_zeros((n_bands, n_bands))
-    spins: list[object | None] = []
-    for state in elements:
-        try:
-            spins.append(state.irrep_of(Spin))
-        except Exception:
-            spins.append(None)
-    used = set()
-    for i in range(n_bands):
-        delta = (positions_cart - target[i]).square().sum(dim=-1).clone()
-        for j, spin in enumerate(spins):
-            if spins[i] is not None and spin != spins[i]:
-                delta[j] = math.inf
-            if j in used:
-                delta[j] = math.inf
-        j = int(torch.argmin(delta).item())
-        if not math.isfinite(float(delta[j].item())) or float(delta[j].item()) > 1e-6:
-            raise RuntimeError("Orbital space is not closed under spatial inversion.")
-        i0[j, i] = 1
-        used.add(j)
-    return i0
+    if contains_spin(space):
+        matrix = spinful_hilbert_opr_repr(inv_op, space)
+    else:
+        matrix = hilbert_opr_repr(inv_op, space)
+    return matrix.data.to(device=hoppings.device, dtype=hoppings.dtype)
 
 
 def _build_engine(
@@ -536,22 +642,29 @@ def _build_engine(
         raise TypeError("The second dimension must be a HilbertSpace.")
     if not isinstance(bloch_hamiltonian.dims[2], HilbertSpace):
         raise TypeError("The third dimension must be a HilbertSpace.")
+    row_space = bloch_hamiltonian.dims[1]
+    if not same_rays(row_space, bloch_hamiltonian.dims[2]):
+        raise ValueError(
+            "The last two dimensions of the tensor must span the same Hilbert space."
+        )
+    bloch_hamiltonian = bloch_hamiltonian.align(-1, row_space)
 
     data = bloch_hamiltonian.data
     if data.shape[-2] != data.shape[-1]:
         raise ValueError("The Hamiltonian must be square at every momentum.")
     n_bands = int(data.shape[-1])
-    if n_occupied is None:
-        n_occupied = n_bands // 2
-    n_occupied = int(n_occupied)
-    if not 0 < n_occupied <= n_bands:
-        raise ValueError("n_occupied must lie between 1 and n_bands.")
-    if n_occupied % 2:
-        raise ValueError("Z2 requires an even occupied count (Kramers pairs).")
 
     momenta = _bloch_momenta(bloch_hamiltonian)
     if not momenta or len(momenta[0].rep) != 3:
         raise ValueError("A three-dimensional momentum grid is required.")
+
+    if n_occupied is None:
+        n_occupied = n_bands // 2
+    n_occupied = int(n_occupied)
+    if not 0 < n_occupied < n_bands:
+        raise ValueError("n_occupied must lie strictly between 0 and n_bands.")
+    if n_occupied % 2:
+        raise ValueError("Z2 requires an even occupied count (Kramers pairs).")
 
     reciprocal_lattice = momenta[0].space
     if not isinstance(reciprocal_lattice, ReciprocalLattice):
@@ -560,6 +673,11 @@ def _build_engine(
     direct_boundary = lattice.boundaries
     if not isinstance(direct_boundary, PeriodicBoundary):
         raise ValueError("The momentum grid requires periodic lattice boundaries.")
+    if not direct_boundary.basis.is_diagonal():
+        raise ValueError(
+            "Z2 Fourier interpolation requires a diagonal periodic cell; "
+            "sheared boundaries are not supported."
+        )
     dual_boundary = PeriodicBoundary(ImmutableDenseMatrix(direct_boundary.basis.T))
     grid_shape = tuple(int(n) for n in lattice.shape)
     if len(grid_shape) != 3:
@@ -590,9 +708,7 @@ def _build_engine(
             raise ValueError(
                 f"Duplicate or incomplete momentum quotient representative {key}."
             )
-        index = tuple(
-            int(i) for i in np.unravel_index(canonical_position[key], grid_shape)
-        )
+        index = _unravel_index(canonical_position[key], grid_shape)
         if index in seen:
             raise ValueError(f"Duplicate momentum grid point {index}.")
         seen.add(index)
@@ -614,16 +730,24 @@ def _build_engine(
     inversion_hoppings = None
     inversion_i0 = None
     inversion_center_vec = None
+    inversion_error: Exception | None = None
     if inversion is not None:
-        if inversion.rank() != 3 or inversion.data.shape != data.shape:
+        if inversion.rank() != 3:
+            raise ValueError("inversion must match bloch_hamiltonian's rank and shape.")
+        if not same_rays(inversion.dims[1], row_space) or not same_rays(
+            inversion.dims[2], row_space
+        ):
+            raise ValueError(
+                "inversion band axes must span the Hamiltonian Hilbert space."
+            )
+        inversion = inversion.align(-2, row_space).align(-1, row_space)
+        if inversion.data.shape != data.shape:
             raise ValueError("inversion must match bloch_hamiltonian's rank and shape.")
         inv_grid = inversion.data.new_zeros((*grid_shape, n_bands, n_bands))
         for sector, momentum in enumerate(momenta):
             integer_rep = ImmutableDenseMatrix(direct_boundary.basis.T @ momentum.rep)
             key = _rep_key(dual_boundary.wrap(integer_rep))
-            index = tuple(
-                int(i) for i in np.unravel_index(canonical_position[key], grid_shape)
-            )
+            index = _unravel_index(canonical_position[key], grid_shape)
             inv_grid[index] = inversion.data[sector]
         inversion_hoppings = torch.fft.ifftn(inv_grid, dim=(0, 1, 2))
     elif isinstance(space, HilbertSpace) and positions_cart is not None:
@@ -645,15 +769,14 @@ def _build_engine(
         else:
             center = _as_inversion_center(inversion_center, lattice)
         try:
-            inversion_i0 = _spatial_inversion_matrix(
-                space, center, positions_cart, n_bands, hoppings
-            )
+            inversion_i0 = _spatial_inversion_matrix(space, center, hoppings)
             inversion_center_vec = torch.tensor(
                 [float(c) for c in center.to_vec()], dtype=torch.float64
             )
-        except Exception:
+        except (RuntimeError, ValueError) as exc:
             inversion_i0 = None
             inversion_center_vec = None
+            inversion_error = exc
 
     return _Z2Engine(
         hoppings=hoppings,
@@ -668,6 +791,10 @@ def _build_engine(
         inversion_i0=inversion_i0,
         inversion_center_vec=inversion_center_vec,
         positions_cart=positions_cart,
+        inversion_error=inversion_error,
+        time_reversal=_time_reversal_matrix(space, hoppings)
+        if isinstance(space, HilbertSpace)
+        else None,
     )
 
 
@@ -760,11 +887,13 @@ def z2_indices(
     - ``method="wilson"`` computes hybrid Wannier charge centers on the six
       TRIM planes \(k_i=0\) and \(k_i=1/2\). The strong index is
       \(\nu_0=\nu(k_i=0)+\nu(k_i=\pi)\bmod 2\) and the weak indices are the
-      three \(k_i=\pi\) plane invariants.
+      three \(k_i=\pi\) plane invariants. If the three axes disagree on
+      \(\nu_0\), the majority vote is returned.
 
     The Hamiltonian is Fourier-interpolated from the supplied mesh, so TRIM
     and Wilson strings need not coincide with sampled \(k\)-points. This is
-    the construction used for odd diamond meshes such as \(27^3\).
+    the construction used for odd diamond meshes such as \(27^3\). The
+    periodic cell must be diagonal in the primitive basis.
 
     Parameters
     ----------
@@ -772,15 +901,17 @@ def z2_indices(
         Rank-3 Hermitian [`Tensor`][qten.linalg.tensors.Tensor] with dims
         ``(MomentumSpace, HilbertSpace, HilbertSpace)``, or with a
         [`MomentumBlockSpace`][qten.symbolics.state_space.MomentumBlockSpace]
-        whose left momenta form a complete 3-D reciprocal quotient. The last
-        two axes are square Bloch-Hamiltonian matrices.
+        of diagonal \((k,k)\) blocks whose momenta form a complete 3-D
+        reciprocal quotient. The last two axes are square Bloch-Hamiltonian
+        matrices and must span the same Hilbert space up to ray ordering.
     n_occupied : int | None, optional
         Number of lowest-energy bands defining the occupied subspace. It must
-        be even and lie between 1 and the total band count inclusive.
+        be even and lie strictly between zero and the total band count.
         Defaults to half the bands using integer division.
     method : {"auto", "parity", "wilson", "both"}, optional
         Numerical construction. ``"auto"`` tries Fu--Kane parity and falls
-        back to Wilson loops if inversion cannot be resolved. Defaults to
+        back to Wilson loops if inversion cannot be resolved
+        (`RuntimeError`). ``"both"`` requires parity to succeed. Defaults to
         ``"auto"``.
     inversion : Tensor | None, optional
         Optional rank-3 inversion tensor with the same shape as
@@ -818,11 +949,14 @@ def z2_indices(
         - ``"method"``: the construction that produced those indices.
 
         For ``method="parity"`` the mapping also contains Fu--Kane
-        ``"parity_products"`` at each TRIM, per-TRIM ``"diagnostics"``, and
-        ``"direct_gap"``.
+        ``"parity_products"`` at each TRIM, per-TRIM ``"diagnostics"``
+        (including a labeled ``"parity_eigenvalues"``
+        [`Tensor`][qten.linalg.tensors.Tensor]), and ``"direct_gap"``.
 
-        For ``method="wilson"`` it contains hybrid-Wannier ``"planes"``,
-        per-axis plane invariants ``"axis_z2"``, and ``"min_gap"``.
+        For ``method="wilson"`` it contains hybrid-Wannier ``"planes"`` whose
+        ``"wcc"``, ``"gap_pos"``, and ``"sweep"`` values are labeled
+        [`Tensor`][qten.linalg.tensors.Tensor] objects, per-axis plane
+        invariants ``"axis_z2"``, and ``"min_gap"``.
 
         For ``method="both"`` it contains both ``"parity"`` and ``"wilson"``
         sub-results; ``"indices"`` follows the parity values.
@@ -835,19 +969,22 @@ def z2_indices(
     ValueError
         If ``method`` is unsupported; the input is not a rank-3 square Bloch
         Hamiltonian; ``n_occupied`` is invalid; the momentum space is not
-        three-dimensional and periodic; or its points do not form a unique
-        complete reciprocal quotient.
+        three-dimensional and periodic with a diagonal cell; a
+        `MomentumBlockSpace` contains off-diagonal \((k,k')\) blocks; or
+        momentum points do not form a unique complete reciprocal quotient.
     RuntimeError
-        For ``method="parity"``, if inversion cannot be constructed or is not
-        resolved at a TRIM.
+        For ``method="parity"`` or ``method="both"``, if inversion cannot be
+        constructed or is not resolved at a TRIM.
 
     Warns
     -----
     RuntimeWarning
         If the sampled minimum direct gap is no larger than ``gap_tolerance``;
         if ``method="auto"`` falls back from parity to Wilson loops; if the
-        three Wilson axes disagree on \(\nu_0\); if Kramers pairing of Wannier
-        centers is unresolved; or if parity and Wilson indices disagree.
+        three Wilson axes disagree on \(\nu_0\) (majority vote is used); if
+        Kramers pairing of Wannier centers is unresolved; if parity and
+        Wilson indices disagree; or if the sampled spectrum is not
+        time-reversal / Kramers consistent.
 
     Notes
     -----
@@ -880,15 +1017,16 @@ def z2_indices(
         raise ValueError("method must be 'auto', 'parity', 'wilson', or 'both'.")
 
     engine = _build_engine(bloch_hamiltonian, n_occupied, inversion, inversion_center)
+    engine.check_time_reversal(stacklevel=2)
     parity_result: Z2ParityResult | None = None
     wilson_result: Z2WilsonResult | None = None
 
-    if method_name in {"auto", "parity", "both"}:
+    if method_name in {"parity", "both"}:
+        parity_result = engine.run_parity(parity_tolerance)
+    elif method_name == "auto":
         try:
             parity_result = engine.run_parity(parity_tolerance)
-        except Exception as exc:
-            if method_name == "parity":
-                raise
+        except RuntimeError as exc:
             warnings.warn(
                 f"Parity method unavailable ({exc}). Falling back to Wilson loops.",
                 RuntimeWarning,

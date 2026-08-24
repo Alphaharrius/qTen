@@ -7,10 +7,16 @@ import torch
 from sympy import ImmutableDenseMatrix
 
 from qten.geometries.boundary import PeriodicBoundary
-from qten.geometries.spatials import Lattice
+from qten.geometries.spatials import Lattice, Offset
 from qten.linalg.tensors import Tensor
+from qten.phys import Spin
 from qten.symbolics.hilbert_space import HilbertSpace, U1Basis
-from qten.symbolics.state_space import IndexSpace, MomentumSpace, brillouin_zone
+from qten.symbolics.state_space import (
+    IndexSpace,
+    MomentumBlockSpace,
+    MomentumSpace,
+    brillouin_zone,
+)
 from qten.topology import (
     berry_curvature,
     chern_number,
@@ -380,6 +386,13 @@ def test_z2_rejects_odd_occupied_count():
         z2_indices(hamiltonian, n_occupied=1, inversion=inversion, method="parity")
 
 
+def test_z2_rejects_full_occupation():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+
+    with pytest.raises(ValueError, match="strictly between"):
+        z2_indices(hamiltonian, n_occupied=4, inversion=inversion, method="parity")
+
+
 def test_z2_rejects_invalid_method():
     hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
 
@@ -433,3 +446,215 @@ def test_z2_auto_falls_back_to_wilson_without_inversion():
 
     assert result["method"] == "wilson"
     assert result["indices"] == (1, 0, 0, 0)
+
+
+def _two_site_bonding_insulator(shape: tuple[int, int, int] = (4, 4, 4)) -> Tensor:
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(3),
+        boundaries=PeriodicBoundary(ImmutableDenseMatrix.diag(*shape)),
+        unit_cell={
+            "A": ImmutableDenseMatrix([0, 0, 0]),
+            "B": ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]),
+        },
+    )
+    k_space = brillouin_zone(lattice.dual)
+    site_a = Offset(rep=ImmutableDenseMatrix([0, 0, 0]), space=lattice)
+    site_b = Offset(
+        rep=ImmutableDenseMatrix([sy.Rational(1, 2), 0, 0]), space=lattice
+    )
+    band_space = HilbertSpace.new(
+        [
+            U1Basis.new(site_a, Spin.up),
+            U1Basis.new(site_a, Spin.down),
+            U1Basis.new(site_b, Spin.up),
+            U1Basis.new(site_b, Spin.down),
+        ]
+    )
+    hopping = torch.zeros((4, 4), dtype=torch.complex128)
+    hopping[0, 2] = hopping[2, 0] = 1.0
+    hopping[1, 3] = hopping[3, 1] = 1.0
+    return Tensor(
+        data=hopping.expand(k_space.dim, -1, -1).clone(),
+        dims=(k_space, band_space, band_space),
+    )
+
+
+def test_z2_parity_assembles_inversion_from_offset_labels():
+    hamiltonian = _two_site_bonding_insulator()
+
+    result = z2_indices(hamiltonian, n_occupied=2, method="parity")
+
+    assert result["method"] == "parity"
+    assert result["indices"] == (0, 0, 0, 0)
+    assert result["direct_gap"] == pytest.approx(2.0)
+
+
+def test_z2_auto_uses_offset_assembled_parity():
+    hamiltonian = _two_site_bonding_insulator()
+
+    result = z2_indices(hamiltonian, n_occupied=2)
+
+    assert result["method"] == "parity"
+    assert result["indices"] == (0, 0, 0, 0)
+
+
+def test_z2_parity_on_odd_mesh_interpolates_trim():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(3, 3, 3))
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )
+
+    assert result["indices"] == (1, 0, 0, 0)
+    assert result["direct_gap"] > 0.1
+
+
+def test_z2_wilson_indices_of_weak_ti():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(0.0)
+
+    result = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="wilson",
+        n_loop=16,
+        n_perp=9,
+    )
+
+    assert result["method"] == "wilson"
+    assert result["indices"] == (0, 1, 1, 1)
+
+
+def test_z2_rejects_sheared_periodic_cell():
+    lattice = Lattice(
+        basis=ImmutableDenseMatrix.eye(3),
+        boundaries=PeriodicBoundary(
+            ImmutableDenseMatrix([[2, 1, 0], [0, 2, 0], [0, 0, 2]])
+        ),
+        unit_cell={"r": ImmutableDenseMatrix.zeros(3, 1)},
+    )
+    k_space = brillouin_zone(lattice.dual)
+    band_space = HilbertSpace.new(
+        U1Basis(coef=sy.Integer(1), base=(("band", i),)) for i in range(4)
+    )
+    identity = torch.eye(4, dtype=torch.complex128)
+    hamiltonian = Tensor(
+        data=identity.expand(k_space.dim, -1, -1).clone(),
+        dims=(k_space, band_space, band_space),
+    )
+
+    with pytest.raises(ValueError, match="diagonal periodic cell"):
+        z2_indices(hamiltonian, n_occupied=2, method="wilson")
+
+
+def test_z2_both_requires_parity():
+    hamiltonian, _inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+
+    with pytest.raises(RuntimeError, match="Cannot build inversion"):
+        z2_indices(
+            hamiltonian,
+            n_occupied=2,
+            method="both",
+            n_loop=8,
+            n_perp=5,
+        )
+
+
+def test_z2_parity_aligns_reordered_band_axes():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+    reference = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )["indices"]
+    order = [1, 0, 3, 2]
+    reordered_columns = hamiltonian.dims[2][order]
+    reordered = Tensor(
+        data=hamiltonian.data[..., order],
+        dims=(hamiltonian.dims[0], hamiltonian.dims[1], reordered_columns),
+    )
+
+    result = z2_indices(
+        reordered,
+        n_occupied=2,
+        inversion=inversion,
+        method="parity",
+    )
+
+    assert result["indices"] == reference
+
+
+def test_z2_parity_returns_labeled_tensors():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0)
+
+    parity = z2_indices(
+        hamiltonian, n_occupied=2, inversion=inversion, method="parity"
+    )
+    eigenvalues = next(iter(parity["diagnostics"].values()))["parity_eigenvalues"]
+    assert isinstance(eigenvalues, Tensor)
+    assert eigenvalues.data.shape == (2,)
+
+    wilson = z2_indices(
+        hamiltonian,
+        n_occupied=2,
+        inversion=inversion,
+        method="wilson",
+        n_loop=16,
+        n_perp=9,
+    )
+    plane = next(iter(wilson["planes"].values()))
+    assert isinstance(plane["wcc"], Tensor)
+    assert isinstance(plane["gap_pos"], Tensor)
+    assert isinstance(plane["sweep"], Tensor)
+    assert plane["wcc"].data.shape[0] == 9
+    assert plane["wcc"].data.shape[1] == 2
+
+
+def test_z2_warns_when_time_reversal_is_broken():
+    hamiltonian = _two_site_bonding_insulator()
+    zeeman = torch.diag(torch.tensor([0.3, -0.3, 0.3, -0.3], dtype=torch.complex128))
+    broken = Tensor(data=hamiltonian.data + zeeman, dims=hamiltonian.dims)
+
+    with pytest.warns(RuntimeWarning, match="Kramers-degenerate|Time-reversal"):
+        z2_indices(broken, n_occupied=2, method="parity")
+
+
+def test_z2_accepts_diagonal_momentum_block_space():
+    hamiltonian, inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+    momenta = tuple(hamiltonian.dims[0].elements())
+    pair_space = MomentumBlockSpace(
+        structure=OrderedDict(((momentum, momentum), i) for i, momentum in enumerate(momenta))
+    )
+    blocked = Tensor(
+        data=hamiltonian.data,
+        dims=(pair_space, hamiltonian.dims[1], hamiltonian.dims[2]),
+    )
+    inversion_blocked = Tensor(data=inversion.data, dims=blocked.dims)
+
+    result = z2_indices(
+        blocked, n_occupied=2, inversion=inversion_blocked, method="parity"
+    )
+
+    assert result["indices"] == (1, 0, 0, 0)
+
+
+def test_z2_rejects_off_diagonal_momentum_blocks():
+    hamiltonian, _inversion = _wilson_dirac_hamiltonian(-2.0, shape=(2, 2, 2))
+    momenta = tuple(hamiltonian.dims[0].elements())
+    pairs = tuple(
+        (momenta[i], momenta[(i + 1) % len(momenta)]) for i in range(len(momenta))
+    )
+    pair_space = MomentumBlockSpace(
+        structure=OrderedDict((pair, i) for i, pair in enumerate(pairs))
+    )
+    blocked = Tensor(
+        data=hamiltonian.data,
+        dims=(pair_space, hamiltonian.dims[1], hamiltonian.dims[2]),
+    )
+
+    with pytest.raises(ValueError, match="diagonal momentum-block"):
+        z2_indices(blocked, n_occupied=2, method="wilson")
