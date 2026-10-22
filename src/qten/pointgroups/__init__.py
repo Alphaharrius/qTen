@@ -110,7 +110,9 @@ or named symbol.
 [`PointGroupElement`][qten.pointgroups.elements.PointGroupElement] is one
 linear operation (`irrep` on the model, `rotation3` in \(O(3)\)).
 [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] adds a translation
-and `fixpoint_at`.
+via [`seitz`][qten.pointgroups.elements.PointGroupOpr.seitz] or `fixpoint_at`.
+[`SpaceGroup`][qten.pointgroups.spacegroup.SpaceGroup] is a finite Seitz
+factor group.
 [`FinitePointGroup`][qten.pointgroups.finite.FinitePointGroup] is the closure
 of generators, with ordinary / spinor class tables.
 [`PointGroupBasis`][qten.pointgroups.basis.PointGroupBasis] labels polynomial
@@ -128,6 +130,20 @@ copies of the same sector.
 are the spinful fast path used by that assembler.
 [`point_group_column_symmetrize`][qten.pointgroups.ops.point_group_column_symmetrize]
 projects columns.
+[`irrep_content`][qten.pointgroups.ops.irrep_content] counts labelled irreps.
+[`little_group`][qten.pointgroups.ops.little_group] /
+[`little_group_irreps`][qten.pointgroups.ops.little_group_irreps]
+evaluate little-group characters at a caller `KPointSet`.
+[`space_group_character_tables`][qten.pointgroups.ops.space_group_character_tables]
+aligns linear little-group χ to Seitz order.
+[`space_group_irreps`][qten.pointgroups.ops.space_group_irreps] /
+[`ebr_decomposition`][qten.pointgroups.ops.ebr_decomposition] /
+[`ebr_lattice_decomposition`][qten.pointgroups.ops.ebr_lattice_decomposition] /
+[`ebr_indicator`][qten.pointgroups.ops.ebr_indicator] /
+[`inversion_indicators`][qten.pointgroups.ops.inversion_indicators]
+are the Seitz / EBR-cone / indicator counterparts.
+[`axis_stabilizer`][qten.pointgroups.ops.axis_stabilizer]
+is the real-space line stabilizer of a vector.
 [`point_group_operator_symmetrize`][qten.pointgroups.ops.point_group_operator_symmetrize]
 twirls an operator (no \(\chi\) needed).
 [`joint_point_group_column_symmetrize`][qten.pointgroups.ops.joint_point_group_column_symmetrize]
@@ -141,6 +157,7 @@ from .elements import (
     PointGroupElement as PointGroupElement,
     PointGroupOpr as PointGroupOpr,
 )
+from .spacegroup import SpaceGroup as SpaceGroup
 from .basis import PointGroupBasis as PointGroupBasis
 from .finite import FinitePointGroup as FinitePointGroup
 from .sectors import (
@@ -151,10 +168,20 @@ from .sectors import (
     SymmetryDegeneracy as SymmetryDegeneracy,
 )
 from .ops import (
+    axis_stabilizer as axis_stabilizer,
     get_direct_transform as get_direct_transform,
     hilbert_repr as hilbert_repr,
+    irrep_content as irrep_content,
     joint_point_group_basis as joint_point_group_basis,
     joint_point_group_column_symmetrize as joint_point_group_column_symmetrize,
+    little_group as little_group,
+    little_group_irreps as little_group_irreps,
+    space_group_character_tables as space_group_character_tables,
+    space_group_irreps as space_group_irreps,
+    ebr_decomposition as ebr_decomposition,
+    ebr_lattice_decomposition as ebr_lattice_decomposition,
+    ebr_indicator as ebr_indicator,
+    inversion_indicators as inversion_indicators,
     point_group_column_symmetrize as point_group_column_symmetrize,
     point_group_operator_symmetrize as point_group_operator_symmetrize,
     spinful_hilbert_opr_repr as spinful_hilbert_opr_repr,

@@ -127,6 +127,42 @@ def test_su2_near_pi_uses_stable_oriented_axis(angle_sign):
     assert max_error < 1e-9
 
 
+def test_su2_exact_pi_float_and_exact_lifts_agree():
+    # C2 about [1, 1, 0]: R = 2 n n^T - I. Roundoff in the skew part must not
+    # flip the float lift away from the exact one.
+    exact = ImmutableDenseMatrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+    noisy = ImmutableDenseMatrix(
+        [
+            [sy.Float(0.0), sy.Float(1.0), sy.Float(0.0)],
+            [sy.Float(1.0), sy.Float(0.0), sy.Float(1e-15)],
+            [sy.Float(0.0), sy.Float(0.0), sy.Float(-1.0)],
+        ]
+    )
+    difference = su2_from_so3(exact) - su2_from_so3(noisy)
+    assert max(abs(complex(sy.N(entry))) for entry in difference) < 1e-9
+
+
+def test_live_spinor_names_do_not_depend_on_eigensolver_order(monkeypatch):
+    import qten.pointgroups._characters as characters
+
+    group = pointgroup("3m", axis=(1, 1, 1))
+    baseline = characters.compute_spinor_irreps(group)
+    original = characters.character_table
+
+    def reversed_rows(mult):
+        table, classes = original(mult)
+        return table[::-1], classes
+
+    monkeypatch.setattr(characters, "character_table", reversed_rows)
+    shuffled = characters.compute_spinor_irreps(group)
+    for name, row in baseline["irreps"].items():
+        assert (
+            shuffled["irreps"][name]["characters_by_element"]
+            == (row["characters_by_element"])
+        )
+        assert shuffled["irreps"][name]["bilbao_label"] == row["bilbao_label"]
+
+
 def test_su2_inexact_arbitrary_axis_is_stable_near_pi():
     axis = [component / math.sqrt(14) for component in (1, 2, 3)]
     angle = math.pi - 1.1e-10
@@ -981,6 +1017,9 @@ def test_computed_ordinary_table_feeds_irrep_projector():
     assert group.irreps is None
     table = group.ordinary_table()
     assert table["source"] == "qten-computed"
+    labels = [row.get("bilbao_label") for row in table["irreps"].values()]
+    assert all(labels)
+    assert all(str(label).startswith("\u0393") for label in labels)
     projectors = [group.irrep_projector(1, name) for name in table["irreps"]]
     total = sum(projectors[1:], projectors[0])
     assert sy.simplify(total - sy.eye(total.rows)) == sy.zeros(total.rows)

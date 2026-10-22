@@ -16,7 +16,8 @@ projectors use the element-wise hat-table section instead.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, Sequence
 
 import numpy as np
 import sympy as sy
@@ -297,6 +298,187 @@ def _encode_class_character(value: complex) -> int | float | list[float]:
     return [round(float(value.real), 12), round(float(value.imag), 12)]
 
 
+def parse_class_character(value: Any) -> complex:
+    """Decode a packaged class character (int, float, or [re, im])."""
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return complex(float(value[0]), float(value[1]))
+    return complex(float(sy.N(value)))
+
+
+_GAMMA = "\u0393"
+_GAMMA_LABEL_RE = re.compile(rf"^{_GAMMA}(\d+)(?:\^([+-]))?$")
+
+
+def _format_gamma(index: int, parity: str | None = None) -> str:
+    label = f"{_GAMMA}{index}"
+    if parity:
+        return f"{label}^{parity}"
+    return label
+
+
+def _parse_gamma_label(label: str) -> tuple[int, str | None] | None:
+    match = _GAMMA_LABEL_RE.match(label.strip())
+    if not match:
+        return None
+    return int(match.group(1)), match.group(2)
+
+
+def _ordinary_gamma_extent(irreps: dict[str, Any]) -> tuple[int, bool]:
+    max_index = 0
+    has_parity = False
+    for row in irreps.values():
+        parsed = _parse_gamma_label(str(row.get("bilbao_label") or ""))
+        if parsed is None:
+            continue
+        max_index = max(max_index, parsed[0])
+        if parsed[1]:
+            has_parity = True
+    return max_index, has_parity
+
+
+def _is_proper_class(label: str) -> bool:
+    return not (label.startswith("m") or label.startswith("-"))
+
+
+def _row_chi(row: dict[str, Any]) -> np.ndarray:
+    return np.asarray(
+        [parse_class_character(value) for value in row["characters"]],
+        dtype=complex,
+    )
+
+
+def _canonical_row_order(rows: Sequence[np.ndarray], identity: int) -> list[int]:
+    """Order irreps by dimension, then by their characters (largest first).
+
+    Rows straight from ``character_table`` are only ordered up to ties, and
+    tie order follows LAPACK eigenvectors. Distinct irreps never share every
+    entry, so this key makes the ``spinor_k`` / ``irrep_k`` names reproducible.
+    """
+
+    def key(index: int) -> tuple[Any, ...]:
+        row = rows[index]
+        return (round(float(row[identity].real)),) + tuple(
+            (-round(float(value.real), 8), -round(float(value.imag), 8))
+            for value in row
+        )
+
+    return sorted(range(len(rows)), key=key)
+
+
+def _chi_sort_key(chi: np.ndarray) -> tuple[Any, ...]:
+    return (round(float(chi[0].real)),) + tuple(
+        (-round(float(value.real), 10), -round(float(value.imag), 10)) for value in chi
+    )
+
+
+def _row_name_index(name: str) -> int:
+    tail = name.rsplit("_", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def _expr_int(value: sy.Expr) -> int | None:
+    simplified = sy.simplify(value)
+    if simplified.is_integer:
+        return int(simplified)
+    return None
+
+
+def _live_class_label(
+    *,
+    matrix: sy.ImmutableDenseMatrix,
+    order: int,
+    class_index: int,
+    is_identity: bool,
+) -> str:
+    """Name a generated conjugacy class so Koster pairing can see inversion."""
+    if is_identity:
+        return "1"
+    dim = matrix.rows
+    if dim == 3 and sy.simplify(matrix + sy.eye(3)) == sy.zeros(3):
+        return "-1"
+    det_int = _expr_int(sy.simplify(matrix.det()))
+    if det_int == -1:
+        trace_int = _expr_int(sy.simplify(matrix.trace()))
+        if order == 2 and trace_int == dim - 2:
+            return f"m{class_index}"
+        return f"-C{class_index}"
+    return f"C{class_index}"
+
+
+def _koster_gamma_labels(
+    irreps: dict[str, Any],
+    class_labels: Sequence[str],
+    *,
+    start_index: int,
+    split_parity: bool,
+) -> dict[str, str]:
+    assigned: dict[str, str] = {}
+    next_index = start_index
+    if split_parity and "-1" in class_labels:
+        inv_index = class_labels.index("-1")
+        proper = [
+            index for index, label in enumerate(class_labels) if _is_proper_class(label)
+        ]
+        grouped: dict[tuple[Any, ...], list[tuple[str, np.ndarray, str]]] = {}
+        for name, row in irreps.items():
+            chi = _row_chi(row)
+            fingerprint = tuple(
+                (round(float(chi[index].real), 8), round(float(chi[index].imag), 8))
+                for index in proper
+            )
+            parity = "+" if chi[inv_index].real > 0 else "-"
+            grouped.setdefault(fingerprint, []).append((name, chi, parity))
+        ordered = sorted(
+            grouped,
+            key=lambda fingerprint: _chi_sort_key(
+                np.asarray([complex(real, imag) for real, imag in fingerprint])
+            ),
+        )
+        for fingerprint in ordered:
+            members = grouped[fingerprint]
+            plus = sorted(
+                [item for item in members if item[2] == "+"],
+                key=lambda item: _row_name_index(item[0]),
+            )
+            minus = sorted(
+                [item for item in members if item[2] == "-"],
+                key=lambda item: _row_name_index(item[0]),
+            )
+            for slot in range(max(len(plus), len(minus))):
+                index = next_index
+                next_index += 1
+                if slot < len(plus):
+                    assigned[plus[slot][0]] = _format_gamma(index, "+")
+                if slot < len(minus):
+                    assigned[minus[slot][0]] = _format_gamma(index, "-")
+        return assigned
+
+    items = [(name, _row_chi(row)) for name, row in irreps.items()]
+    items.sort(key=lambda item: _chi_sort_key(item[1]) + (_row_name_index(item[0]),))
+    for name, _chi in items:
+        assigned[name] = _format_gamma(next_index)
+        next_index += 1
+    return assigned
+
+
+def _koster_dpg_labels(
+    ordinary_irreps: dict[str, Any], spinor_table: dict[str, Any]
+) -> dict[str, str]:
+    """Koster Γ names from qten class χ.
+
+    Ordinary Γ indices continue. Centrosymmetric groups split each spinor type
+    as Γn^+ / Γn^- by χ(i). χ numbers themselves are not rewritten.
+    """
+    class_labels = list(spinor_table["class_labels"])
+    max_index, has_parity = _ordinary_gamma_extent(ordinary_irreps)
+    return _koster_gamma_labels(
+        spinor_table["irreps"],
+        class_labels,
+        start_index=max_index + 1,
+        split_parity="-1" in class_labels and has_parity,
+    )
+
+
 def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
     r"""Build a class-wise spinor table from the group's own \(SU(2)\) section.
 
@@ -337,28 +519,21 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
         for member in members:
             hat_class_of[member] = hat_class_index
 
+    element_rows = [
+        np.asarray(
+            [row[hat_class_of[index]] for index in range(len(elements))],
+            dtype=complex,
+        )
+        for row in projective
+    ]
     chi_by_element = np.vstack(
-        [
-            np.asarray(
-                [row[hat_class_of[index]] for index in range(len(elements))],
-                dtype=complex,
-            )
-            for row in projective
-        ]
+        [element_rows[i] for i in _canonical_row_order(element_rows, identity)]
     )
 
-    if group.irreps:
-        labels = list(group.irreps["class_labels"])
-        label_by_element = group._class_label_index_by_element()
-        n_class = len(labels)
-    else:
-        generated = group.conjugacy_classes()
-        labels = [f"C{index}" for index in range(len(generated))]
-        label_by_element = tuple(
-            next(i for i, members in enumerate(generated) if element in members)
-            for element in range(len(elements))
-        )
-        n_class = len(labels)
+    ordinary = group.ordinary_table()
+    labels = list(ordinary["class_labels"])
+    label_by_element = group._class_label_index_by_element()
+    n_class = len(labels)
 
     irreps: dict[str, Any] = {}
     for irrep_index, row in enumerate(chi_by_element, start=1):
@@ -400,17 +575,16 @@ def compute_spinor_irreps(group: FinitePointGroup) -> dict[str, Any]:
             ],
         }
 
-    multiplicities = (
-        list(group.irreps["multiplicities"])
-        if group.irreps
-        else [label_by_element.count(index) for index in range(n_class)]
-    )
-    return {
+    multiplicities = list(ordinary["multiplicities"])
+    table = {
         "class_labels": labels,
         "multiplicities": multiplicities,
         "irreps": irreps,
         "source": "qten-su2-principal-v1",
     }
+    for name, label in _koster_dpg_labels(ordinary["irreps"], table).items():
+        irreps[name]["bilbao_label"] = label
+    return table
 
 
 def compute_ordinary_irreps(group: FinitePointGroup) -> dict[str, Any]:
@@ -436,18 +610,36 @@ def compute_ordinary_irreps(group: FinitePointGroup) -> dict[str, Any]:
         ) from exc
     characters = characters[:, perm]
 
-    labels = [f"C{index}" for index in range(len(generated))]
+    conjugacy = group.conjugacy_classes()
+    labels = [
+        _live_class_label(
+            matrix=sy.ImmutableDenseMatrix(sy.simplify(elements[members[0]].irrep)),
+            order=elements[members[0]].group_order(),
+            class_index=class_index,
+            is_identity=0 in members,
+        )
+        for class_index, members in enumerate(conjugacy)
+    ]
     identity = next(index for index, members in enumerate(generated) if 0 in members)
-    labels[identity] = "1"
     multiplicities = [len(members) for members in generated]
 
+    rows = list(characters)
     irreps: dict[str, Any] = {}
-    for irrep_index, row in enumerate(characters, start=1):
+    ordered = (rows[i] for i in _canonical_row_order(rows, identity))
+    for irrep_index, row in enumerate(ordered, start=1):
         dim = int(round(abs(complex(row[identity]).real)))
         irreps[f"irrep_{irrep_index}"] = {
             "dim": dim,
             "characters": [_encode_class_character(complex(value)) for value in row],
         }
+
+    for name, label in _koster_gamma_labels(
+        irreps,
+        labels,
+        start_index=1,
+        split_parity="-1" in labels,
+    ).items():
+        irreps[name]["bilbao_label"] = label
 
     return {
         "class_labels": labels,
@@ -455,10 +647,3 @@ def compute_ordinary_irreps(group: FinitePointGroup) -> dict[str, Any]:
         "irreps": irreps,
         "source": "qten-computed",
     }
-
-
-def parse_class_character(value: Any) -> complex:
-    """Decode a packaged class character (int, float, or [re, im])."""
-    if isinstance(value, (list, tuple)) and len(value) == 2:
-        return complex(float(value[0]), float(value[1]))
-    return complex(float(sy.N(value)))

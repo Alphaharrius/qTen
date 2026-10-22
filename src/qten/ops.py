@@ -37,6 +37,16 @@ Point-group operations
 ----------------------
 - [`hilbert_repr()`][qten.pointgroups.ops.hilbert_repr]
   Hilbert-space `D(g)`, including the \(SU(2)\) factor on a spinful space.
+- [`irrep_content()`][qten.pointgroups.ops.irrep_content]
+- [`little_group()`][qten.pointgroups.ops.little_group]
+- [`axis_stabilizer()`][qten.pointgroups.ops.axis_stabilizer]
+- [`little_group_irreps()`][qten.pointgroups.ops.little_group_irreps]
+- [`space_group_character_tables()`][qten.pointgroups.ops.space_group_character_tables]
+- [`space_group_irreps()`][qten.pointgroups.ops.space_group_irreps]
+- [`ebr_decomposition()`][qten.pointgroups.ops.ebr_decomposition]
+- [`ebr_lattice_decomposition()`][qten.pointgroups.ops.ebr_lattice_decomposition]
+- [`ebr_indicator()`][qten.pointgroups.ops.ebr_indicator]
+- [`inversion_indicators()`][qten.pointgroups.ops.inversion_indicators]
 - [`joint_point_group_basis()`][qten.pointgroups.ops.joint_point_group_basis]
 - [`point_group_column_symmetrize()`][qten.pointgroups.ops.point_group_column_symmetrize]
 - [`point_group_operator_symmetrize()`][qten.pointgroups.ops.point_group_operator_symmetrize]
@@ -75,10 +85,20 @@ from .bands import (
     upsample as upsample,
 )
 from .pointgroups.ops import (
+    axis_stabilizer as axis_stabilizer,
     get_direct_transform as get_direct_transform,
     hilbert_repr as hilbert_repr,
+    irrep_content as irrep_content,
     joint_point_group_basis as joint_point_group_basis,
     joint_point_group_column_symmetrize as joint_point_group_column_symmetrize,
+    little_group as little_group,
+    little_group_irreps as little_group_irreps,
+    space_group_character_tables as space_group_character_tables,
+    space_group_irreps as space_group_irreps,
+    ebr_decomposition as ebr_decomposition,
+    ebr_lattice_decomposition as ebr_lattice_decomposition,
+    ebr_indicator as ebr_indicator,
+    inversion_indicators as inversion_indicators,
     point_group_column_symmetrize as point_group_column_symmetrize,
     point_group_operator_symmetrize as point_group_operator_symmetrize,
 )

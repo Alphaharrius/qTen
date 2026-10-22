@@ -93,7 +93,7 @@ from .symbolics import (
     restructure,
 )
 from .pointgroups.elements import PointGroupOpr
-from .pointgroups.ops import _internal_transform_basis
+from .pointgroups.ops import _point_group_band_blocks
 from .utils.devices import Device
 
 
@@ -719,6 +719,19 @@ def _validate_block_transformable_tensor(
     return cast(MomentumSpace, tensor.dims[0]), sampled_space
 
 
+def _pair_space_for_band_transform(
+    mapped_kspace: MomentumSpace, kspace: MomentumSpace
+) -> MomentumBlockSpace:
+    return MomentumBlockSpace(
+        structure=OrderedDict(
+            ((mapped_k, src_k), i)
+            for i, (mapped_k, src_k) in enumerate(
+                zip(mapped_kspace.elements(), kspace.elements())
+            )
+        )
+    )
+
+
 def _get_band_transform_from_spaces(
     t: Opr,
     kspace: MomentumSpace,
@@ -732,14 +745,21 @@ def _get_band_transform_from_spaces(
             "get_band_transform requires a one-to-one momentum map with no sector collisions."
         )
 
-    fractional = FuncOpr(Offset, Offset.fractional)
     if isinstance(t, PointGroupOpr):
-        raw_space = HilbertSpace.new(
-            _internal_transform_basis(t, psi, target_space)
-            for psi in target_space.elements()
+        blocks = _point_group_band_blocks(
+            t, kspace, mapped_kspace, target_space, device=device
         )
-    else:
-        raw_space = cast(HilbertSpace, t @ target_space)
+        return MomentumBlockTensor(
+            data=blocks.data,
+            dims=(
+                _pair_space_for_band_transform(mapped_kspace, kspace),
+                target_space,
+                target_space,
+            ),
+        )
+
+    fractional = FuncOpr(Offset, Offset.fractional)
+    raw_space = cast(HilbertSpace, t @ target_space)
     new_space = cast(HilbertSpace, fractional @ raw_space)
     if not target_space.same_rays(new_space):
         raise ValueError(
@@ -754,17 +774,13 @@ def _get_band_transform_from_spaces(
     ).replace_dim(1, new_space)
     transform = cast(Tensor, home_transform @ transformed_fourier)
 
-    pair_space = MomentumBlockSpace(
-        structure=OrderedDict(
-            ((mapped_k, src_k), i)
-            for i, (mapped_k, src_k) in enumerate(
-                zip(mapped_kspace.elements(), kspace.elements())
-            )
-        )
-    )
     return MomentumBlockTensor(
         data=transform.data,
-        dims=(pair_space, target_space, target_space),
+        dims=(
+            _pair_space_for_band_transform(mapped_kspace, kspace),
+            target_space,
+            target_space,
+        ),
     )
 
 
@@ -859,6 +875,14 @@ def get_band_transform(
     2. fractional wrapping back to the home unit cell, and
     3. the Fourier phase needed to keep Bloch conventions consistent after the
        geometric relabeling.
+
+    On a spinful Hilbert space a
+    [`PointGroupOpr`][qten.pointgroups.elements.PointGroupOpr] cannot use a
+    one-to-one basis map: \(SU(2)\) mixes spin. That branch uses
+    [`hilbert_repr`][qten.pointgroups.ops.hilbert_repr] for \(D(g,\Gamma)\) and
+    multiplies each source column by the wrap phase of that orbital's image,
+    so \(D(g,\Gamma)\) agrees with `hilbert_repr` while \(k\neq\Gamma\) keeps
+    the Bloch translation phase.
 
     The returned transform is therefore the reusable one-sided ingredient of
     [`bandtransform`][qten.bands.bandtransform], not merely a permutation of

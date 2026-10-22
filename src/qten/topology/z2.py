@@ -54,7 +54,7 @@ W(k_\perp)=\prod_\ell
 U^\dagger(k_\ell)\,e^{-2\pi i\,\tau\cdot\Delta k}\,U(k_{\ell+1})
 \right],
 \qquad
-\bar{x}_n(k_\perp)=\frac{\operatorname{Arg}\lambda_n(W)}{2\pi}\bmod 1,
+\bar{x}_n(k_\perp)=-\frac{\operatorname{Arg}\lambda_n(W)}{2\pi}\bmod 1,
 \]
 
 where \(U(k)\) holds occupied eigenvectors and \(\tau\) is the orbital
@@ -82,6 +82,10 @@ H(k)=\sum_R t(R)\,e^{-2\pi i\,k\cdot R},
 \qquad
 t=\mathcal{F}^{-1}[H_{\mathrm{mesh}}].
 \]
+
+On an even axis the Nyquist coefficient is split evenly between
+\(R=\pm N/2\), so the interpolant stays Hermitian and time-reversal
+symmetric between grid points.
 
 The same interpolant is used for an explicit inversion tensor. When
 inversion is assembled from orbital offsets about a center \(c\),
@@ -127,13 +131,12 @@ from ..phys import Spin, as_spin, contains_spin
 from ..pointgroups import pointgroup
 from ..pointgroups.elements import PointGroupElement, PointGroupOpr
 from ..pointgroups.finite import FinitePointGroup
-from ..pointgroups.ops import spinful_hilbert_opr_repr
+from ..pointgroups.ops import hilbert_repr, inversion_indicators
 from ..symbolics import (
     HilbertSpace,
     IndexSpace,
     MomentumBlockSpace,
     MomentumSpace,
-    hilbert_opr_repr,
     same_rays,
 )
 
@@ -411,18 +414,50 @@ def _fourier_interpolate(
     return values if batched else values[0]
 
 
-def _indices_from_deltas(
-    parity_products: dict[tuple[int, ...], int],
+def _split_nyquist(
+    hoppings: torch.Tensor, grid_shape: tuple[int, ...]
+) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+    r"""Return hoppings and their R axes with each even Nyquist slice split.
+
+    `fftfreq` puts the whole \(R=N/2\) coefficient at \(-N/2\), which breaks
+    Hermiticity of the interpolant off the grid. Half of it is moved to
+    \(+N/2\); on-grid values do not change.
+    """
+    real_dtype = hoppings.real.dtype
+    r_axes: list[torch.Tensor] = []
+    for axis, size in enumerate(grid_shape):
+        r = (torch.fft.fftfreq(size, dtype=real_dtype) * size).to(hoppings.device)
+        if size % 2 == 0:
+            nyquist = size // 2
+            half = hoppings.narrow(axis, nyquist, 1) / 2
+            hoppings = torch.cat(
+                (
+                    hoppings.narrow(axis, 0, nyquist),
+                    half,
+                    hoppings.narrow(axis, nyquist + 1, size - nyquist - 1),
+                    half,
+                ),
+                dim=axis,
+            )
+            r = torch.cat((r, r.new_tensor([float(nyquist)])))
+        r_axes.append(r)
+    return hoppings, tuple(r_axes)
+
+
+def _indices_from_parity_counts(
+    odd_counts: dict[tuple[int, ...], int],
+    n_occupied: int,
     dim: int,
 ) -> tuple[int, ...]:
-    strong = math.prod(parity_products.values())
-    if dim == 2:
-        return (int(strong < 0),)
-    weak = tuple(
-        math.prod(delta for bits, delta in parity_products.items() if bits[axis] == 1)
-        for axis in range(dim)
+    indicators = inversion_indicators(
+        [
+            (tuple(sy.Rational(bit, 2) for bit in bits), n_occupied - odd, odd)
+            for bits, odd in odd_counts.items()
+        ]
     )
-    return (int(strong < 0), *(int(product < 0) for product in weak))
+    if dim == 2:
+        return (indicators.nu0,)
+    return (indicators.nu0, *indicators.weak)
 
 
 def _largest_gap_position(wcc: torch.Tensor) -> float:
@@ -610,6 +645,7 @@ class _Z2Engine:
 
     def run_parity(self, parity_tolerance: float) -> Z2ParityResult:
         parity_products: dict[tuple[int, ...], int] = {}
+        odd_counts: dict[tuple[int, ...], int] = {}
         diagnostics: dict[tuple[int, ...], Z2ParityTrimDiagnostics] = {}
         real_dtype = self.hoppings.real.dtype
         device = self.hoppings.device
@@ -645,6 +681,7 @@ class _Z2Engine:
                 )
             delta = -1 if (n_odd // 2) % 2 else 1
             parity_products[bits] = delta
+            odd_counts[bits] = n_odd
             if self.n_occupied < self.n_bands:
                 gap = float(
                     (energies[self.n_occupied] - energies[self.n_occupied - 1]).item()
@@ -664,7 +701,9 @@ class _Z2Engine:
         finite_gaps = [gap for gap in gaps if math.isfinite(gap)]
         direct_gap = min(finite_gaps) if finite_gaps else float("nan")
         return {
-            "indices": _indices_from_deltas(parity_products, self.dim),
+            "indices": _indices_from_parity_counts(
+                odd_counts, self.n_occupied, self.dim
+            ),
             "method": "parity",
             "parity_products": parity_products,
             "diagnostics": diagnostics,
@@ -703,7 +742,7 @@ class _Z2Engine:
             step = self._unitary_overlap(occupied[i], occupied[(i + 1) % n_pts], dk)
             wilson = step if wilson is None else wilson @ step
         evals = torch.linalg.eigvals(wilson)
-        wcc = (torch.angle(evals) / (2 * math.pi)) % 1.0
+        wcc = (-torch.angle(evals) / (2 * math.pi)) % 1.0
         wcc, _ = torch.sort(wcc.real)
         return wcc, min_gap
 
@@ -926,10 +965,7 @@ def _spatial_inversion_matrix(
     hoppings: torch.Tensor,
 ) -> torch.Tensor:
     inv_op = PointGroupOpr(_inversion_element(center.space.dim)).fixpoint_at(center)
-    if contains_spin(space):
-        matrix = spinful_hilbert_opr_repr(inv_op, space)
-    else:
-        matrix = hilbert_opr_repr(inv_op, space)
+    matrix = hilbert_repr(inv_op, space)
     return matrix.data.to(device=hoppings.device, dtype=hoppings.dtype)
 
 
@@ -1010,13 +1046,11 @@ def _build_engine(
     )
 
     h_grid = 0.5 * (h_grid + h_grid.transpose(-1, -2).conj())
-    hoppings = torch.fft.ifftn(h_grid, dim=tuple(range(momentum_dim)))
+    hoppings, r_axes = _split_nyquist(
+        torch.fft.ifftn(h_grid, dim=tuple(range(momentum_dim))), grid_shape
+    )
     device = hoppings.device
     real_dtype = hoppings.real.dtype
-    r_axes = tuple(
-        (torch.fft.fftfreq(size, dtype=real_dtype) * size).to(device)
-        for size in grid_shape
-    )
 
     space = bloch_hamiltonian.dims[1]
     tau, positions_cart = _orbital_geometry(space, lattice, n_bands, device, real_dtype)
@@ -1045,7 +1079,9 @@ def _build_engine(
             grid_shape=grid_shape,
             canonical_position=canonical_position,
         )
-        inversion_hoppings = torch.fft.ifftn(inv_grid, dim=tuple(range(momentum_dim)))
+        inversion_hoppings, _ = _split_nyquist(
+            torch.fft.ifftn(inv_grid, dim=tuple(range(momentum_dim))), grid_shape
+        )
     elif isinstance(space, HilbertSpace) and positions_cart is not None:
         if inversion_center is None:
             unique_reps: list[tuple[sy.Expr, ...]] = []

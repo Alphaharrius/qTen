@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +22,7 @@ import sympy as sy
 
 from qten.phys.spin import SU2_SECTION_CONVENTION
 from qten.pointgroups._characters import (
+    _koster_dpg_labels,
     compute_ordinary_irreps,
     compute_spinor_irreps,
     parse_class_character,
@@ -48,9 +48,6 @@ C2Z_ROTATION3 = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
 M_1D_SPATIAL = [[-1]]
 M_1D_ROTATION3 = [[-1, 0, 0], [0, 1, 0], [0, 0, 1]]
 I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-
-_GAMMA = "\u0393"
-_GAMMA_LABEL_RE = re.compile(rf"^{_GAMMA}(\d+)(?:\^([+-]))?$")
 
 
 def _load_catalog() -> dict[str, Any]:
@@ -100,37 +97,6 @@ def _matrix_list(
     return encoded
 
 
-def _format_gamma(index: int, parity: str | None = None) -> str:
-    label = f"{_GAMMA}{index}"
-    if parity:
-        return f"{label}^{parity}"
-    return label
-
-
-def _parse_gamma_label(label: str) -> tuple[int, str | None] | None:
-    match = _GAMMA_LABEL_RE.match(label.strip())
-    if not match:
-        return None
-    return int(match.group(1)), match.group(2)
-
-
-def _ordinary_gamma_extent(irreps: dict[str, Any]) -> tuple[int, bool]:
-    max_index = 0
-    has_parity = False
-    for row in irreps.values():
-        parsed = _parse_gamma_label(str(row.get("bilbao_label") or ""))
-        if parsed is None:
-            continue
-        max_index = max(max_index, parsed[0])
-        if parsed[1]:
-            has_parity = True
-    return max_index, has_parity
-
-
-def _is_proper_class(label: str) -> bool:
-    return not (label.startswith("m") or label.startswith("-"))
-
-
 def _row_chi(row: dict[str, Any]) -> np.ndarray:
     return np.asarray(
         [parse_class_character(value) for value in row["characters"]],
@@ -140,78 +106,6 @@ def _row_chi(row: dict[str, Any]) -> np.ndarray:
 
 def _chi_close(left: np.ndarray, right: np.ndarray, *, atol: float = 1e-6) -> bool:
     return bool(np.allclose(left, right, rtol=0.0, atol=atol))
-
-
-def _chi_sort_key(chi: np.ndarray) -> tuple[Any, ...]:
-    return (round(float(chi[0].real)),) + tuple(
-        (-round(float(value.real), 10), -round(float(value.imag), 10)) for value in chi
-    )
-
-
-def _spinor_index(name: str) -> int:
-    return int(name.rsplit("_", 1)[-1])
-
-
-def _koster_dpg_labels(
-    ordinary_irreps: dict[str, Any], spinor_table: dict[str, Any]
-) -> dict[str, str]:
-    """Koster Γ names from qten class χ.
-
-    Ordinary Γ indices continue. Centrosymmetric groups split each spinor type
-    as Γn^+ / Γn^- by χ(i). χ numbers themselves are not rewritten.
-    """
-    class_labels = list(spinor_table["class_labels"])
-    max_index, has_parity = _ordinary_gamma_extent(ordinary_irreps)
-    irreps = spinor_table["irreps"]
-    inversion = "-1" in class_labels and has_parity
-    assigned: dict[str, str] = {}
-    next_index = max_index + 1
-
-    if inversion:
-        inv_index = class_labels.index("-1")
-        proper = [
-            index for index, label in enumerate(class_labels) if _is_proper_class(label)
-        ]
-        grouped: dict[tuple[Any, ...], list[tuple[str, np.ndarray, str]]] = {}
-        for name, row in irreps.items():
-            chi = _row_chi(row)
-            fingerprint = tuple(
-                (round(float(chi[index].real), 8), round(float(chi[index].imag), 8))
-                for index in proper
-            )
-            parity = "+" if chi[inv_index].real > 0 else "-"
-            grouped.setdefault(fingerprint, []).append((name, chi, parity))
-        ordered = sorted(
-            grouped,
-            key=lambda fingerprint: _chi_sort_key(
-                np.asarray([complex(real, imag) for real, imag in fingerprint])
-            ),
-        )
-        for fingerprint in ordered:
-            members = grouped[fingerprint]
-            plus = sorted(
-                [item for item in members if item[2] == "+"],
-                key=lambda item: _spinor_index(item[0]),
-            )
-            minus = sorted(
-                [item for item in members if item[2] == "-"],
-                key=lambda item: _spinor_index(item[0]),
-            )
-            for slot in range(max(len(plus), len(minus))):
-                index = next_index
-                next_index += 1
-                if slot < len(plus):
-                    assigned[plus[slot][0]] = _format_gamma(index, "+")
-                if slot < len(minus):
-                    assigned[minus[slot][0]] = _format_gamma(index, "-")
-        return assigned
-
-    items = [(name, _row_chi(row)) for name, row in irreps.items()]
-    items.sort(key=lambda item: _chi_sort_key(item[1]) + (_spinor_index(item[0]),))
-    for name, _chi in items:
-        assigned[name] = _format_gamma(next_index)
-        next_index += 1
-    return assigned
 
 
 def _package_spinor_table(

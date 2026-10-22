@@ -46,6 +46,7 @@ _HALF = sy.Rational(1, 2)
 _SPIN_MS = (_HALF, -_HALF)
 _CARTESIAN_AXES = ("x", "y", "z")
 _ROTATION_TOL = 1e-10
+_PI_W_ROUNDOFF = 1e-13
 #: Pinned name of QTen's principal \(SU(2)\) lift of each element's `rotation3`.
 SU2_SECTION_CONVENTION = "qten-su2-principal-v1"
 
@@ -220,6 +221,8 @@ def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
         r = [[-entry for entry in row] for row in r]
 
     trace = r[0][0] + r[1][1] + r[2][2]
+    # Ties between diagonal entries go to the first axis, as in the exact lift.
+    tie = _ROTATION_TOL
 
     if trace > 0.0:
         scale = 2.0 * max(0.0, trace + 1.0) ** 0.5
@@ -227,13 +230,13 @@ def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
         x = (r[2][1] - r[1][2]) / scale
         y = (r[0][2] - r[2][0]) / scale
         z = (r[1][0] - r[0][1]) / scale
-    elif r[0][0] >= r[1][1] and r[0][0] >= r[2][2]:
+    elif r[0][0] >= r[1][1] - tie and r[0][0] >= r[2][2] - tie:
         scale = 2.0 * max(0.0, 1.0 + r[0][0] - r[1][1] - r[2][2]) ** 0.5
         x = 0.25 * scale
         w = (r[2][1] - r[1][2]) / scale
         y = (r[0][1] + r[1][0]) / scale
         z = (r[0][2] + r[2][0]) / scale
-    elif r[1][1] >= r[2][2]:
+    elif r[1][1] >= r[2][2] - tie:
         scale = 2.0 * max(0.0, 1.0 + r[1][1] - r[0][0] - r[2][2]) ** 0.5
         y = 0.25 * scale
         w = (r[0][2] - r[2][0]) / scale
@@ -253,7 +256,10 @@ def principal_su2_from_rows(rotation: list[list[float]]) -> list[list[complex]]:
 
     # Choose the principal SO(3) branch. Both signs are valid lifts, but this
     # convention preserves continuity from the identity for angles below π.
-    if w < 0.0:
+    # At θ = π, w is float roundoff (~1e-16); the branch above already made
+    # the dominant axis component positive, which is the exact lift's
+    # convention. Near-π rotations keep a resolvable w and still flip.
+    if w < -_PI_W_ROUNDOFF:
         w, x, y, z = (-component for component in (w, x, y, z))
 
     return [
@@ -321,16 +327,18 @@ def _su2_from_so3_cached(key: tuple) -> sy.ImmutableDenseMatrix:
         numeric_candidates = [
             candidate for candidate in axis_candidates if candidate[0] is not None
         ]
-        axis = (
-            max(
-                numeric_candidates,
-                key=lambda candidate: (
-                    candidate[0] if candidate[0] is not None else -1.0
-                ),
-            )[1]
-            if numeric_candidates
-            else axis_candidates[0][1]
-        )
+        if numeric_candidates:
+            # First column within roundoff of the largest norm, so equal
+            # columns written in different exact forms pick the same axis.
+            largest = max(cast(float, candidate[0]) for candidate in numeric_candidates)
+            axis = next(
+                candidate[1]
+                for candidate in numeric_candidates
+                if cast(float, candidate[0])
+                >= largest - _ROTATION_TOL * max(1.0, largest)
+            )
+        else:
+            axis = axis_candidates[0][1]
 
         # For a near-π (rather than exact π) rotation, orient the axis using
         # the small but sign-carrying skew vector. At exact π either sign is

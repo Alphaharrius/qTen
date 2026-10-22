@@ -567,6 +567,35 @@ def test_z2_parity_assembles_inversion_in_two_dimensions():
     assert result["direct_gap"] == pytest.approx(2.0)
 
 
+def test_z2_wilson_centers_sit_at_the_bond_midpoint():
+    # The bonding orbital of A(0) and B(1/2) is centered at x = 1/4.
+    hamiltonian = _two_site_bonding_insulator(shape=(4, 4))
+
+    result = z2_indices(hamiltonian, n_occupied=2, method="wilson")
+
+    along_x = result["planes"][(0, 0.0)]["wcc"].data
+    along_y = result["planes"][(1, 0.0)]["wcc"].data
+    assert torch.allclose(along_x, torch.full_like(along_x, 0.25), atol=1e-8)
+    assert torch.allclose(
+        torch.minimum(along_y, 1.0 - along_y), torch.zeros_like(along_y), atol=1e-8
+    )
+
+
+def test_z2_even_mesh_interpolant_is_hermitian_between_grid_points():
+    from qten.topology.z2 import _fourier_interpolate, _split_nyquist
+
+    generator = torch.Generator().manual_seed(0)
+    shape = (4, 2)
+    raw = torch.randn((*shape, 3, 3), dtype=torch.complex128, generator=generator)
+    mesh = raw + raw.transpose(-1, -2).conj()
+    hoppings, r_axes = _split_nyquist(torch.fft.ifftn(mesh, dim=(0, 1)), shape)
+
+    off_grid = _fourier_interpolate(hoppings, [0.13, 0.37], r_axes)
+    assert torch.allclose(off_grid, off_grid.transpose(-1, -2).conj(), atol=1e-12)
+    on_grid = _fourier_interpolate(hoppings, [0.25, 0.5], r_axes)
+    assert torch.allclose(on_grid, mesh[1, 1], atol=1e-12)
+
+
 def test_z2_auto_uses_offset_assembled_parity():
     hamiltonian = _two_site_bonding_insulator()
 

@@ -424,7 +424,8 @@ def named_pointgroup(
         plane normal.
     axis : tuple[float, ...] | None, optional
         Reorient a 3D named group so its standard z-axis maps to this vector.
-        Cannot be combined with a plane cut.
+        Cannot be combined with a plane cut. This aims the principal axis
+        only; remaining in-plane generators follow the packaged frame.
     spin : str, default ``"electron"``
         Define-time spin policy. ``"electron"`` lifts ``rotation3``;
         ``"trivial"`` uses ``u(g)=I``.

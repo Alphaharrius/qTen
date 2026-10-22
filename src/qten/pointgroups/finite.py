@@ -19,12 +19,115 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import sympy as sy
 
 from .elements import PointGroupElement
 from .basis import PointGroupBasis
+
+
+def _as_axis_column(axis: Any, dim: int) -> sy.ImmutableDenseMatrix:
+    """Parse a nonzero column vector of length `dim`."""
+    if isinstance(axis, sy.MatrixBase):
+        column = sy.ImmutableDenseMatrix(axis)
+        if column.shape == (1, dim):
+            column = column.T
+        elif column.shape != (dim, 1):
+            raise ValueError(
+                f"axis must be a {dim}-vector, got shape {tuple(column.shape)}."
+            )
+    else:
+        try:
+            values = tuple(axis)
+        except TypeError as exc:
+            raise TypeError(
+                "axis must be a sequence or column matrix of coordinates."
+            ) from exc
+        if len(values) != dim:
+            raise ValueError(f"axis must have length {dim}, got {len(values)}.")
+        column = sy.ImmutableDenseMatrix(
+            [
+                sy.nsimplify(sy.sympify(component), tolerance=1e-12)
+                for component in values
+            ]
+        )
+    if all(sy.simplify(column[i, 0]) == 0 for i in range(dim)):
+        raise ValueError("axis must be a nonzero vector.")
+    return column
+
+
+def _preserves_axis(
+    element: PointGroupElement,
+    axis: sy.ImmutableDenseMatrix,
+    *,
+    oriented: bool,
+) -> bool:
+    """True if `element.irrep` maps `axis` to a parallel (or antiparallel) vector."""
+    image = sy.ImmutableDenseMatrix(sy.simplify(element.irrep @ axis))
+    if sy.Matrix(image.row_join(axis)).rank() > 1:
+        return False
+    if not oriented:
+        return True
+    return complex(sy.N(image.dot(axis))).real >= 0
+
+
+def _subgroup_from_members(
+    group: "FinitePointGroup", members: Sequence[PointGroupElement]
+) -> "FinitePointGroup":
+    if not members:
+        raise ValueError("Subgroup construction needs at least one element.")
+    if len(members) == group.order:
+        return group
+    generators = tuple(element for element in members if element.group_order() > 1)
+    if not generators:
+        generators = (members[0],)
+    subgroup = FinitePointGroup(
+        generators=generators,
+        axes=group.axes,
+        spin=group.spin,
+    )
+    return _with_packaged_ordinary(subgroup)
+
+
+def _with_packaged_ordinary(group: "FinitePointGroup") -> "FinitePointGroup":
+    r"""Attach a unique catalog ordinary table when geometry can align it.
+
+    Spinor χ is left unpackaged: the principal \(SU(2)\) section of a
+    reoriented subgroup need not match the catalog frame. Live spinor rows
+    still receive Koster ``bilbao_label`` names.
+    """
+    from ._registry import _point_group_data
+
+    dim = len(group.axes)
+    order = group.order
+    n_class = len(group.conjugacy_classes())
+    matched: list[FinitePointGroup] = []
+    for record in _point_group_data()["point_groups"]:
+        if int(record.get("dim", 3)) != dim:
+            continue
+        irreps = record.get("irreps")
+        if not isinstance(irreps, dict):
+            continue
+        if sum(int(value) for value in irreps["multiplicities"]) != order:
+            continue
+        if len(irreps["class_labels"]) != n_class:
+            continue
+        candidate = FinitePointGroup(
+            generators=group.generators,
+            axes=group.axes,
+            symbol=record.get("symbol"),
+            irreps=irreps,
+            spin=group.spin,
+        )
+        try:
+            candidate.element_class_indices()
+        except ValueError:
+            continue
+        matched.append(candidate)
+    if len(matched) != 1:
+        return group
+    return matched[0]
 
 
 def _matrix_key(matrix: sy.ImmutableDenseMatrix) -> tuple[float, ...]:
@@ -344,6 +447,49 @@ class FinitePointGroup:
         """Number of generated group elements."""
 
         return len(self.elements())
+
+    def stabilizer(
+        self,
+        axis: Sequence[float] | sy.Matrix,
+        *,
+        oriented: bool = False,
+    ) -> "FinitePointGroup":
+        r"""Return the subgroup that preserves `axis` as a line (or a ray).
+
+        An element \(g\) is kept when \(R(g)\,v\) is parallel to \(v\). By
+        default antiparallel images \(R(g)v=-v\) are kept as well (the
+        unoriented line). Pass `oriented=True` to keep only \(R(g)v=+v\).
+
+        If every element preserves `axis`, `self` is returned so packaged
+        character tables stay attached. Otherwise a new group is generated
+        from the stabilizing elements. A unique packaged crystallographic type
+        attaches its ordinary Bilbao table; spinor χ is computed live and
+        labelled with Koster \(\Gamma\) names.
+
+        Parameters
+        ----------
+        axis : sequence of float or sympy.Matrix
+            Vector in the group's spatial frame (the same Cartesian frame as
+            `axis=` on [`pointgroup`][qten.pointgroups.pointgroup]).
+        oriented : bool, default False
+            If true, keep only elements that preserve the direction of `axis`,
+            not its opposite.
+
+        Returns
+        -------
+        FinitePointGroup
+            The stabilizer, with the same `axes` and `spin` as this group.
+        """
+        dim = len(self.axes)
+        vector = _as_axis_column(axis, dim)
+        members = [
+            element
+            for element in self.elements()
+            if _preserves_axis(element, vector, oriented=oriented)
+        ]
+        if not members:
+            raise ValueError(f"No group element preserves axis {axis}.")
+        return _subgroup_from_members(self, members)
 
     def is_abelian(self) -> bool:
         """Return whether all generated elements commute."""

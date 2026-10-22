@@ -603,9 +603,12 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
         Linear part of the affine transformation.
     offset : Offset | None
         Not accepted as a constructor argument. Passing a value raises
-        `TypeError`. The constructor always starts at the origin; call
+        `TypeError`. The constructor always starts at the origin. Use
+        [`seitz`][qten.pointgroups.elements.PointGroupOpr.seitz] for an
+        arbitrary translation, or
         [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at]
-        afterwards. The `offset` *attribute* stores the resulting translation.
+        to force a fixed point. The `offset` *attribute* stores the resulting
+        translation.
 
     Attributes
     ----------
@@ -618,8 +621,10 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
     Notes
     -----
     The operator is initialized at the canonical origin of the identity affine
-    basis. To center it at a specific point, construct it first and then call
-    [`fixpoint_at(...)`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at].
+    basis. [`seitz`][qten.pointgroups.elements.PointGroupOpr.seitz] sets
+    \(x\mapsto Rx+\tau\) for any \(\tau\).
+    [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at] is the
+    special case \(\tau=(I-R)c\).
     Applying the operator to a [`Spin`][qten.phys.spin.Spin] label or a
     spinful [`U1Basis`][qten.symbolics.hilbert_space.U1Basis] raises: a generic
     \(SU(2)\) factor produces a superposition. Use
@@ -654,7 +659,8 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
         if offset is not None:
             raise TypeError(
                 "PointGroupOpr does not accept offset=... directly. "
-                "Construct PointGroupOpr(g) and use fixpoint_at(...) to set its center."
+                "Use PointGroupOpr.seitz(g, tau) or fixpoint_at(...) "
+                "to set the translation."
             )
         dim = g.irrep.rows
         base = AffineSpace(basis=sy.ImmutableDenseMatrix.eye(dim))
@@ -755,6 +761,85 @@ class PointGroupOpr(Opr, HasBase[AffineSpace]):
             g=t.g.with_irrep(irrep),
             offset=fixed_offset,
         )
+
+    @classmethod
+    def seitz(
+        cls,
+        g: PointGroupElement,
+        tau: Offset,
+        *,
+        rebase: bool = True,
+    ) -> "PointGroupOpr":
+        r"""Return the Seitz operator \(\{R\mid\tau\}\): \(x\mapsto Rx+\tau\).
+
+        Unlike
+        [`fixpoint_at`][qten.pointgroups.elements.PointGroupOpr.fixpoint_at],
+        \(\tau\) need not be of the form \((I-R)c\). Half-translations, screws,
+        and glides use this constructor.
+
+        Parameters
+        ----------
+        g : PointGroupElement
+            Linear part \(R\).
+        tau : Offset
+            Translation \(\tau\), in the same coordinate convention as the
+            Hilbert-space site labels it will act on.
+        rebase : bool, default True
+            If true, express \(R\) in `tau.space`. If false, rebase `tau` onto
+            the operator's native identity frame.
+
+        Returns
+        -------
+        PointGroupOpr
+            Affine map \(x\mapsto Rx+\tau\).
+        """
+        opr = cls(g)
+        if rebase:
+            opr = opr.rebase(tau.space)
+            tau_used = tau
+        elif tau.space == opr.offset.space:
+            tau_used = tau
+        else:
+            tau_used = tau.rebase(opr.offset.space)
+        if tau_used.dim != opr.g.irrep.rows:
+            raise ValueError(
+                "Seitz translation dimension must match the linear representation."
+            )
+        return cls._from_parts(opr.g, tau_used)
+
+    def with_translation(self, tau: Offset, *, rebase: bool = False) -> "PointGroupOpr":
+        """Return a copy with the same linear part and a new translation."""
+        t = self.rebase(tau.space) if rebase and tau.space != self.offset.space else self
+        tau_used = tau if t.offset.space == tau.space else tau.rebase(t.offset.space)
+        if tau_used.dim != t.g.irrep.rows:
+            raise ValueError(
+                "Seitz translation dimension must match the linear representation."
+            )
+        return PointGroupOpr._from_parts(t.g, tau_used)
+
+    def inv(self) -> "PointGroupOpr":
+        r"""Return \(\{R\mid\tau\}^{-1}=\{R^{-1}\mid-R^{-1}\tau\}\)."""
+        linear = PointGroupOpr(self.g.inv()).rebase(self.offset.space)
+        mapped = linear @ self.offset
+        neg = Offset(
+            sy.ImmutableDenseMatrix(-mapped.rep),
+            mapped.space,
+        )
+        return PointGroupOpr._from_parts(linear.g, neg)
+
+
+@Operable.__matmul__.register
+def _(left: PointGroupOpr, right: PointGroupOpr) -> PointGroupOpr:
+    r"""Compose Seitz operators: \((left@right)(x)=left(right(x))\).
+
+    \(\{R\mid\tau\}\{R'\mid\tau'\}=\{RR'\mid\tau+R\tau'\}\).
+    """
+    aligned = (
+        left.rebase(right.offset.space)
+        if left.offset.space != right.offset.space
+        else left
+    )
+    return PointGroupOpr._from_parts(aligned.g @ right.g, aligned @ right.offset)
 
 
 @PointGroupOpr.register(PointGroupBasis)
