@@ -183,11 +183,12 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
     -------
     Tensor
         Interpolated tensor with dims ``(new_momentum_space, B_left, B_right)``.
-        Spatial Bloch spaces are rebased onto the refined finite lattice, so
-        subsequent operations such as band folding see the same primitive cell
-        as the momentum grid.  Distinct periodic images stay on distinct
-        sites.  Complex input keeps its dtype; real input is returned in its
-        original real dtype.
+        Spatial Bloch spaces are rebased onto the refined finite lattice.
+        Offsets are reduced into that primitive cell when every basis label
+        stays unique, so a courier at ``0`` and ``3/4`` becomes ``0`` and
+        ``1/4``.  Supercell images that would share one primitive site keep
+        their cell index.  Complex input keeps its dtype; real input is
+        returned in its original real dtype.
 
     Notes
     -----
@@ -290,11 +291,17 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
     def _rehome_bloch_space(space: HilbertSpace) -> HilbertSpace:
         """Re-express spatial states in the refined cell.
 
-        Rebasing multiplies lattice coordinates by ``scale`` and wraps them
-        into the refined torus.  Images that were distinct in the blocked cell
-        stay on distinct sites, so a supercell Hamiltonian does not collapse.
+        Rebasing multiplies lattice coordinates by ``scale``.  Those
+        coordinates are then reduced into the primitive cell when every
+        basis label stays unique.  A blocked diamond courier at ``0`` and
+        ``3/4`` therefore becomes the primitive pair ``0`` and ``1/4``, which
+        inversion about the bond midpoint permutes.  Leaving ``3/4`` at
+        ``9/4`` makes that image miss the stored partner.  Supercell images
+        that would land on one primitive site keep their cell index, so a
+        supercell Hamiltonian does not collapse onto two labels.
         """
         states: list[U1Basis] = []
+        rebased: list[Offset] = []
         for element in space.elements():
             state = cast(U1Basis, element)
             try:
@@ -302,8 +309,21 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
             except ValueError:
                 # Abstract/non-spatial Hilbert spaces remain valid matrix labels.
                 return space
-            states.append(state.replace(offset.rebase(fine_lattice)))
-        return HilbertSpace.new(states)
+            states.append(state)
+            rebased.append(offset.rebase(fine_lattice))
+
+        folded_states = [
+            state.replace(offset.fractional())
+            for state, offset in zip(states, rebased, strict=True)
+        ]
+        # Two supercell images can share one primitive site.  Building that
+        # space would drop a label and break the matrix axis, so keep the
+        # cell index instead.
+        if len(set(folded_states)) == len(folded_states):
+            return HilbertSpace.new(folded_states)
+        return HilbertSpace.new(
+            state.replace(offset) for state, offset in zip(states, rebased, strict=True)
+        )
 
     left_space = _rehome_bloch_space(cast(HilbertSpace, tensor.dims[1]))
     right_space = _rehome_bloch_space(cast(HilbertSpace, tensor.dims[2]))

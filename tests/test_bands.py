@@ -246,7 +246,9 @@ def test_upsample_one_cycle_restores_blocked_diamond_lattice():
     for site in coarse.unit_cell.values():
         orbitals.append(_mode(site))
     bands = HilbertSpace.new(orbitals)
-    data = torch.eye(bands.dim, dtype=torch.complex128).expand(k_space.dim, -1, -1).clone()
+    data = (
+        torch.eye(bands.dim, dtype=torch.complex128).expand(k_space.dim, -1, -1).clone()
+    )
     result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (3, 3, 3))
 
     refined = result.dims[0].extract(Lattice)
@@ -261,6 +263,14 @@ def test_upsample_one_cycle_restores_blocked_diamond_lattice():
     refined_offsets = [state.irrep_of(Offset) for state in result.dims[1].elements()]
     assert len(refined_offsets) == bands.dim
     assert all(offset.space == refined for offset in refined_offsets)
+    # A and A_image both reduce to the origin, and B and B_image both reduce
+    # to (1/4, 1/4, 1/4).  Those pairs stay in different cells.
+    assert {tuple(offset.rep) for offset in refined_offsets} == {
+        tuple(ImmutableDenseMatrix([0, 0, 0])),
+        tuple(ImmutableDenseMatrix([1, 0, 0])),
+        tuple(ImmutableDenseMatrix([quarter, quarter, quarter])),
+        tuple(ImmutableDenseMatrix([sy.Rational(9, 4)] * 3)),
+    }
 
     coords = refined.cartes(torch.Tensor)
     distance = torch.cdist(coords, coords)
@@ -268,6 +278,71 @@ def test_upsample_one_cycle_restores_blocked_diamond_lattice():
     nearest = distance.min(dim=1).values
     # fcc @ (1/4, 1/4, 1/4) = (1/4, 1/4, 1/4), so the bond length is sqrt(3)/4.
     assert torch.allclose(nearest, torch.full_like(nearest, (3**0.5) / 4))
+
+
+def test_upsample_reduces_unique_courier_centers_into_the_primitive_cell():
+    """A two-center courier must fold onto the primitive diamond basis.
+
+    Blocking by 3 leaves the courier at ``0`` and ``3/4``.  Scaling those
+    coordinates by 3 puts the second center at ``9/4``, two primitive cells
+    away from ``1/4``.  Inversion about the bond midpoint sends ``0`` to
+    ``1/4``, so the unwrapped label is not in the spinful space.
+    """
+    from qten.phys.spin import Spin
+    from qten.pointgroups import PointGroupOpr, hilbert_repr, pointgroup
+
+    half = sy.Rational(1, 2)
+    quarter = sy.Rational(1, 4)
+    eighth = sy.Rational(1, 8)
+    three_quarters = sy.Rational(3, 4)
+    fcc = ImmutableDenseMatrix([[0, half, half], [half, 0, half], [half, half, 0]])
+    coarse = Lattice(
+        basis=fcc * 3,
+        unit_cell={
+            "r0": ImmutableDenseMatrix([0, 0, 0]),
+            "r1": ImmutableDenseMatrix(
+                [three_quarters, three_quarters, three_quarters]
+            ),
+        },
+        shape=(2, 2, 2),
+    )
+    k_space = brillouin_zone(coarse.dual)
+    orbitals = [
+        U1Basis.new(site, spin)
+        for site in coarse.unit_cell.values()
+        for spin in (Spin.up, Spin.down)
+    ]
+    bands = HilbertSpace.new(orbitals)
+    data = (
+        torch.eye(bands.dim, dtype=torch.complex128).expand(k_space.dim, -1, -1).clone()
+    )
+    result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (3, 3, 3))
+
+    refined = result.dims[0].extract(Lattice)
+    assert result.dims[1] == result.dims[2]
+    coords = {tuple(state.irrep_of(Offset).rep) for state in result.dims[1].elements()}
+    assert coords == {
+        tuple(ImmutableDenseMatrix([0, 0, 0])),
+        tuple(ImmutableDenseMatrix([quarter, quarter, quarter])),
+    }
+    assert all(
+        state.irrep_of(Offset).space == refined for state in result.dims[1].elements()
+    )
+
+    center = Offset(ImmutableDenseMatrix([eighth, eighth, eighth]), refined)
+    group = pointgroup("-1")
+    inversion = next(
+        element
+        for element in group.elements()
+        if sy.simplify(element.irrep + sy.eye(element.irrep.rows))
+        == sy.zeros(element.irrep.rows)
+    )
+    represented = hilbert_repr(
+        PointGroupOpr(inversion).fixpoint_at(center, rebase=True),
+        result.dims[1],
+    )
+    assert represented.data.shape == (bands.dim, bands.dim)
+    assert int(torch.count_nonzero(represented.data.abs() > 1e-8)) == bands.dim
 
 
 def test_upsample_is_available_from_ops():
