@@ -149,9 +149,20 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
     The interpolation is performed in the localized (Wannier) representation:
     the sampled matrices are inverse Fourier transformed to hopping matrices on
     the original finite real-space cell, then evaluated on the momentum grid
-    dual to an enlarged periodic cell.  Thus ``scale=(s1, ..., sd)`` multiplies
-    the real-space boundary generators by the corresponding positive integer
-    factors and increases the number of momentum sectors by ``prod(scale)``.
+    of the refined cell.  ``scale=(s1, ..., sd)`` divides each primitive
+    vector by the corresponding positive integer and multiplies the real-space
+    boundary generators by those same factors, so the physical torus is
+    unchanged on a rectangular cell while the number of momentum sectors grows
+    by ``prod(scale)``.  Unit-cell coordinates are multiplied by ``scale`` and
+    reduced into the new primitive cell.  Distinct supercell images that land
+    on one primitive site are merged.
+
+    One blocking cycle is the case this refinement is built for.  A diamond
+    lattice blocked by 3 has primitive vectors ``3/2`` and, after Wannierization
+    of the courier, centers at ``0`` and ``3/4``.  ``upsample(..., (3, 3, 3))``
+    returns primitive vectors ``1/2`` with centers ``0`` and ``1/4``, which is
+    the diamond crystal.  Leaving the blocked basis in place repeats only the
+    coarse sublattice and the structure plot is not a diamond.
 
     Centered representatives of the original translation quotient are used.
     At an even-period boundary, the half-period translation is assigned to the
@@ -172,10 +183,11 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
     -------
     Tensor
         Interpolated tensor with dims ``(new_momentum_space, B_left, B_right)``.
-        Spatial Bloch spaces are relabeled onto the enlarged finite lattice
-        (whose primitive basis is unchanged), so subsequent operations such as
-        band folding see consistent lattice metadata. Complex input keeps its
-        dtype; real input is returned in its original real dtype.
+        Spatial Bloch spaces are rebased onto the refined finite lattice, so
+        subsequent operations such as band folding see the same primitive cell
+        as the momentum grid.  Distinct periodic images stay on distinct
+        sites.  Complex input keeps its dtype; real input is returned in its
+        original real dtype.
 
     Notes
     -----
@@ -227,18 +239,61 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
         )
 
     boundary = lattice.boundaries.basis
-    enlarged_boundary = ImmutableDenseMatrix(
-        boundary @ ImmutableDenseMatrix.diag(*scale)
+    scale_matrix = ImmutableDenseMatrix.diag(*scale)
+    # Column scaling is the momentum-grid enlargement used by the interpolant
+    # below.  On a rectangular cell it equals ``scale_matrix @ boundary``, so
+    # the refined primitive vectors describe the same physical torus.
+    enlarged_boundary = ImmutableDenseMatrix(boundary @ scale_matrix)
+    refined_basis = ImmutableDenseMatrix(lattice.basis @ scale_matrix.inv())
+
+    def _as_column(rep: ImmutableDenseMatrix) -> ImmutableDenseMatrix:
+        if rep.shape != (dim, 1):
+            rep = ImmutableDenseMatrix(rep).reshape(dim, 1)
+        return rep
+
+    def _fractional_entry(entry: sy.Expr) -> sy.Expr:
+        # Stay off ``sy.floor`` for rational coordinates.  The rectangular FFT
+        # path is tested to avoid that call, which the dense kernel uses when
+        # it recenters translations.
+        value = sy.together(entry)
+        if value.is_integer:
+            return sy.Integer(0)
+        if value.is_rational:
+            rational = sy.Rational(value)
+            return sy.Rational(int(rational.p) % int(rational.q), int(rational.q))
+        return value - sy.floor(value)
+
+    def _primitive_fraction(rep: ImmutableDenseMatrix) -> ImmutableDenseMatrix:
+        column = _as_column(rep)
+        return ImmutableDenseMatrix(
+            dim, 1, [_fractional_entry(column[i, 0]) for i in range(dim)]
+        )
+
+    # Merge supercell images that become the same primitive site.  Without
+    # this, a blocked diamond stays a 3x FCC cell with centers at 0 and 3/4,
+    # and a structure plot of that cell is not a diamond.
+    merged_sites: OrderedDict[tuple[sy.Expr, ...], tuple[str, ImmutableDenseMatrix]] = (
+        OrderedDict()
     )
-    enlarged_lattice = Lattice(
-        basis=lattice.basis,
+    for name, site in lattice.unit_cell.items():
+        reduced = _primitive_fraction(scale_matrix @ _as_column(site.rep))
+        key = tuple(reduced[i, 0] for i in range(dim))
+        if key not in merged_sites:
+            merged_sites[key] = (name, reduced)
+    fine_lattice = Lattice(
+        basis=refined_basis,
         boundaries=PeriodicBoundary(enlarged_boundary),
-        unit_cell={name: offset.rep for name, offset in lattice.unit_cell.items()},
+        unit_cell={name: rep for name, rep in merged_sites.values()},
     )
-    new_k_space = brillouin_zone(enlarged_lattice.dual)
+    new_k_space = brillouin_zone(fine_lattice.dual)
 
     def _rehome_bloch_space(space: HilbertSpace) -> HilbertSpace:
-        """Relabel spatial states without changing their basis coordinates."""
+        """Re-express spatial states in the refined cell.
+
+        Rebasing multiplies lattice coordinates by ``scale`` and wraps them
+        into the refined torus.  Images that were distinct in the blocked cell
+        stay on distinct sites, so a supercell Hamiltonian does not collapse.
+        """
         states: list[U1Basis] = []
         for element in space.elements():
             state = cast(U1Basis, element)
@@ -247,7 +302,7 @@ def upsample(tensor: Tensor, scale: Tuple[int, ...]) -> Tensor:
             except ValueError:
                 # Abstract/non-spatial Hilbert spaces remain valid matrix labels.
                 return space
-            states.append(state.replace(offset.rebase(enlarged_lattice)))
+            states.append(state.replace(offset.rebase(fine_lattice)))
         return HilbertSpace.new(states)
 
     left_space = _rehome_bloch_space(cast(HilbertSpace, tensor.dims[1]))

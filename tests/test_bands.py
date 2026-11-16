@@ -1,3 +1,4 @@
+import traceback
 import warnings
 
 import numpy as np
@@ -161,8 +162,15 @@ def test_rectangular_upsample_does_not_build_dense_fourier_kernels(monkeypatch):
     def reject_dense_kernel(*args, **kwargs):
         raise AssertionError("rectangular upsample constructed a dense kernel")
 
+    original_floor = sy.floor
+
     def reject_centered_translation(*args, **kwargs):
-        raise AssertionError("rectangular upsample centered lattice translations")
+        # Brillouin-zone construction reduces momenta with ``sy.floor``.
+        # Centering of real-space translations is a direct ``bands.py`` call.
+        caller = traceback.extract_stack()[-2].filename.replace("\\", "/")
+        if caller.endswith("qten/bands.py"):
+            raise AssertionError("rectangular upsample centered lattice translations")
+        return original_floor(*args, **kwargs)
 
     # The fallback forms its Fourier kernels with torch.exp; the FFT path does
     # not.  It also uses sympy.floor while centering lattice translations,
@@ -191,7 +199,7 @@ def test_upsample_rehomes_bloch_space_for_subsequent_blocking():
     result_lattice = result.dims[0].extract(Lattice)
     result_offset = result.dims[1].elements()[0].irrep_of(Offset)
 
-    assert result_lattice.basis == lattice.basis
+    assert result_lattice.basis == ImmutableDenseMatrix([[sy.Rational(1, 2)]])
     assert result_lattice.boundaries.basis == ImmutableDenseMatrix.diag(8)
     assert result_offset.space == result_lattice
     folded = bandfold(BasisTransform(ImmutableDenseMatrix([[2]])), result)
@@ -206,6 +214,60 @@ def test_upsample_rejects_invalid_scale(scale, error):
     tensor, _ = _band_tensor()
     with pytest.raises(error):
         upsample(tensor, scale)
+
+
+def test_upsample_one_cycle_restores_blocked_diamond_lattice():
+    """A 3x-blocked diamond courier cell must come back as primitive diamond.
+
+    The blocked cell has FCC vectors of length ``3/2`` and Wannier centers at
+    ``0`` and ``3/4``.  One upsample cycle by 3 is the inverse of that
+    blocking: primitive vectors ``1/2`` and centers ``0`` and ``1/4``.
+    Keeping the blocked basis repeats a coarse sublattice whose structure
+    plot is not a diamond.
+    """
+    half = sy.Rational(1, 2)
+    quarter = sy.Rational(1, 4)
+    three_quarters = sy.Rational(3, 4)
+    fcc = ImmutableDenseMatrix([[0, half, half], [half, 0, half], [half, half, 0]])
+    coarse = Lattice(
+        basis=fcc * 3,
+        unit_cell={
+            "A": ImmutableDenseMatrix([0, 0, 0]),
+            "A_image": ImmutableDenseMatrix([sy.Rational(1, 3), 0, 0]),
+            "B": ImmutableDenseMatrix([three_quarters, three_quarters, three_quarters]),
+            "B_image": ImmutableDenseMatrix(
+                [sy.Rational(1, 12), sy.Rational(1, 12), sy.Rational(1, 12)]
+            ),
+        },
+        shape=(2, 2, 2),
+    )
+    k_space = brillouin_zone(coarse.dual)
+    orbitals = []
+    for site in coarse.unit_cell.values():
+        orbitals.append(_mode(site))
+    bands = HilbertSpace.new(orbitals)
+    data = torch.eye(bands.dim, dtype=torch.complex128).expand(k_space.dim, -1, -1).clone()
+    result = upsample(Tensor(data=data, dims=(k_space, bands, bands)), (3, 3, 3))
+
+    refined = result.dims[0].extract(Lattice)
+    assert refined.basis == fcc
+    assert refined.boundaries.basis == ImmutableDenseMatrix.diag(6, 6, 6)
+    assert len(refined.unit_cell) == 2
+    assert {tuple(site.rep) for site in refined.unit_cell.values()} == {
+        tuple(ImmutableDenseMatrix([0, 0, 0])),
+        tuple(ImmutableDenseMatrix([quarter, quarter, quarter])),
+    }
+
+    refined_offsets = [state.irrep_of(Offset) for state in result.dims[1].elements()]
+    assert len(refined_offsets) == bands.dim
+    assert all(offset.space == refined for offset in refined_offsets)
+
+    coords = refined.cartes(torch.Tensor)
+    distance = torch.cdist(coords, coords)
+    distance.fill_diagonal_(float("inf"))
+    nearest = distance.min(dim=1).values
+    # fcc @ (1/4, 1/4, 1/4) = (1/4, 1/4, 1/4), so the bond length is sqrt(3)/4.
+    assert torch.allclose(nearest, torch.full_like(nearest, (3**0.5) / 4))
 
 
 def test_upsample_is_available_from_ops():

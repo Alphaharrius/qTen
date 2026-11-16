@@ -116,6 +116,9 @@ class FrozenDict(Mapping[_K, _V], Generic[_K, _V]):
             raise AttributeError("Private storage is hidden")
         return super().__getattribute__(name)
 
+    def __reduce__(self):
+        return (self.__class__, (dict(self._items()),))
+
 
 def matchby(
     source: Iterable[Any], dest: Iterable[Any], base_func: Callable[[Any], Any]
